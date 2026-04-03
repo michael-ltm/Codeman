@@ -734,27 +734,77 @@ Object.assign(CodemanApp.prototype, {
   },
 
   /**
-   * Fetch and deduplicate history sessions (up to 2 per dir, max `limit` total).
-   * @returns {Promise<Array>} deduplicated session list, sorted by lastModified desc
+   * Fetch and deduplicate history sessions (up to 3 per project, sorted by date).
+   * Uses projectKey for grouping because workingDir decoding is lossy.
+   * @returns {Promise<Array>} deduplicated session list, most recent first
    */
-  async _fetchHistorySessions(limit = 12) {
+  async _fetchHistorySessions() {
     const res = await fetch('/api/history/sessions');
     const data = await res.json();
     const sessions = data.sessions || [];
     if (sessions.length === 0) return [];
 
-    const byDir = new Map();
+    const byProject = new Map();
     for (const s of sessions) {
-      if (!byDir.has(s.workingDir)) byDir.set(s.workingDir, []);
-      byDir.get(s.workingDir).push(s);
+      const key = s.projectKey || s.workingDir;
+      if (!byProject.has(key)) byProject.set(key, []);
+      byProject.get(key).push(s);
     }
     const items = [];
-    for (const [, group] of byDir) {
-      items.push(...group.slice(0, 2));
+    for (const [, group] of byProject) {
+      items.push(...group.slice(0, 3));
     }
     items.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
-    return items.slice(0, limit);
+    return items;
   },
+
+  /** Build a single history item DOM element */
+  _buildHistoryItem(s) {
+    const size =
+      s.sizeBytes < 1024
+        ? `${s.sizeBytes}B`
+        : s.sizeBytes < 1048576
+          ? `${(s.sizeBytes / 1024).toFixed(0)}K`
+          : `${(s.sizeBytes / 1048576).toFixed(1)}M`;
+    const date = new Date(s.lastModified);
+    const timeStr =
+      date.toLocaleDateString('en', { month: 'short', day: 'numeric' }) +
+      ' ' +
+      date.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const shortDir = s.workingDir.replace(/^\/home\/[^/]+\//, '~/');
+
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    item.title = s.workingDir;
+    item.addEventListener('click', () => this.resumeHistorySession(s.sessionId, s.workingDir));
+
+    const textCol = document.createElement('div');
+    textCol.className = 'history-item-text';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'history-item-title';
+    titleSpan.textContent = s.firstPrompt || shortDir;
+
+    const subtitleSpan = document.createElement('span');
+    subtitleSpan.className = 'history-item-subtitle';
+    subtitleSpan.textContent = shortDir;
+
+    textCol.append(titleSpan, subtitleSpan);
+
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'history-item-meta';
+    metaSpan.textContent = timeStr;
+
+    const sizeSpan = document.createElement('span');
+    sizeSpan.className = 'history-item-size';
+    sizeSpan.textContent = size;
+
+    item.append(textCol, metaSpan, sizeSpan);
+    return item;
+  },
+
+  /** Number of history items shown before "Show More" */
+  _HISTORY_INITIAL_COUNT: 4,
 
   async loadHistorySessions() {
     const container = document.getElementById('historySessions');
@@ -762,56 +812,32 @@ Object.assign(CodemanApp.prototype, {
     if (!container || !list) return;
 
     try {
-      const display = await this._fetchHistorySessions(12);
-      if (display.length === 0) {
+      const allSessions = await this._fetchHistorySessions(30);
+      if (allSessions.length === 0) {
         container.style.display = 'none';
         return;
       }
 
-      // Build DOM safely (no innerHTML with user data)
       list.replaceChildren();
-      for (const s of display) {
-        const size =
-          s.sizeBytes < 1024
-            ? `${s.sizeBytes}B`
-            : s.sizeBytes < 1048576
-              ? `${(s.sizeBytes / 1024).toFixed(0)}K`
-              : `${(s.sizeBytes / 1048576).toFixed(1)}M`;
-        const date = new Date(s.lastModified);
-        const timeStr =
-          date.toLocaleDateString('en', { month: 'short', day: 'numeric' }) +
-          ' ' +
-          date.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false });
-        const shortDir = s.workingDir.replace(/^\/home\/[^/]+\//, '~/');
+      const initialCount = this._HISTORY_INITIAL_COUNT;
 
-        const item = document.createElement('div');
-        item.className = 'history-item';
-        item.title = s.workingDir;
-        item.addEventListener('click', () => this.resumeHistorySession(s.sessionId, s.workingDir));
+      // Render initial items
+      for (let i = 0; i < Math.min(initialCount, allSessions.length); i++) {
+        list.appendChild(this._buildHistoryItem(allSessions[i]));
+      }
 
-        const textCol = document.createElement('div');
-        textCol.className = 'history-item-text';
-
-        const titleSpan = document.createElement('span');
-        titleSpan.className = 'history-item-title';
-        titleSpan.textContent = s.firstPrompt || shortDir;
-
-        const subtitleSpan = document.createElement('span');
-        subtitleSpan.className = 'history-item-subtitle';
-        subtitleSpan.textContent = shortDir;
-
-        textCol.append(titleSpan, subtitleSpan);
-
-        const metaSpan = document.createElement('span');
-        metaSpan.className = 'history-item-meta';
-        metaSpan.textContent = timeStr;
-
-        const sizeSpan = document.createElement('span');
-        sizeSpan.className = 'history-item-size';
-        sizeSpan.textContent = size;
-
-        item.append(textCol, metaSpan, sizeSpan);
-        list.appendChild(item);
+      // Add "Show More" button if there are more items
+      if (allSessions.length > initialCount) {
+        const moreBtn = document.createElement('button');
+        moreBtn.className = 'history-show-more';
+        moreBtn.textContent = `Show ${allSessions.length - initialCount} more`;
+        moreBtn.addEventListener('click', () => {
+          for (let i = initialCount; i < allSessions.length; i++) {
+            list.insertBefore(this._buildHistoryItem(allSessions[i]), moreBtn);
+          }
+          moreBtn.remove();
+        });
+        list.appendChild(moreBtn);
       }
 
       container.style.display = '';

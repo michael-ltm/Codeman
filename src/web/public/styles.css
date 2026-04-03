@@ -2224,6 +2224,24 @@ body {
   text-align: right;
 }
 
+.history-show-more {
+  width: 100%;
+  padding: 0.5rem;
+  margin-top: 0.25rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background var(--transition-smooth), color var(--transition-smooth);
+}
+
+.history-show-more:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
 .welcome-hint {
   color: var(--text-muted);
   font-size: 0.8rem;
@@ -5485,7 +5503,12 @@ kbd {
 /* Responsive */
 @media (max-width: 600px) {
   .header-brand {
-    display: none;
+    padding-right: 0.4rem;
+    margin-right: 0.3rem;
+  }
+
+  .header-brand .logo {
+    font-size: 0.75rem;
   }
 
   .connection-text {

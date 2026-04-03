@@ -182,6 +182,36 @@ export function registerSessionRoutes(
       }
     }
 
+    // Pre-validate resumeSessionId: check that the conversation file actually exists
+    // in Claude's projects directory. If not, skip resume to avoid confusing
+    // "No conversation found" errors from Claude CLI.
+    let validatedResumeId = body.resumeSessionId;
+    if (validatedResumeId) {
+      const projectsDir = join(process.env.HOME || '/tmp', '.claude', 'projects');
+      let found = false;
+      try {
+        const projectDirs = await fs.readdir(projectsDir);
+        for (const projDir of projectDirs) {
+          const sessionFile = join(projectsDir, projDir, `${validatedResumeId}.jsonl`);
+          try {
+            const stat = await fs.stat(sessionFile);
+            if (stat.size > 4000) {
+              found = true;
+              break;
+            }
+          } catch {
+            // File doesn't exist in this project dir
+          }
+        }
+      } catch {
+        // Projects dir doesn't exist
+      }
+      if (!found) {
+        console.log(`[Session] Resume session ${validatedResumeId} not found on disk, starting fresh`);
+        validatedResumeId = undefined;
+      }
+    }
+
     const globalNice = await ctx.getGlobalNiceConfig();
     const modelConfig = await ctx.getModelConfig();
     const mode = body.mode || 'claude';
@@ -203,7 +233,7 @@ export function registerSessionRoutes(
       claudeMode: claudeModeConfig.claudeMode,
       allowedTools: claudeModeConfig.allowedTools,
       openCodeConfig: mode === 'opencode' ? body.openCodeConfig : undefined,
-      resumeSessionId: body.resumeSessionId,
+      resumeSessionId: validatedResumeId,
     });
 
     ctx.addSession(session);
@@ -924,6 +954,74 @@ export function registerSessionRoutes(
     return undefined;
   }
 
+  /**
+   * Decode a Claude project key (e.g. "-Users-teigen-Documents-Workspace-AI-project-Mirror")
+   * back to a filesystem path ("/Users/teigen/Documents/Workspace/AI_project/Mirror").
+   *
+   * Claude CLI encodes both '/' and '_' as '-', so each '-' in the key could be
+   * any of: '/' (path separator), '_' (underscore), or '-' (literal dash).
+   *
+   * Strategy: look-ahead matching. At each '-', try consuming multiple segments
+   * joined by '_' or '-' to find an existing child directory, then recurse.
+   * E.g. for segments [AI, project, Mirror] inside /Workspace:
+   *   try /Workspace/AI (no) -> /Workspace/AI_project (yes!) -> continue with [Mirror]
+   */
+  async function decodeProjectKey(projKey: string): Promise<string> {
+    const encoded = projKey.startsWith('-') ? projKey.slice(1) : projKey;
+    const segments = encoded.split('-');
+
+    const isDir = async (p: string): Promise<boolean> =>
+      fs
+        .stat(p)
+        .then((s) => s.isDirectory())
+        .catch(() => false);
+
+    let current = '';
+    let i = 0;
+
+    while (i < segments.length) {
+      // Try progressively longer child names by joining segments with '_' or '-'
+      let matched = false;
+      // Limit look-ahead to avoid excessive fs checks (max 4 segments per component)
+      const maxLook = Math.min(i + 4, segments.length);
+      for (let end = i; end < maxLook; end++) {
+        // Build candidate child name from segments[i..end]
+        // Try all separator combinations: for 2+ segments, try '_' first then '-'
+        const candidates: string[] = [];
+        if (end === i) {
+          candidates.push(segments[i]);
+        } else {
+          // Build with underscores between joined segments
+          candidates.push(segments.slice(i, end + 1).join('_'));
+          // Build with dashes (literal)
+          candidates.push(segments.slice(i, end + 1).join('-'));
+        }
+
+        for (const child of candidates) {
+          const candidate = current + '/' + child;
+          if (await isDir(candidate)) {
+            current = candidate;
+            i = end + 1;
+            matched = true;
+            break;
+          }
+        }
+        if (matched) break;
+      }
+      if (!matched) {
+        // No directory match found — append as-is and move on
+        current = current + '/' + segments[i];
+        i++;
+      }
+    }
+
+    const finalExists = await fs
+      .access(current)
+      .then(() => true)
+      .catch(() => false);
+    return finalExists ? current : process.env.HOME || '/tmp';
+  }
+
   /** Read the first 16KB of a file for content sniffing. */
   async function readFileHead(path: string, buf: Buffer): Promise<string | null> {
     try {
@@ -974,15 +1072,11 @@ export function registerSessionRoutes(
         const stat = await fs.stat(projPath).catch(() => null);
         if (!stat?.isDirectory()) continue;
 
-        // Decode project key to working dir. The encoding replaces '/' with '-',
-        // which is lossy when path components contain '-'. Do naive decode first,
-        // then verify it exists. Fall back to HOME if the decoded path is invalid.
-        const naiveDecode = projDir.replace(/^-/, '/').replace(/-/g, '/');
-        const dirExists = await fs
-          .access(naiveDecode)
-          .then(() => true)
-          .catch(() => false);
-        const workingDir = dirExists ? naiveDecode : process.env.HOME || '/tmp';
+        // Decode project key to working dir. Claude CLI encodes '/' as '-',
+        // but path components may also contain '-' (e.g. "AI_project" vs "AI-project").
+        // Use recursive backtracking: try each '-' as either '/' or literal '-',
+        // verify which decoded path actually exists on disk.
+        const workingDir = await decodeProjectKey(projDir);
 
         const entries = await fs.readdir(projPath);
         for (const entry of entries) {
@@ -1004,24 +1098,31 @@ export function registerSessionRoutes(
           // Read first 16KB to check content and extract first user prompt.
           let firstPrompt: string | undefined;
           const head = await readFileHead(filePath, headBuf);
+          const hasConversation = (text: string) =>
+            text.includes('"type":"user"') || text.includes('"type":"assistant"') || text.includes('"type":"summary"');
 
-          if (fileStat.size < 50000) {
-            if (
-              !head ||
-              (!head.includes('"type":"user"') &&
-                !head.includes('"type":"assistant"') &&
-                !head.includes('"type":"summary"'))
-            ) {
-              continue; // No conversation content — skip
-            }
+          let foundContent = head ? hasConversation(head) : false;
+
+          // For large files, head may not contain user messages (e.g. /init followed
+          // by large system entries). Check the tail as well.
+          let tail: string | null = null;
+          if (!foundContent && fileStat.size > 16384) {
+            const tailBuf = Buffer.alloc(32768);
+            tail = await readFileTail(filePath, tailBuf, fileStat.size);
+            if (tail) foundContent = hasConversation(tail);
           }
+
+          if (!foundContent) continue; // No conversation content — skip
+
           if (head) firstPrompt = extractFirstUserPrompt(head);
 
           // If head scan found no usable prompt (e.g. session started with /init),
           // try reading the tail for a recent user message.
           if (!firstPrompt && fileStat.size > 65536) {
-            const tailBuf = Buffer.alloc(32768);
-            const tail = await readFileTail(filePath, tailBuf, fileStat.size);
+            if (!tail) {
+              const tailBuf = Buffer.alloc(32768);
+              tail = await readFileTail(filePath, tailBuf, fileStat.size);
+            }
             if (tail) firstPrompt = extractFirstUserPrompt(tail);
           }
 
