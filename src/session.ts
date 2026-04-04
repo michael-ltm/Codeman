@@ -274,6 +274,7 @@ export class Session extends EventEmitter {
   private _lastPromptTime: number = 0;
   private activityTimeout: NodeJS.Timeout | null = null;
   private _awaitingIdleConfirmation: boolean = false; // Prevents timeout reset during idle detection
+  private _trustDialogAccepted: boolean = false; // Prevents repeated trust dialog auto-accept
   private _taskTracker: TaskTracker;
 
   // Token tracking for auto-clear
@@ -1117,6 +1118,16 @@ export class Session extends EventEmitter {
       if (!data) return; // Skip if only filtered sequences
 
       this._handleTerminalOutput(data);
+
+      // === Auto-accept workspace trust dialog ===
+      // Claude CLI 2.x shows "Yes, I trust this folder" prompt on first launch per directory.
+      // Codeman sessions always use --dangerously-skip-permissions, so auto-accept.
+      if (!this._trustDialogAccepted && data.includes('trust this folder')) {
+        this._trustDialogAccepted = true;
+        console.log(`[Session] Auto-accepting workspace trust dialog for: ${this.id}`);
+        // Send Enter to accept the default selection ("Yes, I trust this folder")
+        this.writeViaMux('\r');
+      }
 
       // === Idle/working detection runs on every chunk (latency-sensitive) ===
       // Detect if Claude is working or at prompt

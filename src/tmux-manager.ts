@@ -185,8 +185,8 @@ function buildSpawnCommand(options: {
 }): string {
   if (options.mode === 'claude') {
     // Validate model to prevent command injection
-    const safeModel = options.model && /^[a-zA-Z0-9._-]+$/.test(options.model) ? options.model : undefined;
-    const modelFlag = safeModel ? ` --model ${safeModel}` : '';
+    const safeModel = options.model && /^[a-zA-Z0-9._\-[\]]+$/.test(options.model) ? options.model : undefined;
+    const modelFlag = safeModel ? ` --model "${safeModel}"` : '';
     // Use --resume to restore a previous conversation, otherwise --session-id for new sessions.
     // Wrap --resume in a fallback: if it exits non-zero (session not found, corrupt, etc.),
     // fall back to a new session with --session-id so the pane doesn't die.

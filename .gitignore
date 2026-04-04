@@ -48,7 +48,12 @@ Thumbs.db
 # Generated output
 out/
 screenshots-echo-diag/
-tools/remotion/out/
+scripts/remotion/out/
+
+# Artifacts that should not be tracked
+test-results/
+tmp/
+public
 
 # Claude Code plan tracking
 plan.json

@@ -1,7 +1,11 @@
+import { resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
+
+const root = resolve(import.meta.dirname, '..');
 
 export default defineConfig({
   test: {
+    root,
     globals: true,
     environment: 'node',
     include: ['test/**/*.test.ts'],

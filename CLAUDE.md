@@ -52,7 +52,7 @@ When user says "COM":
 4. **Sync CLAUDE.md version**: Update the `**Version**` line below to match the new version from `package.json`
 5. **Commit and deploy**: `git add -A && git commit -m "chore: version packages" && git push && npm run build && systemctl --user restart codeman-web`
 
-**Version**: 0.5.6 (must match `package.json`)
+**Version**: 0.5.10 (must match `package.json`)
 
 ## Project Overview
 
@@ -80,7 +80,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 
 **CI**: `.github/workflows/ci.yml` runs `typecheck`, `lint`, `format:check` on push to master/main and on PRs (Node 22). Tests excluded (they spawn tmux).
 
-**Code style**: Prettier (`singleQuote: true`, `printWidth: 120`, `trailingComma: "es5"`). ESLint flat config (`eslint.config.js`) allows `no-console`, warns on `@typescript-eslint/no-explicit-any`. Ignores: `app.js`, `scripts/**/*.mjs`, `src/web/public/vendor/**`, `tools/**`, `remotion/**`.
+**Code style**: Prettier (`singleQuote: true`, `printWidth: 120`, `trailingComma: "es5"`). ESLint flat config (`config/eslint.config.js`) allows `no-console`, warns on `@typescript-eslint/no-explicit-any`. Ignores: `app.js`, `scripts/**/*.mjs`, `src/web/public/vendor/**`, `scripts/remotion/**`.
 
 ## Common Gotchas
 
@@ -136,7 +136,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 
 **Hook events**: Claude Code hooks trigger via `/api/hook-event`. Key events: `permission_prompt`, `elicitation_dialog`, `idle_prompt`, `stop`, `teammate_idle`, `task_completed`. See `src/hooks-config.ts`.
 
-**Agent Teams**: `TeamWatcher` polls `~/.claude/teams/`, matches to sessions via `leadSessionId`. Teammates are in-process threads appearing as subagents. Enable: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. See `agent-teams/`.
+**Agent Teams**: `TeamWatcher` polls `~/.claude/teams/`, matches to sessions via `leadSessionId`. Teammates are in-process threads appearing as subagents. Enable: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. See `docs/agent-teams/`.
 
 **Circuit breaker**: Prevents respawn thrashing. States: `CLOSED` → `HALF_OPEN` → `OPEN`. Reset: `/api/sessions/:id/ralph-circuit-breaker/reset`.
 
@@ -204,7 +204,7 @@ npx vitest run -t "pattern"                      # By name (SAFE)
 
 **Ports**: Pick unique ports manually. Search `const PORT =` before adding new tests.
 
-**Respawn tests**: Use `MockSession` from `test/respawn-test-utils.ts`. **Route tests**: `app.inject()` in `test/routes/`. **Mobile tests**: Playwright suite in `mobile-test/` (135 device profiles).
+**Respawn tests**: Use `MockSession` from `test/respawn-test-utils.ts`. **Route tests**: `app.inject()` in `test/routes/`. **Mobile tests**: Playwright suite in `test/mobile/` (135 device profiles).
 
 ## Screenshots
 
@@ -226,7 +226,7 @@ Target: 20 sessions, 50 agent windows at 60fps. Limits in `src/config/`: termina
 
 ## References
 
-Deep-dive docs in `docs/`: `respawn-state-machine.md`, `ralph-wiggum-guide.md`, `claude-code-hooks-reference.md`, `terminal-anti-flicker.md`, `opencode-integration.md`, `qr-auth-plan.md`, `orchestrator-loop-architecture.md`, `browser-testing-guide.md`. Agent Teams: `agent-teams/README.md`. SSE events: `src/web/sse-events.ts` + `constants.js`.
+Deep-dive docs in `docs/`: `respawn-state-machine.md`, `ralph-wiggum-guide.md`, `claude-code-hooks-reference.md`, `terminal-anti-flicker.md`, `opencode-integration.md`, `qr-auth-plan.md`, `orchestrator-loop-architecture.md`, `browser-testing-guide.md`. Agent Teams: `docs/agent-teams/README.md`. SSE events: `src/web/sse-events.ts` + `constants.js`.
 
 ## Scripts
 

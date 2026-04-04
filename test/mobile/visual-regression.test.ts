@@ -166,19 +166,19 @@ describe('Visual Regression', () => {
      * To update visual baselines:
      *
      * 1. Delete the specific snapshot:
-     *    rm mobile-test/snapshots/<name>.png
+     *    rm test/mobile/snapshots/<name>.png
      *
      * 2. Re-run the test:
-     *    npx vitest run mobile-test/visual-regression.test.ts
+     *    npx vitest run test/mobile/visual-regression.test.ts
      *
      * 3. Review the new baseline:
      *    The test will create a fresh .png and pass (isNewBaseline = true).
      *
      * To update ALL baselines:
-     *    rm -rf mobile-test/snapshots/ && npx vitest run mobile-test/visual-regression.test.ts
+     *    rm -rf test/mobile/snapshots/ && npx vitest run test/mobile/visual-regression.test.ts
      *
      * Diff images for failed comparisons are saved as <name>.diff.png
-     * alongside the baseline in mobile-test/snapshots/.
+     * alongside the baseline in test/mobile/snapshots/.
      */
     it('placeholder — see comments above for baseline update instructions', () => {
       expect(true).toBe(true);

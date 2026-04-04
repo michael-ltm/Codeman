@@ -1,5 +1,51 @@
 # aicodeman
 
+## 0.5.10
+
+### Patch Changes
+
+- fix: allow bracket characters in model validation regex so models like opus[1m] (1M context window) are accepted instead of silently dropped. Quote the model flag value in tmux spawn commands to prevent bash glob expansion of bracket patterns.
+
+  docs: update macOS launchd instructions to use `launchctl bootstrap` instead of deprecated `load`. Clean up README install and service sections.
+
+## 0.5.9
+
+### Patch Changes
+
+- Mobile keyboard accessory bar: add configurable "Extended Keyboard Bar" setting (Settings > Display > Input) that toggles between simple mode (up/down arrows, /init, /clear, /compact, paste, dismiss) and extended mode (adds left/right arrows, Tab, Shift+Tab, Ctrl+O, Alt+Enter, Esc). Default is simple mode. Setting is device-specific (not synced to server).
+
+  Restyle dismiss button: muted steel-blue tone, fills remaining bar space via flex, larger tap target. Arrow buttons now blue.
+
+  Fix paste overlay visibility on mobile: dialog repositioned to top of screen (15vh from top) so the virtual keyboard doesn't cover it. Textarea enlarged for better usability.
+
+  (Also includes all v0.5.8 changes: case reorder/delete, XSS sanitization, auto-attach PTY on restart, mobile keyboard buttons, macOS installer fixes, terminal flicker fix, state store collision fix.)
+
+## 0.5.8
+
+### Patch Changes
+
+- Case management: add Manage tab with reorder (up/down arrows) and delete for cases; linked cases are unlinked (folder preserved), CASES_DIR cases are permanently deleted. New endpoints: DELETE /api/cases/:name, PUT /api/cases/order. SSE events: case:deleted, case:order-changed.
+
+  Security: sanitize case names from filesystem with /^[a-zA-Z0-9_-]+$/ regex before returning from GET /api/cases to prevent XSS via maliciously-named directories reaching frontend inline onclick handlers.
+
+  Auto-attach PTY: server now calls startInteractive() for recovered tmux sessions during startup so all sessions resume capturing output immediately after deploy, instead of waiting for client selection. Frontend auto-attach condition relaxed from (pid===null && status==='idle') to (pid===null && !\_ended).
+
+  Mobile keyboard accessory: add Shift+Tab, Tab, Esc, Alt+Enter, Left/Right arrow, and Ctrl+O buttons.
+
+  Terminal: fix flicker regression by moving viewport clear inside dimension guard.
+
+  State store: fix temp file collisions on concurrent writes.
+
+  macOS: fix installer failures when piped via curl | bash, add HTML cache support, launchd service template, and trust dialog handling.
+
+  Housekeeping: remove accidentally committed dist/state-store.js build artifact.
+
+## 0.5.7
+
+### Patch Changes
+
+- feat: support "Default (CLI default)" option for model selection. Adds a new empty-value option to the model dropdown that defers to the CLI's own default model instead of forcing a specific model. Ensures empty defaultModel values are treated as undefined when passed to session creation and Ralph loop start, preventing empty strings from being sent as model flags.
+
 ## 0.5.6
 
 ### Patch Changes

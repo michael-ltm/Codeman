@@ -30,24 +30,6 @@ curl -fsSL https://raw.githubusercontent.com/Ark0N/Codeman/master/install.sh | b
 
 This installs Node.js and tmux if missing, clones Codeman to `~/.codeman/app`, and builds it.
 
-**Install from a fork or specific branch:**
-```bash
-curl -fsSL https://raw.githubusercontent.com/<user>/Codeman/<branch>/install.sh | \
-  CODEMAN_REPO_URL=https://github.com/<user>/Codeman.git \
-  CODEMAN_BRANCH=<branch> bash
-```
-
-The installer supports these environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CODEMAN_REPO_URL` | upstream Codeman | Custom git repository URL |
-| `CODEMAN_BRANCH` | `master` | Git branch to install |
-| `CODEMAN_INSTALL_DIR` | `~/.codeman/app` | Custom install directory |
-| `CODEMAN_SKIP_SYSTEMD` | `0` | Skip systemd service setup prompt |
-| `CODEMAN_NODE_VERSION` | `22` | Node.js major version to install |
-| `CODEMAN_NONINTERACTIVE` | `0` | Skip all prompts (for CI/automation) |
-
 You'll need at least one AI coding CLI installed — [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [OpenCode](https://opencode.ai) (or both). After install:
 
 ```bash
@@ -60,12 +42,53 @@ codeman web
 
 **Linux (systemd):**
 ```bash
-mkdir -p ~/.config/systemd/user && printf '[Unit]\nDescription=Codeman Web Server\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=%s %s/dist/index.js web\nRestart=always\nRestartSec=10\n\n[Install]\nWantedBy=default.target\n' "$(which node)" "$HOME/.codeman/app" > ~/.config/systemd/user/codeman-web.service && systemctl --user daemon-reload && systemctl --user enable --now codeman-web && loginctl enable-linger $USER
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/codeman-web.service << EOF
+[Unit]
+Description=Codeman Web Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$(which node) $HOME/.codeman/app/dist/index.js web
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now codeman-web
+loginctl enable-linger $USER
 ```
 
 **macOS (launchd):**
 ```bash
-mkdir -p ~/Library/LaunchAgents && printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>Label</key><string>com.codeman.web</string><key>ProgramArguments</key><array><string>%s</string><string>%s/dist/index.js</string><string>web</string></array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>StandardOutPath</key><string>/tmp/codeman.log</string><key>StandardErrorPath</key><string>/tmp/codeman.log</string></dict></plist>\n' "$(which node)" "$HOME/.codeman/app" > ~/Library/LaunchAgents/com.codeman.web.plist && launchctl load ~/Library/LaunchAgents/com.codeman.web.plist
+mkdir -p ~/Library/LaunchAgents
+cat > ~/Library/LaunchAgents/com.codeman.web.plist << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.codeman.web</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$(which node)</string>
+    <string>$HOME/.codeman/app/dist/index.js</string>
+    <string>web</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/codeman.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/codeman.log</string>
+</dict>
+</plist>
+EOF
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.codeman.web.plist
 ```
 </details>
 

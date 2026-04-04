@@ -19,6 +19,7 @@ import { SseEvent } from '../sse-events.js';
 import type { EventPort, ConfigPort } from '../ports/index.js';
 
 const LINKED_CASES_FILE = join(homedir(), '.codeman', 'linked-cases.json');
+const SAFE_CASE_NAME = /^[a-zA-Z0-9_-]+$/;
 
 /** Read and parse linked-cases.json, returning empty object on missing/invalid file. */
 async function readLinkedCases(): Promise<Record<string, string>> {
@@ -46,7 +47,7 @@ export function registerCaseRoutes(app: FastifyInstance, ctx: EventPort & Config
     try {
       const entries = await fs.readdir(CASES_DIR, { withFileTypes: true });
       for (const e of entries) {
-        if (e.isDirectory()) {
+        if (e.isDirectory() && SAFE_CASE_NAME.test(e.name)) {
           cases.push({
             name: e.name,
             path: join(CASES_DIR, e.name),
@@ -62,7 +63,7 @@ export function registerCaseRoutes(app: FastifyInstance, ctx: EventPort & Config
     const linkedCases = await readLinkedCases();
     const existingNames = new Set(cases.map((c) => c.name));
     for (const [name, path] of Object.entries(linkedCases)) {
-      if (!existingNames.has(name) && existsSync(path)) {
+      if (!existingNames.has(name) && SAFE_CASE_NAME.test(name) && existsSync(path)) {
         cases.push({
           name,
           path,

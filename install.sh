@@ -7,7 +7,7 @@
 # Environment variables:
 #   CODEMAN_NONINTERACTIVE=1  - Skip all prompts (for CI/automation)
 #   CODEMAN_INSTALL_DIR       - Custom install directory (default: ~/.codeman/app)
-#   CODEMAN_SKIP_SYSTEMD=1    - Skip systemd service setup prompt
+#   CODEMAN_SKIP_SYSTEMD=1    - Skip systemd/launchd service setup prompt
 #   CODEMAN_NODE_VERSION      - Node.js major version to install (default: 22)
 #   CODEMAN_REPO_URL          - Custom git repository URL (default: upstream Codeman)
 #   CODEMAN_BRANCH            - Git branch to install (default: master)
@@ -353,8 +353,15 @@ ensure_sudo() {
         die "sudo is required but not installed. Please install packages manually or run as root."
     fi
     # Validate sudo access
-    if ! sudo -v 2>/dev/null; then
-        die "Failed to obtain sudo privileges."
+    # When piped (curl | bash), stdin is the pipe — redirect from /dev/tty so sudo can prompt
+    if [[ -e /dev/tty ]]; then
+        if ! sudo -v 2>/dev/null < /dev/tty; then
+            die "Failed to obtain sudo privileges."
+        fi
+    else
+        if ! sudo -v 2>/dev/null; then
+            die "Failed to obtain sudo privileges. Try running the script directly instead of piping."
+        fi
     fi
 }
 
@@ -372,7 +379,12 @@ ensure_homebrew() {
     fi
 
     info "Installing Homebrew first..."
-    /bin/bash -c "$(download_to_stdout https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # When piped (curl | bash), stdin is the pipe — Homebrew needs TTY for sudo password prompt
+    if [[ -e /dev/tty ]]; then
+        /bin/bash -c "$(download_to_stdout https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" < /dev/tty
+    else
+        NONINTERACTIVE=1 /bin/bash -c "$(download_to_stdout https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    fi
 
     # Add Homebrew to PATH for Apple Silicon
     if [[ -f /opt/homebrew/bin/brew ]]; then
@@ -787,8 +799,83 @@ setup_sc_alias() {
 }
 
 # ============================================================================
-# Systemd Service Setup (Linux only)
+# Service Setup (Linux systemd / macOS launchd)
 # ============================================================================
+
+setup_launchd_service() {
+    local plist_label="com.codeman.web"
+    local agent_dir="$HOME/Library/LaunchAgents"
+    local agent_plist="$agent_dir/$plist_label.plist"
+    local daemon_plist="/Library/LaunchDaemons/$plist_label.plist"
+
+    info "Setting up macOS LaunchAgent..."
+
+    # Remove any existing LaunchDaemon (system-level) to prevent duplicates.
+    # We standardize on LaunchAgent (user-level) — it doesn't require sudo,
+    # inherits the user's environment, and is the correct choice for user apps.
+    if [[ -f "$daemon_plist" ]]; then
+        warn "Found system-level LaunchDaemon at $daemon_plist — removing to prevent duplicate"
+        sudo launchctl unload "$daemon_plist" 2>/dev/null || true
+        sudo rm -f "$daemon_plist"
+        success "Removed duplicate LaunchDaemon"
+    fi
+
+    # Unload existing agent before overwriting
+    if [[ -f "$agent_plist" ]]; then
+        launchctl unload "$agent_plist" 2>/dev/null || true
+    fi
+
+    mkdir -p "$agent_dir"
+
+    # Build PATH: ensure /opt/homebrew/bin (Apple Silicon) and ~/.local/bin are included
+    local svc_path="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+    # Find node binary path
+    local node_path
+    node_path=$(command -v node)
+
+    cat > "$agent_plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$plist_label</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$node_path</string>
+    <string>$INSTALL_DIR/dist/index.js</string>
+    <string>web</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>$svc_path</string>
+    <key>HOME</key>
+    <string>$HOME</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+  </dict>
+  <key>WorkingDirectory</key>
+  <string>$HOME</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>/tmp/codeman.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/codeman.log</string>
+</dict>
+</plist>
+EOF
+
+    launchctl load "$agent_plist" 2>/dev/null || true
+
+    success "LaunchAgent installed and started"
+}
 
 setup_systemd_service() {
     local service_dir="$HOME/.config/systemd/user"
@@ -1139,17 +1226,25 @@ main() {
     echo ""
 
     local launch_choice=""
-    local has_systemd=false
+    local has_service=false
+    local service_type=""
 
     if [[ "$os" == "linux" ]] && [[ "$SKIP_SYSTEMD" != "1" ]] && command -v systemctl &>/dev/null; then
-        has_systemd=true
+        has_service=true
+        service_type="systemd"
+    elif [[ "$os" == "macos" ]] && [[ "$SKIP_SYSTEMD" != "1" ]]; then
+        has_service=true
+        service_type="launchd"
     fi
 
-    if [[ "$has_systemd" == "true" ]]; then
+    if [[ "$has_service" == "true" ]]; then
+        local service_label="systemd service"
+        [[ "$service_type" == "launchd" ]] && service_label="LaunchAgent"
+
         echo -e "  ${BOLD}How would you like to run Codeman?${NC}"
         echo ""
         echo -e "    ${CYAN}1)${NC} Run now in this terminal"
-        echo -e "    ${CYAN}2)${NC} Install as systemd service (auto-start on boot)"
+        echo -e "    ${CYAN}2)${NC} Install as $service_label (auto-start on boot)"
         echo -e "    ${CYAN}3)${NC} Don't start — I'll run it later"
         echo ""
 
@@ -1166,7 +1261,7 @@ main() {
             done
         fi
     else
-        # macOS or no systemd — only offer run now or skip
+        # No service manager available — only offer run now or skip
         echo -e "  ${BOLD}Would you like to start Codeman now?${NC}"
         echo ""
         echo -e "    ${CYAN}1)${NC} Run now in this terminal"
@@ -1192,12 +1287,16 @@ main() {
 
     echo ""
 
-    # Handle systemd setup
+    # Handle service setup
     if [[ "$launch_choice" == "2" ]]; then
-        setup_systemd_service
+        if [[ "$service_type" == "launchd" ]]; then
+            setup_launchd_service
+        else
+            setup_systemd_service
+        fi
 
-        # Offer tunnel service if cloudflared is available
-        if check_cloudflared && [[ -f "$INSTALL_DIR/scripts/codeman-tunnel.service" ]]; then
+        # Offer tunnel service if cloudflared is available (Linux only — systemd tunnel service)
+        if [[ "$service_type" == "systemd" ]] && check_cloudflared && [[ -f "$INSTALL_DIR/scripts/codeman-tunnel.service" ]]; then
             echo ""
             if prompt_yes_no "Also set up Cloudflare tunnel service? (requires CODEMAN_PASSWORD)" "n"; then
                 setup_tunnel_service
@@ -1212,10 +1311,16 @@ main() {
         echo ""
         echo -e "  ${BOLD}Manage the service:${NC}"
         echo ""
-        echo -e "    ${CYAN}systemctl --user stop codeman-web${NC}    # Stop"
-        echo -e "    ${CYAN}systemctl --user restart codeman-web${NC} # Restart"
-        echo -e "    ${CYAN}systemctl --user status codeman-web${NC}  # Check status"
-        echo -e "    ${CYAN}journalctl --user -u codeman-web -f${NC}  # View logs"
+        if [[ "$service_type" == "launchd" ]]; then
+            echo -e "    ${CYAN}launchctl unload ~/Library/LaunchAgents/com.codeman.web.plist${NC}   # Stop"
+            echo -e "    ${CYAN}launchctl load ~/Library/LaunchAgents/com.codeman.web.plist${NC}     # Start"
+            echo -e "    ${CYAN}tail -f /tmp/codeman.log${NC}                                        # View logs"
+        else
+            echo -e "    ${CYAN}systemctl --user stop codeman-web${NC}    # Stop"
+            echo -e "    ${CYAN}systemctl --user restart codeman-web${NC} # Restart"
+            echo -e "    ${CYAN}systemctl --user status codeman-web${NC}  # Check status"
+            echo -e "    ${CYAN}journalctl --user -u codeman-web -f${NC}  # View logs"
+        fi
         echo ""
     fi
 
@@ -1289,11 +1394,17 @@ update() {
     success "Updated to $(node -e "console.log(require('./package.json').version)")"
     echo ""
 
-    # Auto-restart systemd service if it's running, otherwise tell the user
-    if systemctl --user is-active codeman-web.service &>/dev/null; then
+    # Auto-restart service if running, otherwise tell the user
+    local agent_plist="$HOME/Library/LaunchAgents/com.codeman.web.plist"
+    if systemctl --user is-active codeman-web.service &>/dev/null 2>&1; then
         info "Restarting codeman-web service..."
         systemctl --user restart codeman-web.service
         success "codeman-web service restarted"
+    elif [[ -f "$agent_plist" ]]; then
+        info "Restarting LaunchAgent..."
+        launchctl unload "$agent_plist" 2>/dev/null || true
+        launchctl load "$agent_plist" 2>/dev/null || true
+        success "LaunchAgent restarted"
     else
         echo -e "  ${DIM}Restart codeman web to use the new version:${NC}"
         echo -e "    ${CYAN}pkill -f 'codeman.*web'; codeman web &${NC}"
@@ -1306,9 +1417,9 @@ uninstall() {
     info "Uninstalling Codeman..."
     echo ""
 
-    # Stop and remove systemd services
+    # Stop and remove systemd services (Linux)
     for svc in codeman-web codeman-tunnel; do
-        if systemctl --user is-active "${svc}.service" &>/dev/null; then
+        if systemctl --user is-active "${svc}.service" &>/dev/null 2>&1; then
             info "Stopping ${svc} service..."
             systemctl --user stop "${svc}.service"
         fi
@@ -1323,6 +1434,20 @@ uninstall() {
         fi
     done
     systemctl --user daemon-reload 2>/dev/null || true
+
+    # Stop and remove launchd services (macOS)
+    local agent_plist="$HOME/Library/LaunchAgents/com.codeman.web.plist"
+    local daemon_plist="/Library/LaunchDaemons/com.codeman.web.plist"
+    if [[ -f "$agent_plist" ]]; then
+        launchctl unload "$agent_plist" 2>/dev/null || true
+        rm -f "$agent_plist"
+        success "Removed LaunchAgent"
+    fi
+    if [[ -f "$daemon_plist" ]]; then
+        sudo launchctl unload "$daemon_plist" 2>/dev/null || true
+        sudo rm -f "$daemon_plist"
+        success "Removed LaunchDaemon"
+    fi
 
     # Remove symlinks
     local symlink_dir="$HOME/.local/bin"

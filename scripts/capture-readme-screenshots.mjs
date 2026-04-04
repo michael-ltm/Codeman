@@ -428,7 +428,7 @@ const SUBAGENT_ACTIVITY = {
   'agent-002': [
     { type: 'tool', tool: 'Glob', input: { pattern: 'test/**/*.test.ts' }, timestamp: new Date().toISOString(), agentId: 'agent-002' },
     { type: 'tool', tool: 'Read', input: { file_path: '/home/arkon/codeman/test/respawn-test-utils.ts' }, timestamp: new Date().toISOString(), agentId: 'agent-002' },
-    { type: 'tool', tool: 'Read', input: { file_path: '/home/arkon/codeman/vitest.config.ts' }, timestamp: new Date().toISOString(), agentId: 'agent-002' },
+    { type: 'tool', tool: 'Read', input: { file_path: '/home/arkon/codeman/config/vitest.config.ts' }, timestamp: new Date().toISOString(), agentId: 'agent-002' },
     { type: 'message', role: 'assistant', text: 'Analyzing test patterns: MockSession, unique ports, fileParallelism: false...', timestamp: new Date().toISOString(), agentId: 'agent-002' },
   ],
 };

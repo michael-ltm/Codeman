@@ -9,7 +9,7 @@
  *
  * Usage:  node scripts/capture-video-screenshots.mjs
  * Port:   3198 (static file server)
- * Output: remotion/public/ (6 PNGs)
+ * Output: scripts/scripts/remotion/public/ (6 PNGs)
  */
 
 import { chromium } from 'playwright';
@@ -21,7 +21,7 @@ import { fileURLToPath } from 'url';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..');
 const PUBLIC_DIR = join(PROJECT_ROOT, 'src', 'web', 'public');
-const OUTPUT_DIR = join(PROJECT_ROOT, 'remotion', 'public');
+const OUTPUT_DIR = join(PROJECT_ROOT, 'scripts', 'remotion', 'public');
 const PORT = 3198;
 
 const DESKTOP_VIEWPORT = { width: 1920, height: 1080 };
@@ -516,7 +516,7 @@ async function captureDesktopWelcome(browser) {
       path: join(OUTPUT_DIR, 'desktop-welcome.png'),
       fullPage: false,
     });
-    console.log('  Saved: remotion/public/desktop-welcome.png');
+    console.log('  Saved: scripts/remotion/public/desktop-welcome.png');
   } finally {
     await context.close();
   }
@@ -545,7 +545,7 @@ async function captureDesktopClaude(browser) {
       path: join(OUTPUT_DIR, 'desktop-claude.png'),
       fullPage: false,
     });
-    console.log('  Saved: remotion/public/desktop-claude.png');
+    console.log('  Saved: scripts/remotion/public/desktop-claude.png');
   } finally {
     await context.close();
   }
@@ -575,7 +575,7 @@ async function captureDesktopBothClaude(browser) {
       path: join(OUTPUT_DIR, 'desktop-both-claude.png'),
       fullPage: false,
     });
-    console.log('  Saved: remotion/public/desktop-both-claude.png');
+    console.log('  Saved: scripts/remotion/public/desktop-both-claude.png');
   } finally {
     await context.close();
   }
@@ -605,7 +605,7 @@ async function captureDesktopBothOpencode(browser) {
       path: join(OUTPUT_DIR, 'desktop-both-opencode.png'),
       fullPage: false,
     });
-    console.log('  Saved: remotion/public/desktop-both-opencode.png');
+    console.log('  Saved: scripts/remotion/public/desktop-both-opencode.png');
   } finally {
     await context.close();
   }
@@ -634,7 +634,7 @@ async function captureMobileClaude(browser) {
       path: join(OUTPUT_DIR, 'mobile-claude.png'),
       fullPage: false,
     });
-    console.log('  Saved: remotion/public/mobile-claude.png');
+    console.log('  Saved: scripts/remotion/public/mobile-claude.png');
   } finally {
     await context.close();
   }
@@ -663,7 +663,7 @@ async function captureMobileOpencode(browser) {
       path: join(OUTPUT_DIR, 'mobile-opencode.png'),
       fullPage: false,
     });
-    console.log('  Saved: remotion/public/mobile-opencode.png');
+    console.log('  Saved: scripts/remotion/public/mobile-opencode.png');
   } finally {
     await context.close();
   }
@@ -706,12 +706,12 @@ async function main() {
     console.log('All 6 screenshots captured!');
     console.log('='.repeat(60));
     console.log('\nOutput files:');
-    console.log('  remotion/public/desktop-welcome.png');
-    console.log('  remotion/public/desktop-claude.png');
-    console.log('  remotion/public/desktop-both-claude.png');
-    console.log('  remotion/public/desktop-both-opencode.png');
-    console.log('  remotion/public/mobile-claude.png');
-    console.log('  remotion/public/mobile-opencode.png');
+    console.log('  scripts/remotion/public/desktop-welcome.png');
+    console.log('  scripts/remotion/public/desktop-claude.png');
+    console.log('  scripts/remotion/public/desktop-both-claude.png');
+    console.log('  scripts/remotion/public/desktop-both-opencode.png');
+    console.log('  scripts/remotion/public/mobile-claude.png');
+    console.log('  scripts/remotion/public/mobile-opencode.png');
   } catch (err) {
     console.error('\nFatal error:', err.message);
     console.error(err.stack);

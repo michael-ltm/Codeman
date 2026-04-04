@@ -18,20 +18,20 @@ Validates Codeman's mobile UI across 135 devices, covering:
 
 ```bash
 # Run all mobile tests
-npx vitest run --config mobile-test/vitest.config.ts
+npx vitest run --config test/mobile/vitest.config.ts
 
 # Run a single test file
-npx vitest run --config mobile-test/vitest.config.ts mobile-test/keyboard.test.ts
+npx vitest run --config test/mobile/vitest.config.ts test/mobile/keyboard.test.ts
 
 # Quick mode — 6 representative devices, skip full matrix
-CI_QUICK=1 npx vitest run --config mobile-test/vitest.config.ts
+CI_QUICK=1 npx vitest run --config test/mobile/vitest.config.ts
 
 # Full device matrix only (135 devices)
-npx vitest run --config mobile-test/vitest.config.ts mobile-test/device-matrix.test.ts
+npx vitest run --config test/mobile/vitest.config.ts test/mobile/device-matrix.test.ts
 
 # Update visual baselines (delete old baselines, re-run)
-rm -rf mobile-test/snapshots/*.png
-npx vitest run --config mobile-test/vitest.config.ts mobile-test/visual-regression.test.ts
+rm -rf test/mobile/snapshots/*.png
+npx vitest run --config test/mobile/vitest.config.ts test/mobile/visual-regression.test.ts
 ```
 
 ## Test Files
@@ -126,7 +126,7 @@ Swipe simulation includes intermediate move points and timing to satisfy `SwipeH
 
 Uses `pixelmatch` + `pngjs` (both in devDeps) for pixel-level comparison:
 
-- **Baselines** stored in `mobile-test/snapshots/` (git-tracked)
+- **Baselines** stored in `test/mobile/snapshots/` (git-tracked)
 - **Tolerance**: 0.5% pixel diff (handles anti-aliasing)
 - **On failure**: `.actual.png` and `.diff.png` generated (gitignored)
 - **Update**: Delete baseline PNGs and re-run — new baselines auto-created

@@ -319,6 +319,7 @@ Object.assign(CodemanApp.prototype, {
     this.loadTunnelStatus();
     document.getElementById('appSettingsLocalEcho').checked = settings.localEchoEnabled ?? MobileDetection.isTouchDevice();
     document.getElementById('appSettingsCjkInput').checked = settings.cjkInputEnabled ?? false;
+    document.getElementById('appSettingsExtendedKeyboardBar').checked = settings.extendedKeyboardBar ?? false;
     document.getElementById('appSettingsTabTwoRows').checked = settings.tabTwoRows ?? defaults.tabTwoRows ?? false;
     // Claude CLI settings
     const claudeModeSelect = document.getElementById('appSettingsClaudeMode');
@@ -1125,6 +1126,7 @@ Object.assign(CodemanApp.prototype, {
       tunnelEnabled: document.getElementById('appSettingsTunnelEnabled').checked,
       localEchoEnabled: document.getElementById('appSettingsLocalEcho').checked,
       cjkInputEnabled: document.getElementById('appSettingsCjkInput').checked,
+      extendedKeyboardBar: document.getElementById('appSettingsExtendedKeyboardBar').checked,
       tabTwoRows: document.getElementById('appSettingsTabTwoRows').checked,
       // Claude CLI settings
       claudeMode: document.getElementById('appSettingsClaudeMode').value,
@@ -1245,9 +1247,12 @@ Object.assign(CodemanApp.prototype, {
     // Apply CJK input visibility immediately
     this._updateCjkInputState();
 
+    // Apply keyboard bar mode
+    KeyboardAccessoryBar.setMode(settings.extendedKeyboardBar ? 'extended' : 'simple');
+
     // Save to server (includes notification prefs for cross-browser persistence)
     // Strip device-specific keys — localEchoEnabled/cjkInputEnabled are per-platform
-    const { localEchoEnabled: _leo, cjkInputEnabled: _cjk, ...serverSettings } = settings;
+    const { localEchoEnabled: _leo, cjkInputEnabled: _cjk, extendedKeyboardBar: _ekb, ...serverSettings } = settings;
     try {
       await this._apiPut('/api/settings', { ...serverSettings, notificationPreferences: notifPrefsToSave, voiceSettings });
 
@@ -1631,7 +1636,7 @@ Object.assign(CodemanApp.prototype, {
         const displayKeys = new Set([
           'showFontControls', 'showSystemStats', 'showTokenCount', 'showCost',
           'showMonitor', 'showProjectInsights', 'showFileBrowser', 'showSubagents',
-          'subagentActiveTabOnly', 'tabTwoRows', 'localEchoEnabled', 'cjkInputEnabled',
+          'subagentActiveTabOnly', 'tabTwoRows', 'localEchoEnabled', 'cjkInputEnabled', 'extendedKeyboardBar',
         ]);
         // Merge settings: non-display keys always sync from server,
         // display keys only seed from server when localStorage has no value

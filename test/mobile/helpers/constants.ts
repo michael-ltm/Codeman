@@ -96,7 +96,7 @@ export const SUBAGENT = {
 export const VISUAL = {
   DEFAULT_THRESHOLD: 0.1,
   MAX_DIFF_PERCENT: 0.5,
-  SNAPSHOT_DIR: 'mobile-test/snapshots',
+  SNAPSHOT_DIR: 'test/mobile/snapshots',
 } as const;
 
 // Visual regression breakpoints (width values for screenshot comparison)
