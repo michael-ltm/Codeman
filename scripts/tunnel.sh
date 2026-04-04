@@ -4,18 +4,23 @@
 #
 # Modes:
 #   quick  — Quick tunnel with random trycloudflare.com URL (default)
-#   named  — Named tunnel on codeman.marcomigozzi.it (requires setup, see below)
+#   named  — Named tunnel on a fixed hostname (requires setup, see below)
+#
+# Environment variables:
+#   CLOUDFLARED_TUNNEL_NAME     — tunnel name (default: codeman)
+#   CLOUDFLARED_TUNNEL_ID       — tunnel UUID (from: cloudflared tunnel list)
+#   CODEMAN_TUNNEL_HOSTNAME     — public hostname (e.g. codeman.example.com)
 #
 # First-time named tunnel setup:
 #   cloudflared tunnel login
-#   cloudflared tunnel create codeman
-#   cloudflared tunnel route dns codeman codeman.marcomigozzi.it
-#   ./scripts/tunnel.sh named setup   # writes ~/.cloudflared/config.yml
+#   cloudflared tunnel create <tunnel-name>
+#   cloudflared tunnel route dns <tunnel-name> <hostname>
+#   ./scripts/tunnel.sh named setup   # writes ~/.cloudflared/<tunnel-name>.yml
 set -euo pipefail
 
 QUICK_SERVICE="codeman-tunnel"
 NAMED_SERVICE="codeman-tunnel-named"
-TUNNEL_NAME="codeman"
+TUNNEL_NAME="${CLOUDFLARED_TUNNEL_NAME:-codeman}"
 TUNNEL_HOSTNAME="${CODEMAN_TUNNEL_HOSTNAME:-codeman.example.com}"
 CODEMAN_PORT="3000"
 LOG_FILE="$HOME/.codeman/tunnel.log"
@@ -43,13 +48,24 @@ _install_service() {
   fi
 }
 
+_install_named_service() {
+  if ! systemctl --user cat "$NAMED_SERVICE" &>/dev/null 2>&1; then
+    # Generate service file with the configured tunnel name
+    sed "s/codeman\.yml/$TUNNEL_NAME.yml/g; s/run codeman/run $TUNNEL_NAME/g" \
+      "$(dirname "$0")/codeman-tunnel-named.service" \
+      > "$HOME/.config/systemd/user/codeman-tunnel-named.service"
+    systemctl --user daemon-reload
+    echo "Service $NAMED_SERVICE installed (tunnel: $TUNNEL_NAME)."
+  fi
+}
+
 # ── named tunnel setup ───────────────────────────────────────────────────────
 
 _named_setup() {
   _require_cloudflared
 
   local creds_dir="$HOME/.cloudflared"
-  local config_file="$creds_dir/codeman.yml"
+  local config_file="$creds_dir/$TUNNEL_NAME.yml"
   # Replace with your tunnel ID (from: cloudflared tunnel list)
   local tunnel_id="${CLOUDFLARED_TUNNEL_ID:-YOUR_TUNNEL_ID_HERE}"
   local creds_file="$creds_dir/$tunnel_id.json"
@@ -117,12 +133,12 @@ _quick_url() {
 
 _named_start() {
   _require_cloudflared
-  if [ ! -f "$HOME/.cloudflared/codeman.yml" ]; then
+  if [ ! -f "$HOME/.cloudflared/$TUNNEL_NAME.yml" ]; then
     echo "Config not found. Run: $0 named setup"
     exit 1
   fi
   if ! systemctl --user is-active "$NAMED_SERVICE" &>/dev/null; then
-    _install_service "codeman-tunnel-named.service" "$NAMED_SERVICE"
+    _install_named_service
     systemctl --user start "$NAMED_SERVICE"
     echo "Named tunnel starting..."
     sleep 3
@@ -142,7 +158,7 @@ _named_status() {
 }
 
 _named_enable() {
-  _install_service "codeman-tunnel-named.service" "$NAMED_SERVICE"
+  _install_named_service
   systemctl --user enable "$NAMED_SERVICE"
   echo "Named tunnel enabled at boot."
 }
