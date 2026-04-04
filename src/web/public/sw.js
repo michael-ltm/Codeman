@@ -1,29 +1,105 @@
 /**
- * @fileoverview Service worker for Web Push notifications.
+ * @fileoverview Service worker for PWA install + Web Push notifications.
  *
- * Receives push events from the Codeman server (via web-push library) and displays
- * OS-level notifications. Handles notification clicks to focus an existing Codeman
- * tab or open a new one. Supports action buttons, per-session deep linking, and
- * critical notification persistence (requireInteraction).
+ * App-shell caching: on install, precaches the core UI assets so the app
+ * launches instantly and works offline (or on flaky connections). Uses a
+ * network-first strategy for navigation and API calls, cache-first for
+ * static assets.
  *
- * Lifecycle: skipWaiting on install, claim clients on activate — ensures the latest
- * service worker takes control immediately without waiting for tab refresh.
+ * Push notifications: receives push events from the Codeman server (via
+ * web-push library) and displays OS-level notifications. Handles notification
+ * clicks to focus an existing Codeman tab or open a new one.
+ *
+ * Lifecycle: skipWaiting on install, claim clients on activate -- ensures the
+ * latest service worker takes control immediately without waiting for tab
+ * refresh.
  *
  * @dependency None (runs in ServiceWorkerGlobalScope, isolated from page scripts)
- * @see src/push-store.ts — server-side VAPID key management and subscription CRUD
+ * @see src/push-store.ts -- server-side VAPID key management and subscription CRUD
  */
 
-// Codeman Service Worker — Web Push notifications
-// This service worker receives push events from the server and displays OS-level notifications.
-// It also handles notification clicks to focus or open the Codeman tab.
+const CACHE_NAME = 'codeman-v1';
 
-self.addEventListener('install', () => {
+// Core app shell -- cached on install for instant startup
+const APP_SHELL = [
+  '/',
+  '/styles.css',
+  '/mobile.css',
+  '/constants.js',
+  '/app.js',
+  '/api-client.js',
+  '/terminal-ui.js',
+  '/session-ui.js',
+  '/settings-ui.js',
+  '/panels-ui.js',
+  '/notification-manager.js',
+  '/mobile-handlers.js',
+  '/keyboard-accessory.js',
+  '/voice-input.js',
+  '/vendor/xterm.min.js',
+  '/vendor/xterm-addon-fit.min.js',
+  '/vendor/xterm-addon-unicode11.min.js',
+  '/vendor/xterm-zerolag-input.js',
+  '/vendor/xterm.css',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/manifest.json',
+];
+
+// --- Install: precache app shell ---
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      // Use addAll but don't fail install if some assets 404 (hashed filenames)
+      return Promise.allSettled(
+        APP_SHELL.map((url) => cache.add(url).catch(() => {}))
+      );
+    })
+  );
   self.skipWaiting();
 });
 
+// --- Activate: clean old caches, claim clients ---
+
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
+      )
+    ).then(() => self.clients.claim())
+  );
 });
+
+// --- Fetch: network-first for API/navigation, cache-first for static ---
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+
+  // Skip non-GET, WebSocket upgrades, and SSE streams
+  if (request.method !== 'GET') return;
+  if (request.headers.get('upgrade') === 'websocket') return;
+  if (request.headers.get('accept') === 'text/event-stream') return;
+  if (request.url.includes('/api/')) return;
+
+  event.respondWith(
+    caches.match(request).then((cached) => {
+      // Return cache immediately, refresh in background (stale-while-revalidate)
+      const fetchPromise = fetch(request).then((response) => {
+        if (response && response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        }
+        return response;
+      }).catch(() => cached);
+
+      return cached || fetchPromise;
+    })
+  );
+});
+
+// --- Push notifications ---
 
 self.addEventListener('push', (event) => {
   if (!event.data) return;
@@ -40,8 +116,8 @@ self.addEventListener('push', (event) => {
   const options = {
     body: body || '',
     tag: tag || 'codeman-default',
-    icon: '/favicon.ico',
-    badge: '/favicon.ico',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     data: { sessionId, url: sessionId ? `/?session=${sessionId}` : '/' },
     renotify: true,
     requireInteraction: urgency === 'critical',
@@ -75,7 +151,7 @@ self.addEventListener('notificationclick', (event) => {
           return client.focus();
         }
       }
-      // No existing tab — open a new one
+      // No existing tab -- open a new one
       return self.clients.openWindow(targetUrl);
     })
   );
