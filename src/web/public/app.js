@@ -873,6 +873,18 @@ class CodemanApp {
   // Response Viewer — native-scroll panel for reading full Claude responses
   // ═══════════════════════════════════════════════════════════════
 
+  /** Render markdown to sanitized HTML, falling back to plain text if marked.js unavailable */
+  _renderMarkdown(text) {
+    if (typeof marked !== 'undefined' && marked.parse) {
+      try {
+        return marked.parse(text, { breaks: true, gfm: true });
+      } catch { /* fall through */ }
+    }
+    // Fallback: escape HTML and preserve whitespace
+    const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `<pre style="white-space:pre-wrap;word-break:break-word">${escaped}</pre>`;
+  }
+
   async toggleResponseViewer() {
     const viewer = document.getElementById('responseViewer');
     const backdrop = document.getElementById('responseViewerBackdrop');
@@ -912,7 +924,7 @@ class CodemanApp {
       }
 
       const body = document.getElementById('responseViewerBody');
-      body.textContent = lastResponse;
+      body.innerHTML = this._renderMarkdown(lastResponse);
 
       // Reset state for fresh open
       const title = document.getElementById('responseViewerTitle');
@@ -958,7 +970,7 @@ class CodemanApp {
 
         const text = document.createElement('div');
         text.className = 'rv-text';
-        text.textContent = msg.text;
+        text.innerHTML = this._renderMarkdown(msg.text);
         div.appendChild(text);
 
         body.appendChild(div);
