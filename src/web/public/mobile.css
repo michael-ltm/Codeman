@@ -1195,6 +1195,20 @@ html.mobile-init .file-browser-panel {
     touch-action: none;
   }
 
+  /* Response viewer — show eye icon in header on mobile */
+  .btn-response-viewer-header {
+    display: inline-flex !important;
+  }
+
+  .response-viewer {
+    padding-bottom: var(--safe-area-bottom, 0px);
+  }
+
+  .response-viewer-body {
+    font-size: 12px;
+    padding: 12px;
+  }
+
   /* Compact welcome overlay for mobile */
   .welcome-content {
     max-width: calc(100vw - 1.5rem);

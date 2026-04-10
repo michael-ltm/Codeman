@@ -7765,6 +7765,143 @@ kbd {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   Response Viewer — native-scroll overlay for reading Claude responses
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Hidden on desktop — only shown on mobile via mobile.css override */
+.btn-response-viewer-header {
+  display: none !important;
+}
+
+.response-viewer {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 85vh;
+  background: #1a1a2e;
+  border-top: 1px solid #333;
+  border-radius: 12px 12px 0 0;
+  z-index: 5000;
+  flex-direction: column;
+  transform: translateY(100%);
+  transition: transform 0.25s ease-out;
+}
+
+.response-viewer.visible {
+  display: flex;
+  transform: translateY(0);
+}
+
+.response-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.response-viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.response-viewer-more {
+  background: #2a2a4a;
+  border: 1px solid #444;
+  color: #aaa;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.response-viewer-more:active {
+  background: #3a3a5a;
+}
+
+.response-viewer-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+/* Conversation thread messages */
+.rv-message {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #2a2a3a;
+}
+
+.rv-message:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.rv-role {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.rv-role-user {
+  color: #5c7cfa;
+}
+
+.rv-role-assistant {
+  color: #51cf66;
+}
+
+.rv-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.response-viewer-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
+  font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'SF Mono', Monaco, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d4d4d4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.response-viewer-body:empty::after {
+  content: 'No response yet';
+  color: #555;
+  font-style: italic;
+}
+
+.response-viewer-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 4999;
+}
+
+.response-viewer-backdrop.visible {
+  display: block;
+}
+
+/* ═══════════════════════════════════════════════════════════════
    CJK IME Input
    ═══════════════════════════════════════════════════════════════ */
 

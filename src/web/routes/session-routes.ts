@@ -535,6 +535,117 @@ export function registerSessionRoutes(
     return { success: true };
   });
 
+  // ========== Get Last Response (from transcript JSONL) ==========
+
+  app.get('/api/sessions/:id/last-response', async (req) => {
+    const { id } = req.params as { id: string };
+    const session = findSessionOrFail(ctx, id);
+
+    // The Claude conversation ID (used as JSONL filename)
+    const claudeSessionId = session.claudeSessionId || session.id;
+
+    // Scan ~/.claude/projects/*/ for the transcript file
+    const projectsDir = join(process.env.HOME || '/tmp', '.claude', 'projects');
+    let transcriptText = '';
+    let transcriptTimestamp = '';
+
+    try {
+      const projectDirs = await fs.readdir(projectsDir);
+      for (const projDir of projectDirs) {
+        const jsonlPath = join(projectsDir, projDir, `${claudeSessionId}.jsonl`);
+        try {
+          const content = await fs.readFile(jsonlPath, 'utf8');
+          const lines = content.trim().split('\n');
+
+          // Search from end for last assistant message with text
+          for (let i = lines.length - 1; i >= 0; i--) {
+            try {
+              const entry = JSON.parse(lines[i]);
+              if (entry.type === 'assistant' && entry.message?.content) {
+                const blocks = Array.isArray(entry.message.content)
+                  ? entry.message.content
+                  : [{ type: 'text', text: String(entry.message.content) }];
+                const textBlocks = blocks
+                  .filter((b: { type: string; text?: string }) => b.type === 'text' && b.text)
+                  .map((b: { type: string; text?: string }) => b.text);
+                if (textBlocks.length > 0) {
+                  transcriptText = textBlocks.join('\n\n');
+                  transcriptTimestamp = entry.timestamp || '';
+                  break;
+                }
+              }
+            } catch {
+              // Skip unparseable lines
+            }
+          }
+          if (transcriptText) break; // Found it, stop scanning directories
+        } catch {
+          // File doesn't exist in this project dir, continue
+        }
+      }
+    } catch {
+      // projects dir doesn't exist
+    }
+
+    // If ?context=full, return all user+assistant messages for conversation view
+    const query = req.query as { context?: string };
+    if (query.context === 'full' && transcriptText) {
+      const allMessages: Array<{ role: string; text: string; timestamp?: string }> = [];
+      try {
+        const projectDirs = await fs.readdir(projectsDir);
+        for (const projDir of projectDirs) {
+          const jsonlPath = join(projectsDir, projDir, `${claudeSessionId}.jsonl`);
+          try {
+            const content = await fs.readFile(jsonlPath, 'utf8');
+            const lines = content.trim().split('\n');
+            for (const line of lines) {
+              try {
+                const entry = JSON.parse(line);
+                if (entry.type === 'user' && entry.message?.content) {
+                  const text =
+                    typeof entry.message.content === 'string'
+                      ? entry.message.content
+                      : (entry.message.content as Array<{ type: string; text?: string }>)
+                          .filter((b) => b.type === 'text' && b.text)
+                          .map((b) => b.text)
+                          .join('\n');
+                  // Skip system/command messages
+                  if (text && !text.startsWith('<local-command') && !text.startsWith('<command-name>')) {
+                    allMessages.push({ role: 'user', text, timestamp: entry.timestamp });
+                  }
+                } else if (entry.type === 'assistant' && entry.message?.content) {
+                  const blocks = Array.isArray(entry.message.content)
+                    ? entry.message.content
+                    : [{ type: 'text', text: String(entry.message.content) }];
+                  const text = blocks
+                    .filter((b: { type: string; text?: string }) => b.type === 'text' && b.text)
+                    .map((b: { type: string; text?: string }) => b.text)
+                    .join('\n\n');
+                  if (text) {
+                    allMessages.push({ role: 'assistant', text, timestamp: entry.timestamp });
+                  }
+                }
+              } catch {
+                /* skip */
+              }
+            }
+            if (allMessages.length > 0) break;
+          } catch {
+            /* continue */
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+      return { text: transcriptText, timestamp: transcriptTimestamp, messages: allMessages };
+    }
+
+    return {
+      text: transcriptText,
+      timestamp: transcriptTimestamp,
+    };
+  });
+
   // ========== Get Terminal Buffer ==========
 
   // Query params:
