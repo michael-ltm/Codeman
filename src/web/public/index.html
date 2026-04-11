@@ -477,10 +477,9 @@
         </div>
         <div class="modal-body">
           <div class="shortcuts-grid">
-            <div><kbd>Ctrl</kbd>+<kbd>Enter</kbd></div><div>Run Claude</div>
             <div><kbd>Ctrl</kbd>+<kbd>W</kbd></div><div>Close Session</div>
             <div><kbd>Ctrl</kbd>+<kbd>Tab</kbd></div><div>Next Session</div>
-            <div><kbd>Ctrl</kbd>+<kbd>K</kbd></div><div>Kill All Sessions + Tmux</div>
+            <div><kbd>Alt</kbd>+<kbd>1-9</kbd></div><div>Switch to Tab N</div>
             <div><kbd>Ctrl</kbd>+<kbd>L</kbd></div><div>Clear Terminal</div>
             <div><kbd>Ctrl</kbd>+<kbd>+</kbd></div><div>Increase Font</div>
             <div><kbd>Ctrl</kbd>+<kbd>-</kbd></div><div>Decrease Font</div>
@@ -677,7 +676,10 @@
             <div class="form-section-header">Appearance</div>
             <div class="form-row">
               <label>Session Name</label>
-              <input type="text" id="modalSessionName" maxlength="128" placeholder="Auto (directory name)" onblur="app.saveSessionName()">
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <span id="modalSessionPrefix" style="color: var(--text-muted); white-space: nowrap; display: none;"></span>
+                <input type="text" id="modalSessionName" maxlength="128" placeholder="Auto (directory name)" onblur="app.saveSessionName()" style="flex: 1;">
+              </div>
               <span class="form-hint">Custom name shown in the tab (right-click tab to rename inline)</span>
             </div>
             <div class="form-row">

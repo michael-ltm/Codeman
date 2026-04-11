@@ -77,8 +77,71 @@ Object.assign(CodemanApp.prototype, {
     // during composition, causing duplicate or garbled input.
     this.terminal.attachCustomKeyEventHandler((ev) => {
       if (ev.isComposing || ev.keyCode === 229) return false;
+
+      // Let Alt+digit pass through to browser (tab switching)
+      if (ev.altKey && ev.key >= '0' && ev.key <= '9') return false;
+
+      // Shift+Enter / Ctrl+Enter: insert newline for multi-line input.
+      // xterm.js sends plain \r for all Enter variants, so Claude Code (Ink) can't
+      // distinguish them. We use tmux send-keys -H to send a line feed byte (0x0a)
+      // which the inner application recognizes as "insert newline" vs carriage return.
+      if (ev.key === 'Enter' && (ev.shiftKey || ev.ctrlKey) && ev.type === 'keydown') {
+        if (this.activeSessionId) {
+          if (this._localEchoEnabled) {
+            const text = this._localEchoOverlay?.pendingText || '';
+            this._localEchoOverlay?.clear();
+            this._localEchoOverlay?.suppressBufferDetection();
+            this._flushedOffsets?.delete(this.activeSessionId);
+            this._flushedTexts?.delete(this.activeSessionId);
+            if (text) {
+              this._pendingInput += text;
+              flushInput();
+            }
+            setTimeout(() => {
+              fetch(`/api/sessions/${this.activeSessionId}/send-key`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: ev.ctrlKey ? 'C-Enter' : 'S-Enter' }),
+              });
+            }, text ? 80 : 0);
+          } else {
+            fetch(`/api/sessions/${this.activeSessionId}/send-key`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ key: ev.ctrlKey ? 'C-Enter' : 'S-Enter' }),
+            });
+          }
+        }
+        return false;
+      }
+
       return true;
     });
+
+    // Android virtual keyboard fix: catch non-composition input events.
+    // On Android Chrome, typing symbols (e.g., "/" from Gboard's symbol keyboard)
+    // sends keyCode 229 + input event WITHOUT compositionstart/end wrapping.
+    // The custom key handler above returns false for keyCode 229, telling xterm
+    // to ignore the keydown. This listener catches those orphaned input events.
+    {
+      const xtermTextarea = container.querySelector('.xterm-helper-textarea');
+      if (xtermTextarea && MobileDetection.isTouchDevice()) {
+        let composing = false;
+        xtermTextarea.addEventListener('compositionstart', () => { composing = true; });
+        xtermTextarea.addEventListener('compositionend', () => { composing = false; });
+        xtermTextarea.addEventListener('input', (e) => {
+          if (composing || e.isComposing) return;
+          if (e.inputType !== 'insertText' || !e.data) return;
+          const data = e.data;
+          Promise.resolve().then(() => {
+            const val = xtermTextarea.value;
+            if (!val || val.trim() === '') return;
+            this.terminal._core.coreService.triggerDataEvent(data, true);
+            xtermTextarea.value = '';
+          });
+        });
+      }
+    }
 
     // WebGL renderer for GPU-accelerated terminal rendering.
     // Previously caused "page unresponsive" crashes from synchronous GPU stalls,
