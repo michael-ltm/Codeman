@@ -869,6 +869,124 @@ class CodemanApp {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // Response Viewer — native-scroll panel for reading full Claude responses
+  // ═══════════════════════════════════════════════════════════════
+
+  /** Render markdown to sanitized HTML, falling back to plain text if marked.js unavailable */
+  _renderMarkdown(text) {
+    if (typeof marked !== 'undefined' && marked.parse) {
+      try {
+        return marked.parse(text, { breaks: true, gfm: true });
+      } catch { /* fall through */ }
+    }
+    // Fallback: escape HTML and preserve whitespace
+    const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `<pre style="white-space:pre-wrap;word-break:break-word">${escaped}</pre>`;
+  }
+
+  async toggleResponseViewer() {
+    const viewer = document.getElementById('responseViewer');
+    const backdrop = document.getElementById('responseViewerBackdrop');
+    if (!viewer) return;
+
+    const isOpen = viewer.classList.contains('visible');
+    if (isOpen) {
+      viewer.classList.remove('visible');
+      backdrop.classList.remove('visible');
+      return;
+    }
+
+    if (!this.activeSessionId) return;
+    try {
+      // Source 1: Transcript JSONL (best quality — clean structured text from Claude)
+      const res = await fetch(`/api/sessions/${this.activeSessionId}/last-response`);
+      const data = await res.json();
+      let lastResponse = data.text || '';
+
+      // Source 2: Terminal buffer fallback (strip ANSI codes)
+      if (!lastResponse) {
+        const termRes = await fetch(`/api/sessions/${this.activeSessionId}/terminal`);
+        const termData = await termRes.json();
+        if (termData.terminalBuffer) {
+          lastResponse = termData.terminalBuffer
+            .replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, '')
+            .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+            .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+            .replace(/\x1b[()][A-Z0-9]/g, '')
+            .replace(/\x1b[>=<]/g, '')
+            .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
+            .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+            .replace(/[ \t]+$/gm, '')
+            .replace(/\n{4,}/g, '\n\n\n')
+            .trim();
+        }
+      }
+
+      const body = document.getElementById('responseViewerBody');
+      body.innerHTML = this._renderMarkdown(lastResponse);
+
+      // Reset state for fresh open
+      const title = document.getElementById('responseViewerTitle');
+      const moreBtn = document.getElementById('responseViewerMore');
+      if (title) title.textContent = 'Last Response';
+      if (moreBtn) { moreBtn.style.display = ''; moreBtn.textContent = 'More'; }
+
+      viewer.classList.add('visible');
+      backdrop.classList.add('visible');
+      body.scrollTop = 0;
+    } catch (err) {
+      console.error('Failed to load response:', err);
+    }
+  }
+
+  async loadFullContext() {
+    if (!this.activeSessionId) return;
+    const moreBtn = document.getElementById('responseViewerMore');
+    if (moreBtn) moreBtn.textContent = '...';
+    try {
+      const res = await fetch(`/api/sessions/${this.activeSessionId}/last-response?context=full`);
+      const data = await res.json();
+      const messages = data.messages || [];
+      const body = document.getElementById('responseViewerBody');
+      const title = document.getElementById('responseViewerTitle');
+      if (!body) return;
+
+      if (messages.length === 0) {
+        body.textContent = 'No conversation history available';
+        return;
+      }
+
+      // Render conversation thread
+      body.innerHTML = '';
+      for (const msg of messages) {
+        const div = document.createElement('div');
+        div.className = 'rv-message';
+
+        const role = document.createElement('div');
+        role.className = 'rv-role ' + (msg.role === 'user' ? 'rv-role-user' : 'rv-role-assistant');
+        role.textContent = msg.role === 'user' ? 'You' : 'Claude';
+        div.appendChild(role);
+
+        const text = document.createElement('div');
+        text.className = 'rv-text';
+        text.innerHTML = this._renderMarkdown(msg.text);
+        div.appendChild(text);
+
+        body.appendChild(div);
+      }
+
+      if (title) title.textContent = `Conversation (${messages.length} messages)`;
+      if (moreBtn) moreBtn.style.display = 'none';
+      // Scroll to bottom (latest message)
+      body.scrollTop = body.scrollHeight;
+    } catch (err) {
+      console.error('Failed to load context:', err);
+    } finally {
+      if (moreBtn) moreBtn.textContent = 'More';
+    }
+  }
+
   async _onSessionNeedsRefresh() {
     // Server sends this after SSE backpressure clears — terminal data was dropped,
     // so reload the buffer to recover from any display corruption.

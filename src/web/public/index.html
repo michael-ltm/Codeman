@@ -26,6 +26,7 @@
   <!-- WebGL addon lazy-loaded by app.js on desktop only (skipped on mobile, saving 244KB) -->
   <script defer src="vendor/xterm-addon-unicode11.min.js"></script>
   <script defer src="vendor/xterm-zerolag-input.js"></script>
+  <script defer src="vendor/marked.min.js"></script>
   <!-- Synchronous mobile detection — runs before first paint to prevent panel flash -->
   <script>if(window.innerWidth<768||(('ontouchstart' in window||navigator.maxTouchPoints>0)&&window.innerWidth<1024))document.documentElement.classList.add('mobile-init');</script>
   <!-- Inline critical CSS for instant skeleton paint (before styles.css loads) -->
@@ -92,6 +93,7 @@
             <span class="stat-value" id="statMem">--</span>
           </div>
         </div>
+        <button class="btn-icon-header btn-response-viewer-header" onclick="app.toggleResponseViewer()" title="View last response" aria-label="View last response"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
         <button class="btn-icon-header btn-notifications" onclick="app.toggleNotifications()" title="Notifications" aria-label="Toggle notifications">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           <span class="notification-badge" id="notifBadge" style="display:none;">0</span>
@@ -330,6 +332,19 @@
         <div class="file-preview-footer" id="filePreviewFooter"></div>
       </div>
     </div>
+
+    <!-- Response Viewer (mobile: native-scroll overlay for reading full Claude responses) -->
+    <div class="response-viewer" id="responseViewer">
+      <div class="response-viewer-header">
+        <span id="responseViewerTitle">Last Response</span>
+        <div class="response-viewer-actions">
+          <button class="response-viewer-more" id="responseViewerMore" onclick="app.loadFullContext()">More</button>
+          <button class="response-viewer-close" onclick="app.toggleResponseViewer()">&times;</button>
+        </div>
+      </div>
+      <div class="response-viewer-body" id="responseViewerBody"></div>
+    </div>
+    <div class="response-viewer-backdrop" id="responseViewerBackdrop" onclick="app.toggleResponseViewer()"></div>
 
     <!-- Bottom Toolbar -->
     <footer class="toolbar">
