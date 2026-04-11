@@ -1,5 +1,11 @@
 # aicodeman
 
+## 0.5.12
+
+### Patch Changes
+
+- Fix quick-start to resolve linked cases before codeman-cases fallback. `/api/quick-start` was always resolving `caseName` against `CASES_DIR`, ignoring entries in `~/.codeman/linked-cases.json`. Sessions started via quick-start now correctly honour linked external project directories, consistent with regular case routes.
+
 ## 0.5.11
 
 ### Patch Changes
