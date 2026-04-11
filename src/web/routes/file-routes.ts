@@ -293,7 +293,9 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort): void
 
       const content = await fs.readFile(resolvedPath);
       if (download === 'true') {
-        const basename = filePath!.split('/').pop() || 'download';
+        const rawBasename = filePath!.split('/').pop() || 'download';
+        // Sanitize filename for Content-Disposition header (prevent header injection)
+        const basename = rawBasename.replace(/["\\\r\n]/g, '_');
         reply.raw.writeHead(200, {
           'Content-Type': mimeTypes[ext] || 'application/octet-stream',
           'Content-Disposition': `attachment; filename="${basename}"`,

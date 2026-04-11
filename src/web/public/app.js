@@ -898,11 +898,40 @@ class CodemanApp {
   // Response Viewer — native-scroll panel for reading full Claude responses
   // ═══════════════════════════════════════════════════════════════
 
+  /** Strip dangerous elements and attributes from HTML (XSS prevention) */
+  _sanitizeHtml(html) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    const frag = tpl.content;
+    // Remove dangerous elements
+    for (const el of frag.querySelectorAll('script, iframe, object, embed, form, base, meta, link, style')) {
+      el.remove();
+    }
+    // Strip dangerous attributes from all elements
+    for (const el of frag.querySelectorAll('*')) {
+      for (const attr of [...el.attributes]) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith('on')) {
+          el.removeAttribute(attr.name);
+        } else if (['href', 'src', 'action', 'xlink:href', 'formaction'].includes(name)) {
+          const val = attr.value.replace(/\s/g, '').toLowerCase();
+          if (val.startsWith('javascript:') || val.startsWith('vbscript:') || val.startsWith('data:text/html')) {
+            el.removeAttribute(attr.name);
+          }
+        }
+      }
+    }
+    // Serialize back via a container
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    return div.innerHTML;
+  }
+
   /** Render markdown to sanitized HTML, falling back to plain text if marked.js unavailable */
   _renderMarkdown(text) {
     if (typeof marked !== 'undefined' && marked.parse) {
       try {
-        return marked.parse(text, { breaks: true, gfm: true });
+        return this._sanitizeHtml(marked.parse(text, { breaks: true, gfm: true }));
       } catch { /* fall through */ }
     }
     // Fallback: escape HTML and preserve whitespace

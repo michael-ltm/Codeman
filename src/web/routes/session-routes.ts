@@ -7,6 +7,7 @@
 import { FastifyInstance } from 'fastify';
 import { join, dirname } from 'node:path';
 import { existsSync, statSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import {
   ApiErrorCode,
@@ -545,13 +546,12 @@ export function registerSessionRoutes(
     }
 
     const session = findSessionOrFail(ctx, id);
-    const muxName = (session as any)._muxSession?.muxName;
+    const muxName = session.muxName;
     if (!muxName) {
       return createErrorResponse(ApiErrorCode.INVALID_INPUT, 'No tmux session');
     }
 
     try {
-      const { execFile } = await import('child_process');
       await new Promise<void>((resolve, reject) => {
         execFile('tmux', ['send-keys', '-H', '-t', muxName, ...hex], { timeout: 5000 }, (err) => {
           if (err) reject(err);

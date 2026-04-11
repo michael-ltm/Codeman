@@ -530,6 +530,11 @@ export class Session extends EventEmitter {
     return this._claudeSessionId;
   }
 
+  /** The tmux session name, if the session is running inside a mux */
+  get muxName(): string | null {
+    return this._muxSession?.muxName ?? null;
+  }
+
   get totalCost(): number {
     return this._totalCost;
   }

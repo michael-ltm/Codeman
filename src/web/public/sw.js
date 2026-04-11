@@ -72,7 +72,9 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// --- Fetch: network-first for API/navigation, cache-first for static ---
+// --- Fetch: network-first with cache fallback ---
+// Network-first ensures deploys take effect immediately when online.
+// Cache is only used when the network is unavailable (offline/flaky).
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
@@ -84,18 +86,15 @@ self.addEventListener('fetch', (event) => {
   if (request.url.includes('/api/')) return;
 
   event.respondWith(
-    caches.match(request).then((cached) => {
-      // Return cache immediately, refresh in background (stale-while-revalidate)
-      const fetchPromise = fetch(request).then((response) => {
+    fetch(request)
+      .then((response) => {
         if (response && response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         }
         return response;
-      }).catch(() => cached);
-
-      return cached || fetchPromise;
-    })
+      })
+      .catch(() => caches.match(request))
   );
 });
 
