@@ -3246,4 +3246,68 @@ Object.assign(CodemanApp.prototype, {
       }
     }
   },
+
+  // ─── Clipboard ──────────────────────────────────────────────────────────────
+
+  async _onClipboardWrite(data) {
+    const text = data?.text;
+    if (typeof text !== 'string') return;
+    try {
+      await navigator.clipboard.writeText(text);
+      this.showToast(`Copied to clipboard (${text.length} chars)`, 'success');
+    } catch {
+      this._showClipboardFallback(text);
+    }
+  },
+
+  _showClipboardFallback(text) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:flex;align-items:center;justify-content:center';
+
+    const modal = document.createElement('div');
+    modal.style.cssText = 'background:#1e1e2e;border:1px solid #444;border-radius:8px;padding:16px;max-width:600px;width:90%;max-height:60vh;display:flex;flex-direction:column;gap:12px';
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center';
+    const title = document.createElement('span');
+    title.style.cssText = 'color:#cdd6f4;font-weight:600';
+    title.textContent = 'Clipboard (browser blocked auto-copy)';
+    const closeBtn = document.createElement('button');
+    closeBtn.style.cssText = 'background:none;border:none;color:#cdd6f4;font-size:18px;cursor:pointer';
+    closeBtn.textContent = '\u00d7';
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    const textarea = document.createElement('textarea');
+    textarea.readOnly = true;
+    textarea.style.cssText = 'background:#181825;color:#cdd6f4;border:1px solid #555;border-radius:4px;padding:8px;font-family:monospace;font-size:13px;resize:none;height:200px;width:100%';
+    textarea.value = text;
+
+    const copyBtn = document.createElement('button');
+    copyBtn.style.cssText = 'background:#89b4fa;color:#1e1e2e;border:none;border-radius:4px;padding:8px 16px;cursor:pointer;font-weight:600';
+    copyBtn.textContent = 'Copy to Clipboard';
+
+    modal.appendChild(header);
+    modal.appendChild(textarea);
+    modal.appendChild(copyBtn);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    copyBtn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        this.showToast('Copied to clipboard', 'success');
+        overlay.remove();
+      } catch {
+        textarea.select();
+        document.execCommand('copy');
+        this.showToast('Copied (fallback)', 'success');
+        overlay.remove();
+      }
+    };
+
+    const close = () => overlay.remove();
+    closeBtn.onclick = close;
+    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  },
 });

@@ -319,6 +319,11 @@ export const OrchestratorCompleted = 'orchestrator:completed' as const;
 /** Orchestrator error. */
 export const OrchestratorError = 'orchestrator:error' as const;
 
+// ─── Clipboard ──────────────────────────────────────────────────────────────
+
+/** Clipboard content pushed to browser. */
+export const ClipboardWrite = 'clipboard:write' as const;
+
 // ─── Cases ───────────────────────────────────────────────────────────────────
 
 /** New case directory created. */
@@ -485,6 +490,9 @@ export const SseEvent = {
   OrchestratorTaskFailed,
   OrchestratorCompleted,
   OrchestratorError,
+
+  // Clipboard
+  ClipboardWrite,
 
   // Cases
   CaseCreated,

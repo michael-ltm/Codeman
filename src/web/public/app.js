@@ -249,6 +249,9 @@ const _SSE_HANDLER_MAP = [
   [SSE_EVENTS.ORCHESTRATOR_TASK_FAILED, '_onOrchestratorTaskFailed'],
   [SSE_EVENTS.ORCHESTRATOR_COMPLETED, '_onOrchestratorCompleted'],
   [SSE_EVENTS.ORCHESTRATOR_ERROR, '_onOrchestratorError'],
+
+  // Clipboard
+  [SSE_EVENTS.CLIPBOARD_WRITE, '_onClipboardWrite'],
 ];
 
 

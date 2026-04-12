@@ -292,6 +292,9 @@ const SSE_EVENTS = {
   ORCHESTRATOR_COMPLETED: 'orchestrator:completed',
   ORCHESTRATOR_ERROR: 'orchestrator:error',
 
+  // Clipboard
+  CLIPBOARD_WRITE: 'clipboard:write',
+
   // Cases
   CASE_CREATED: 'case:created',
   CASE_LINKED: 'case:linked',
