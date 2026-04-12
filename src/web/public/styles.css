@@ -258,15 +258,16 @@ body {
 }
 
 .session-tab.active {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: var(--glass-border);
-  color: var(--text);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: rgba(34, 197, 94, 0.15) !important;
+  border: 2px solid #00FF66 !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 /* Tab switch feedback: bright green glow on the newly-active tab */
 .session-tab.tab-glow {
-  animation: tab-glow 0.35s ease-out forwards;
+  animation: tab-glow 0.35s ease-out;
 }
 
 @keyframes tab-glow {
@@ -304,13 +305,36 @@ body {
 .session-tab[data-color="pink"] { border-left: 3px solid var(--session-pink); }
 
 /* Active tabs with color get subtle background tint */
-.session-tab.active[data-color="red"] { background: rgba(239, 68, 68, 0.1); }
-.session-tab.active[data-color="orange"] { background: rgba(249, 115, 22, 0.1); }
-.session-tab.active[data-color="yellow"] { background: rgba(234, 179, 8, 0.1); }
-.session-tab.active[data-color="green"] { background: rgba(34, 197, 94, 0.1); }
-.session-tab.active[data-color="blue"] { background: rgba(59, 130, 246, 0.1); }
-.session-tab.active[data-color="purple"] { background: rgba(168, 85, 247, 0.1); }
-.session-tab.active[data-color="pink"] { background: rgba(236, 72, 153, 0.1); }
+.session-tab.active[data-color="red"] { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.5); box-shadow: 0 0 10px rgba(239, 68, 68, 0.3); }
+.session-tab.active[data-color="orange"] { background: rgba(249, 115, 22, 0.15); border-color: rgba(249, 115, 22, 0.5); box-shadow: 0 0 10px rgba(249, 115, 22, 0.3); }
+.session-tab.active[data-color="yellow"] { background: rgba(234, 179, 8, 0.15); border-color: rgba(234, 179, 8, 0.5); box-shadow: 0 0 10px rgba(234, 179, 8, 0.3); }
+.session-tab.active[data-color="green"] { background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.5); box-shadow: 0 0 10px rgba(34, 197, 94, 0.3); }
+.session-tab.active[data-color="blue"] { background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.5); box-shadow: 0 0 10px rgba(59, 130, 246, 0.3); }
+.session-tab.active[data-color="purple"] { background: rgba(168, 85, 247, 0.15); border-color: rgba(168, 85, 247, 0.5); box-shadow: 0 0 10px rgba(168, 85, 247, 0.3); }
+.session-tab.active[data-color="pink"] { background: rgba(236, 72, 153, 0.15); border-color: rgba(236, 72, 153, 0.5); box-shadow: 0 0 10px rgba(236, 72, 153, 0.3); }
+
+/* Tab number indicator (Alt+N shortcut hint) */
+.session-tab .tab-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.6rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  font-family: monospace;
+}
+
+.session-tab.active .tab-number {
+  background: rgba(0, 255, 102, 0.2) !important;
+  border-color: rgba(0, 255, 102, 0.5) !important;
+  color: #00FF66 !important;
+}
 
 .session-tab .tab-info {
   display: flex;

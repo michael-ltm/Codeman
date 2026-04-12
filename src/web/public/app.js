@@ -1757,6 +1757,17 @@ class CodemanApp {
         else if (wantIdle && !hasIdle) { tab.classList.add('tab-alert-idle'); tab.classList.remove('tab-alert-action'); }
         else if (!alertType && (hasAction || hasIdle)) { tab.classList.remove('tab-alert-action', 'tab-alert-idle'); }
 
+        // Inject tab-number badge if missing (added after initial render)
+        if (!tab.querySelector('.tab-number')) {
+          const idx = this.sessionOrder.indexOf(id);
+          if (idx >= 0 && idx < 9) {
+            const numSpan = document.createElement('span');
+            numSpan.className = 'tab-number';
+            numSpan.textContent = String(idx + 1);
+            tab.insertBefore(numSpan, tab.firstChild);
+          }
+        }
+
         // Update status indicator
         const statusEl = tab.querySelector('.tab-status');
         if (statusEl && !statusEl.classList.contains(status)) {
@@ -1849,6 +1860,7 @@ class CodemanApp {
       // Reorder to put active tab first
       tabOrder = [this.activeSessionId, ...this.sessionOrder.filter(id => id !== this.activeSessionId)];
     }
+    let _tabIdx = 0;
     for (const id of tabOrder) {
       const session = this.sessions.get(id);
       if (!session) continue; // Skip if session was removed
@@ -1875,6 +1887,7 @@ class CodemanApp {
 
       const endedAttr = session._ended ? ' data-ended="1"' : '';
       parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}" data-id="${id}" data-color="${color}"${endedAttr} onclick="app.selectSession('${escapeHtml(id)}')" oncontextmenu="event.preventDefault(); app.startInlineRename('${escapeHtml(id)}')" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-label="${escapeHtml(name)} session" ${session.workingDir ? `title="${escapeHtml(session.workingDir)}"` : ''}>
+          ${_tabIdx < 9 ? '<span class="tab-number">' + (_tabIdx + 1) + '</span>' : ''}
           <span class="tab-status ${status}" aria-hidden="true"></span>
           <span class="tab-info">
             <span class="tab-name-row">
@@ -1888,6 +1901,7 @@ class CodemanApp {
           <span class="tab-gear" onclick="event.stopPropagation(); app.openSessionOptions('${escapeHtml(id)}')" title="Session options" aria-label="Session options" tabindex="0">&#x2699;</span>
           <span class="tab-close" onclick="event.stopPropagation(); app.requestCloseSession('${escapeHtml(id)}')" title="Close session" aria-label="Close session" tabindex="0">&times;</span>
         </div>`);
+      _tabIdx++;
     }
 
     container.innerHTML = parts.join('');
