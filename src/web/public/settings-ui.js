@@ -334,6 +334,7 @@ Object.assign(CodemanApp.prototype, {
     // Claude Permissions settings
     document.getElementById('appSettingsAgentTeams').checked = settings.agentTeamsEnabled ?? false;
     document.getElementById('appSettingsOpusContext1m').checked = settings.opusContext1mEnabled ?? false;
+    document.getElementById('appSettingsThinkingEffort').value = settings.thinkingEffort ?? '';
     // CPU Priority settings
     const niceSettings = settings.nice || {};
     document.getElementById('appSettingsNiceEnabled').checked = niceSettings.enabled ?? false;
@@ -1134,6 +1135,7 @@ Object.assign(CodemanApp.prototype, {
       // Claude Permissions settings
       agentTeamsEnabled: document.getElementById('appSettingsAgentTeams').checked,
       opusContext1mEnabled: document.getElementById('appSettingsOpusContext1m').checked,
+      thinkingEffort: document.getElementById('appSettingsThinkingEffort').value,
       // CPU Priority settings
       nice: {
         enabled: document.getElementById('appSettingsNiceEnabled').checked,

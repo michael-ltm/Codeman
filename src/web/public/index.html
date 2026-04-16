@@ -1095,6 +1095,17 @@
               </label>
               <span class="form-hint">Use 1M token context window (model: opus[1m]) for all new sessions</span>
             </div>
+            <div class="form-row">
+              <label>Thinking Effort</label>
+              <select id="appSettingsThinkingEffort" class="form-select">
+                <option value="">Default</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="max">Max</option>
+              </select>
+              <span class="form-hint">Set CLAUDE_CODE_EFFORT_LEVEL for all new sessions (default = no override)</span>
+            </div>
             <!-- Nice Priority Section -->
             <div class="form-section-header">Nice Priority</div>
             <div class="form-row form-row-switch">
