@@ -401,9 +401,12 @@ Single-digit selection (1-9), color-coded status, token counts, auto-refresh. De
 | `Ctrl+Enter` | Quick-start session |
 | `Ctrl+W` | Close session |
 | `Ctrl+Tab` | Next session |
+| `Alt+1`–`Alt+9` | Switch to tab N |
+| `Ctrl+Shift+{` / `Ctrl+Shift+}` | Move active tab left / right |
 | `Ctrl+K` | Kill all sessions |
 | `Ctrl+L` | Clear terminal |
 | `Ctrl+Shift+R` | Restore terminal size |
+| `Ctrl+Shift+V` | Toggle voice input |
 | `Ctrl/Cmd +/-` | Font size |
 | `Escape` | Close panels |
 
@@ -446,6 +449,7 @@ Single-digit selection (1-9), color-coded status, token counts, auto-refresh. De
 | `GET` | `/api/events` | SSE stream |
 | `GET` | `/api/status` | Full app state |
 | `POST` | `/api/hook-event` | Hook callbacks |
+| `POST` | `/api/clipboard` | Push text to all connected browsers (`{text}`) |
 | `GET` | `/api/sessions/:id/run-summary` | Timeline + stats |
 
 ---
