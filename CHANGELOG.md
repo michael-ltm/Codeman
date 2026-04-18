@@ -1,5 +1,15 @@
 # aicodeman
 
+## 0.6.0
+
+### Minor Changes
+
+- Community contributions from @aakhter:
+  - **feat (#66): Tab reorder shortcuts** — `Ctrl+Shift+{` and `Ctrl+Shift+}` move the active session tab left/right, matching WezTerm convention. Order persists across reloads via `saveSessionOrder()`.
+  - **feat (#67): Active tab visibility + Alt+N badges** — active tab now has a bright green border with color-matched glow, and the first 9 tabs display number badges hinting at the `Alt+N` switch shortcut. Badges update on reorder/rerender.
+  - **feat (#68): Clipboard API** — new `POST /api/clipboard` accepting `{text}` broadcasts a `clipboard:write` SSE event; connected browsers attempt `navigator.clipboard.writeText()` with a manual-copy modal fallback when the page isn't focused. Auth-protected via the standard middleware. Useful for pushing snippets from remote sessions to the user's local clipboard.
+  - **fix (#65): Android Shift+key double character** — pressing `Shift+A` on attached Android keyboards no longer produces "AA". Tracks xterm-handled keydown timestamps and skips the orphaned-input listener for 50ms after a real keydown, while still catching Gboard symbol-keyboard inputs (keyCode 229).
+
 ## 0.5.13
 
 ### Patch Changes
