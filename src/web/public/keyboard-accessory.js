@@ -92,6 +92,7 @@ const KeyboardAccessoryBar = {
       </button>
       <button class="accessory-btn" data-action="tab" title="Tab">Tab</button>
       <button class="accessory-btn" data-action="shift-tab" title="Shift+Tab">⇧Tab</button>
+      <button class="accessory-btn" data-action="effort-max" title="/effort max">Max</button>
       <button class="accessory-btn" data-action="ctrl-o" title="Ctrl+O">⌃O</button>
       <button class="accessory-btn" data-action="opt-enter" title="Option+Enter (newline)">⌥Enter</button>
       <button class="accessory-btn" data-action="esc" title="Escape">Esc</button>
@@ -125,7 +126,7 @@ const KeyboardAccessoryBar = {
       this.handleAction(action, btn);
 
       // Refocus terminal so keyboard stays open (tap blurs terminal → keyboard dismisses → toolbar shifts)
-      const refocusActions = new Set(['scroll-up', 'scroll-down', 'arrow-left', 'arrow-right', 'tab', 'shift-tab', 'ctrl-o', 'opt-enter', 'esc']);
+      const refocusActions = new Set(['scroll-up', 'scroll-down', 'arrow-left', 'arrow-right', 'tab', 'shift-tab', 'ctrl-o', 'opt-enter', 'esc', 'effort-max']);
       if (refocusActions.has(action) ||
           ((action === 'clear' || action === 'compact') && this._confirmAction)) {
         if (typeof app !== 'undefined' && app.terminal) {
@@ -183,6 +184,9 @@ const KeyboardAccessoryBar = {
         break;
       case 'ctrl-o':
         this.sendKey('\x0f');
+        break;
+      case 'effort-max':
+        this.sendCommand('/effort max');
         break;
       case 'init':
         this.sendCommand('/init');
