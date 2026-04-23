@@ -24,7 +24,7 @@ const YAML_LINE_PATTERN = /^([a-zA-Z_-]+):\s*"?([^"\n]+)"?\s*$/gm;
 /**
  * Ralph Loop configuration from .claude/ralph-loop.local.md
  */
-export interface RalphLoopConfig {
+interface RalphLoopConfig {
   enabled: boolean;
   iteration: number;
   maxIterations: number | null;

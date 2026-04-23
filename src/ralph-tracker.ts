@@ -19,7 +19,6 @@
  * Key exports:
  * - `RalphTracker` class — main tracker, extends EventEmitter
  * - `RalphTrackerEvents` interface — typed event map
- * - Re-exports: `EnhancedPlanTask`, `CheckpointReview` from ralph-plan-tracker
  *
  * Key methods: `processData(data)` — feed terminal output, `getState()`,
  * `getTodos()`, `getCompletionHistory()`, `getPlanTasks()`, `reset()`
@@ -65,9 +64,6 @@ import { RalphFixPlanWatcher, generateFixPlanMarkdown, importFixPlanMarkdown } f
 import { RalphStallDetector } from './ralph-stall-detector.js';
 import { RalphStatusParser } from './ralph-status-parser.js';
 import { STALE_DATA_MAX_AGE_MS, INACTIVITY_TIMEOUT_MS } from './config/server-timing.js';
-
-// Re-export sub-module types for backward compatibility
-export type { EnhancedPlanTask, CheckpointReview } from './ralph-plan-tracker.js';
 
 // ========== Configuration Constants ==========
 // Note: MAX_TODOS_PER_SESSION and MAX_LINE_BUFFER_SIZE are imported from config modules
@@ -390,32 +386,6 @@ const P2_PRIORITY_PATTERNS = [
  * @event circuitBreakerUpdate - Fired when circuit breaker state changes
  * @event exitGateMet - Fired when dual-condition exit gate is met
  */
-export interface RalphTrackerEvents {
-  /** Emitted when loop state changes */
-  loopUpdate: (state: RalphTrackerState) => void;
-  /** Emitted when todo list is modified */
-  todoUpdate: (todos: RalphTodoItem[]) => void;
-  /** Emitted when completion phrase detected (loop finished) */
-  completionDetected: (phrase: string) => void;
-  /** Emitted when tracker auto-enables from disabled state */
-  enabled: () => void;
-  /** Emitted when a RALPH_STATUS block is parsed */
-  statusBlockDetected: (block: RalphStatusBlock) => void;
-  /** Emitted when circuit breaker state changes */
-  circuitBreakerUpdate: (status: CircuitBreakerStatus) => void;
-  /** Emitted when dual-condition exit gate is met (completion indicators >= 2 AND EXIT_SIGNAL: true) */
-  exitGateMet: (data: { completionIndicators: number; exitSignal: boolean }) => void;
-  /** Emitted when iteration count hasn't changed for an extended period (stall warning) */
-  iterationStallWarning: (data: { iteration: number; stallDurationMs: number }) => void;
-  /** Emitted when iteration count hasn't changed for critical period (stall critical) */
-  iterationStallCritical: (data: { iteration: number; stallDurationMs: number }) => void;
-  /** Emitted when a common/risky completion phrase is detected (P1-002) */
-  phraseValidationWarning: (data: {
-    phrase: string;
-    reason: 'common' | 'short' | 'numeric';
-    suggestedPhrase: string;
-  }) => void;
-}
 
 /**
  * RalphTracker - Parses terminal output to detect Ralph Wiggum loops and todos

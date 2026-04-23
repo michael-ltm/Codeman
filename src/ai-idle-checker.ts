@@ -41,7 +41,7 @@ import {
 
 // ========== Types ==========
 
-export type AiIdleCheckConfig = AiCheckerConfigBase;
+type AiIdleCheckConfig = AiCheckerConfigBase;
 
 export type AiCheckVerdict = 'IDLE' | 'WORKING' | 'ERROR';
 

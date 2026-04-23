@@ -17,11 +17,6 @@ import { KeyedDebouncer } from './utils/index.js';
 
 // ========== Types ==========
 
-export interface ImageWatcherEvents {
-  'image:detected': (event: ImageDetectedEvent) => void;
-  'image:error': (error: Error, sessionId?: string) => void;
-}
-
 // ========== Constants ==========
 
 /** Supported image file extensions (lowercase) */

@@ -153,16 +153,6 @@ export interface BackgroundTask {
  * @event taskCompleted - Task finished successfully
  * @event taskFailed - Task finished with error
  */
-export interface TaskTrackerEvents {
-  /** New task created */
-  taskCreated: (task: BackgroundTask) => void;
-  /** Task state updated */
-  taskUpdated: (task: BackgroundTask) => void;
-  /** Task completed successfully */
-  taskCompleted: (task: BackgroundTask) => void;
-  /** Task failed with error */
-  taskFailed: (task: BackgroundTask, error: string) => void;
-}
 
 /**
  * TaskTracker - Detects and tracks background tasks in Claude Code sessions.

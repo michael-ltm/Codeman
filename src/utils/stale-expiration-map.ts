@@ -22,7 +22,7 @@ interface TimedEntry<V> {
 /**
  * Configuration options for StaleExpirationMap.
  */
-export interface StaleExpirationMapOptions<K, V> {
+interface StaleExpirationMapOptions<K, V> {
   /** Time-to-live in milliseconds before entries expire */
   ttlMs: number;
   /** How often to run cleanup (default: ttlMs / 2) */

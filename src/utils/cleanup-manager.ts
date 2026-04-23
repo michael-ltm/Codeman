@@ -14,7 +14,7 @@ import type { Disposable, CleanupRegistration, CleanupResourceType } from '../ty
 /**
  * Options for setTimeout/setInterval with automatic cleanup.
  */
-export interface TimerOptions {
+interface TimerOptions {
   /** Human-readable description for debugging */
   description?: string;
 }

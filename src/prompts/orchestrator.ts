@@ -58,22 +58,6 @@ Each teammate should focus on their assigned task area. Monitor their progress.
 When ALL tasks are complete and you've verified the results, output: <promise>{COMPLETION_PHRASE}</promise>`;
 
 /**
- * Verification prompt — asks Claude to verify phase completion.
- *
- * Placeholders:
- * - {PHASE_NAME}: Phase name
- * - {CRITERIA}: Numbered verification criteria
- * - {PASS_PHRASE}: Phrase to output on success
- * - {FAIL_PHRASE}: Phrase to output on failure
- */
-export const VERIFICATION_PROMPT = `Review the work done in "{PHASE_NAME}". Check these criteria:
-
-{CRITERIA}
-
-If ALL criteria are met, respond with: {PASS_PHRASE}
-If ANY criteria fail, respond with: {FAIL_PHRASE} and explain what failed.`;
-
-/**
  * Replan prompt — gives failure context and asks for recovery.
  *
  * Placeholders:

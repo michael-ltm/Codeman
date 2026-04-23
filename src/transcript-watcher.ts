@@ -20,7 +20,7 @@ import { createInterface } from 'node:readline';
 /**
  * Parsed transcript entry from the JSONL file
  */
-export interface TranscriptEntry {
+interface TranscriptEntry {
   type: 'user' | 'assistant' | 'system' | 'result';
   timestamp: string;
   message?: {
@@ -35,7 +35,7 @@ export interface TranscriptEntry {
   };
 }
 
-export interface TranscriptContentBlock {
+interface TranscriptContentBlock {
   type: 'text' | 'tool_use' | 'tool_result';
   text?: string;
   name?: string;
@@ -66,15 +66,6 @@ export interface TranscriptState {
   entryCount: number;
   /** Last update timestamp */
   lastUpdateAt: string | null;
-}
-
-export interface TranscriptWatcherEvents {
-  'transcript:update': (state: TranscriptState) => void;
-  'transcript:complete': (state: TranscriptState) => void;
-  'transcript:tool_start': (toolName: string) => void;
-  'transcript:tool_end': (toolName: string, isError: boolean) => void;
-  'transcript:error': (error: Error) => void;
-  'transcript:plan_mode': () => void;
 }
 
 // ========== Constants ==========
@@ -435,7 +426,3 @@ export class TranscriptWatcher extends EventEmitter {
     }
   }
 }
-
-// ========== Singleton Export ==========
-
-export const transcriptWatcher = new TranscriptWatcher();

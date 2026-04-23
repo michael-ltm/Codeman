@@ -90,7 +90,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 - **Single-line prompts only** — `writeViaMux()` sends text+Enter separately; multi-line breaks Ink
 - **ESM only** — Never `require()`, use `await import()`. `tsx` masks CJS/ESM issues in dev but production breaks
 - **Package ≠ product name** — npm: `aicodeman`, product: **Codeman**. Release renames tags accordingly
-- **Global regex `lastIndex`** — Use `createAnsiPatternFull/Simple()` factories, not shared `g`-flag patterns in loops
+- **Global regex `lastIndex`** — Shared `g`-flag patterns in loops must reset `lastIndex = 0` first, or use the `execPattern()` helper in `utils/regex-patterns.ts` (resets automatically)
 
 **Import conventions**: Utils from `./utils`, types from `./types` (barrel), config from specific `./config/*` files.
 

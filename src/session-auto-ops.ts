@@ -93,7 +93,7 @@ const DEFAULT_AUTO_COMPACT_THRESHOLD = 110_000;
 /**
  * Callbacks required by SessionAutoOps to interact with the parent Session.
  */
-export interface AutoOpsCallbacks {
+interface AutoOpsCallbacks {
   /** Send a command via the terminal multiplexer */
   writeCommand: (command: string) => Promise<boolean>;
   /** Check if Claude is currently working */
@@ -109,12 +109,6 @@ export interface AutoOpsCallbacks {
 /**
  * Events emitted by SessionAutoOps.
  */
-export interface SessionAutoOpsEvents {
-  /** Auto-compact was triggered and the /compact command was sent */
-  autoCompact: (data: { tokens: number; threshold: number; prompt?: string }) => void;
-  /** Auto-clear was triggered and the /clear command was sent */
-  autoClear: (data: { tokens: number; threshold: number }) => void;
-}
 
 /**
  * Manages auto-compact and auto-clear automation for a Session.

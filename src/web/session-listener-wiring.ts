@@ -58,7 +58,7 @@ export interface SessionListenerRefs {
 }
 
 /** Dependencies injected by WebServer — keeps listener creation decoupled from server internals. */
-export interface SessionListenerDeps {
+interface SessionListenerDeps {
   broadcast(event: string, data: unknown): void;
   batchTerminalData(sessionId: string, data: string): void;
   batchTaskUpdate(sessionId: string, task: BackgroundTask): void;

@@ -41,24 +41,6 @@ export const ANSI_ESCAPE_PATTERN_SIMPLE = /\x1b\[[0-9;]*[A-Za-z]/g;
 export const TOKEN_PATTERN = /(\d+(?:\.\d+)?)\s*([kKmM])?\s*tokens/;
 
 /**
- * Creates a fresh copy of ANSI_ESCAPE_PATTERN_FULL.
- * Use when you need a pattern without shared lastIndex state.
- */
-export function createAnsiPatternFull(): RegExp {
-  // eslint-disable-next-line no-control-regex
-  return /\x1b(?:\[[0-9;?]*[A-Za-z]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[=>])/g;
-}
-
-/**
- * Creates a fresh copy of ANSI_ESCAPE_PATTERN_SIMPLE.
- * Use when you need a pattern without shared lastIndex state.
- */
-export function createAnsiPatternSimple(): RegExp {
-  // eslint-disable-next-line no-control-regex
-  return /\x1b\[[0-9;]*[A-Za-z]/g;
-}
-
-/**
  * Strips ANSI escape codes from text using the comprehensive pattern.
  * @param text - Text containing ANSI escape codes
  * @returns Text with ANSI codes removed

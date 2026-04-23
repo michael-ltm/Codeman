@@ -99,7 +99,7 @@ const LOG_FILE_MENTION_PATTERN = /([/~][^\s'"<>|;&\n]*(?:\.log|\.txt|\.out|\/log
 /**
  * Events emitted by BashToolParser.
  */
-export interface BashToolParserEvents {
+interface BashToolParserEvents {
   /** New Bash tool with file paths started */
   toolStart: [tool: ActiveBashTool];
   /** Bash tool completed */
@@ -111,7 +111,7 @@ export interface BashToolParserEvents {
 /**
  * Configuration options for BashToolParser.
  */
-export interface BashToolParserConfig {
+interface BashToolParserConfig {
   /** Session ID this parser belongs to */
   sessionId: string;
   /** Whether the parser is enabled (default: true) */

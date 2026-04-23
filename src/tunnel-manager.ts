@@ -33,7 +33,7 @@ import { getErrorMessage } from './types.js';
 
 // ========== Types ==========
 
-export interface TunnelStatus {
+interface TunnelStatus {
   running: boolean;
   url: string | null;
 }

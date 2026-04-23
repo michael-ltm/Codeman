@@ -154,63 +154,6 @@ export interface ClaudeMessage {
  * Event signatures emitted by the Session class.
  * Subscribe using `session.on('eventName', handler)`.
  */
-export interface SessionEvents {
-  /** Processed text output (ANSI stripped) */
-  output: (data: string) => void;
-  /** Parsed JSON message from Claude CLI */
-  message: (msg: ClaudeMessage) => void;
-  /** Error output from the session */
-  error: (data: string) => void;
-  /** Session process exited */
-  exit: (code: number | null) => void;
-  /** One-shot prompt completed with result and cost */
-  completion: (result: string, cost: number) => void;
-  /** Raw terminal data (includes ANSI codes) */
-  terminal: (data: string) => void;
-  /** Signal to clear terminal display (after mux attach) */
-  clearTerminal: () => void;
-  /** New background task started */
-  taskCreated: (task: BackgroundTask) => void;
-  /** Background task status changed */
-  taskUpdated: (task: BackgroundTask) => void;
-  /** Background task finished successfully */
-  taskCompleted: (task: BackgroundTask) => void;
-  /** Background task failed with error */
-  taskFailed: (task: BackgroundTask, error: string) => void;
-  /** Auto-clear triggered due to token threshold */
-  autoClear: (data: { tokens: number; threshold: number }) => void;
-  /** Auto-compact triggered due to token threshold */
-  autoCompact: (data: { tokens: number; threshold: number; prompt?: string }) => void;
-  /** Ralph loop state changed */
-  ralphLoopUpdate: (state: RalphTrackerState) => void;
-  /** Ralph todo list updated */
-  ralphTodoUpdate: (todos: RalphTodoItem[]) => void;
-  /** Ralph completion phrase detected */
-  ralphCompletionDetected: (phrase: string) => void;
-  /** RALPH_STATUS block detected */
-  ralphStatusBlockDetected: (block: import('./types.js').RalphStatusBlock) => void;
-  /** Circuit breaker state changed */
-  ralphCircuitBreakerUpdate: (status: import('./types.js').CircuitBreakerStatus) => void;
-  /** Dual-condition exit gate met */
-  ralphExitGateMet: (data: { completionIndicators: number; exitSignal: boolean }) => void;
-  /** Bash tool with file paths started */
-  bashToolStart: (tool: ActiveBashTool) => void;
-  /** Bash tool completed */
-  bashToolEnd: (tool: ActiveBashTool) => void;
-  /** Active Bash tools list updated */
-  bashToolsUpdate: (tools: ActiveBashTool[]) => void;
-  /** CLI info (version, model, account) updated */
-  cliInfoUpdated: (info: {
-    version: string | null;
-    model: string | null;
-    accountType: string | null;
-    latestVersion: string | null;
-  }) => void;
-}
-
-// SessionMode is imported from types.ts (single source of truth)
-// Re-export for backwards compatibility with any external consumers
-export type { SessionMode } from './types.js';
 
 /**
  * Core session class that wraps a PTY process running Claude CLI or a shell.

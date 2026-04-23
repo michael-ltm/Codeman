@@ -10,7 +10,7 @@
 /**
  * Configuration options for LRUMap.
  */
-export interface LRUMapOptions<K, V> {
+interface LRUMapOptions<K, V> {
   /** Maximum number of entries before eviction */
   maxSize: number;
   /** Optional callback when an entry is evicted */

@@ -17,14 +17,6 @@ import { getStore } from './state-store.js';
 /**
  * Events emitted by TaskQueue
  */
-export interface TaskQueueEvents {
-  /** Fired when a task is added to the queue */
-  taskAdded: (task: Task) => void;
-  /** Fired when a task is removed from the queue */
-  taskRemoved: (taskId: string) => void;
-  /** Fired when a task's state changes */
-  taskUpdated: (task: Task) => void;
-}
 
 /**
  * Priority queue for managing tasks with dependency support.

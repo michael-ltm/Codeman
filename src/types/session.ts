@@ -150,11 +150,3 @@ export interface SessionState {
 /**
  * Output captured from a session
  */
-export interface SessionOutput {
-  /** Standard output content */
-  stdout: string;
-  /** Standard error content */
-  stderr: string;
-  /** Exit code of the process, null if still running */
-  exitCode: number | null;
-}

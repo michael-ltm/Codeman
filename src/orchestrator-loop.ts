@@ -60,21 +60,6 @@ const POST_PHASE_DELAY_MS = 1000;
 // Events
 // ═══════════════════════════════════════════════════════════════
 
-export interface OrchestratorLoopEvents {
-  stateChanged: (state: OrchestratorState, prevState: OrchestratorState) => void;
-  planProgress: (phase: string, detail: string) => void;
-  planReady: (plan: OrchestratorPlan) => void;
-  phaseStarted: (phase: OrchestratorPhase) => void;
-  phaseCompleted: (phase: OrchestratorPhase) => void;
-  phaseFailed: (phase: OrchestratorPhase, reason: string) => void;
-  taskAssigned: (task: OrchestratorTask, sessionId: string) => void;
-  taskCompleted: (task: OrchestratorTask) => void;
-  taskFailed: (task: OrchestratorTask, error: string) => void;
-  verificationResult: (phase: OrchestratorPhase, result: VerificationResult) => void;
-  completed: (stats: OrchestratorStats) => void;
-  error: (error: Error) => void;
-}
-
 // ═══════════════════════════════════════════════════════════════
 // OrchestratorLoop
 // ═══════════════════════════════════════════════════════════════

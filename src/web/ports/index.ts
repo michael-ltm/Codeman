@@ -11,5 +11,5 @@ export type { EventPort } from './event-port.js';
 export type { RespawnPort } from './respawn-port.js';
 export type { ConfigPort } from './config-port.js';
 export type { InfraPort, ScheduledRun } from './infra-port.js';
-export type { AuthPort, AuthSessionRecord } from './auth-port.js';
+export type { AuthPort } from './auth-port.js';
 export type { OrchestratorPort } from './orchestrator-port.js';

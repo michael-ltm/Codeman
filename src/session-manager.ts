@@ -30,18 +30,6 @@ import { SessionState } from './types.js';
 /**
  * Events emitted by SessionManager
  */
-export interface SessionManagerEvents {
-  /** Fired when a new session starts successfully */
-  sessionStarted: (session: Session) => void;
-  /** Fired when a session stops (graceful or forced) */
-  sessionStopped: (sessionId: string) => void;
-  /** Fired when a session encounters an error */
-  sessionError: (sessionId: string, error: string) => void;
-  /** Fired when a session produces terminal output */
-  sessionOutput: (sessionId: string, output: string) => void;
-  /** Fired when a completion phrase is detected */
-  sessionCompletion: (sessionId: string, phrase: string) => void;
-}
 
 /**
  * Manages multiple Claude sessions with lifecycle coordination.

@@ -34,19 +34,11 @@ import { RalphLoopStatus, getErrorMessage } from './types.js';
 /**
  * Events emitted by RalphLoop
  */
-export interface RalphLoopEvents {
-  started: () => void;
-  stopped: () => void;
-  taskAssigned: (taskId: string, sessionId: string) => void;
-  taskCompleted: (taskId: string) => void;
-  taskFailed: (taskId: string, error: string) => void;
-  error: (error: Error) => void;
-}
 
 /**
  * Configuration options for RalphLoop
  */
-export interface RalphLoopOptions {
+interface RalphLoopOptions {
   /** How often to check for new tasks (default from config) */
   pollIntervalMs?: number;
   /** Minimum time to run before stopping (null = no minimum) */

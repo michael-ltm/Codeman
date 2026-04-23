@@ -15,7 +15,7 @@ import { getAugmentedPath } from './utils/index.js';
  * Build Claude CLI permission flags based on the configured mode.
  * Returns an array of args to pass to the CLI.
  */
-export function buildPermissionArgs(claudeMode: ClaudeMode, allowedTools?: string): string[] {
+function buildPermissionArgs(claudeMode: ClaudeMode, allowedTools?: string): string[] {
   switch (claudeMode) {
     case 'dangerously-skip-permissions':
       return ['--dangerously-skip-permissions'];

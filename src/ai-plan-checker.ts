@@ -40,13 +40,13 @@ import {
 
 // ========== Types ==========
 
-export type AiPlanCheckConfig = AiCheckerConfigBase;
+type AiPlanCheckConfig = AiCheckerConfigBase;
 
 export type AiPlanCheckVerdict = 'PLAN_MODE' | 'NOT_PLAN_MODE' | 'ERROR';
 
 export type AiPlanCheckResult = AiCheckerResultBase<AiPlanCheckVerdict>;
 
-export type AiPlanCheckState = AiCheckerStateBase<AiPlanCheckVerdict>;
+type AiPlanCheckState = AiCheckerStateBase<AiPlanCheckVerdict>;
 
 // ========== Constants ==========
 

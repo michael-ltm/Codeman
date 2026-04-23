@@ -27,7 +27,7 @@
  * - `RespawnController` class — state machine, extends EventEmitter
  * - `RespawnConfig` interface — all configuration options
  * - `RespawnState` type — union of all state machine states
- * - `DetectionStatus`, `ActiveTimerInfo`, `RespawnEvents` — status/event types
+ * - `DetectionStatus`, `ActiveTimerInfo` — status types
  *
  * Key methods: `start()`, `stop()`, `getStatus()`, `getConfig()`,
  * `getDetectionStatus()`, `getActiveTimers()`, `getAggregateMetrics()`,
@@ -46,8 +46,8 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { Session } from './session.js';
-import { AiIdleChecker, type AiCheckResult, type AiCheckState } from './ai-idle-checker.js';
-import { AiPlanChecker, type AiPlanCheckResult } from './ai-plan-checker.js';
+import { AiIdleChecker, type AiCheckState } from './ai-idle-checker.js';
+import { AiPlanChecker } from './ai-plan-checker.js';
 import type { TeamWatcher } from './team-watcher.js';
 import { BufferAccumulator, ANSI_ESCAPE_PATTERN_SIMPLE, assertNever, CleanupManager } from './utils/index.js';
 import { MAX_RESPAWN_BUFFER_SIZE, TRIM_RESPAWN_BUFFER_TO as RESPAWN_BUFFER_TRIM_SIZE } from './config/buffer-limits.js';
@@ -99,13 +99,13 @@ const PLAN_MODE_SELECTOR_PATTERN = /[❯>]\s*\d+\./;
  * Each layer provides a confidence signal that Claude has finished working.
  */
 /** Active timer info for UI display */
-export interface ActiveTimerInfo {
+interface ActiveTimerInfo {
   name: string;
   remainingMs: number;
   totalMs: number;
 }
 
-export interface DetectionStatus {
+interface DetectionStatus {
   /** Layer 0: Stop hook received (highest priority - definitive signal) */
   stopHookReceived: boolean;
   /** Timestamp when Stop hook was received */
@@ -488,68 +488,11 @@ export interface RespawnConfig {
  * @event error - Fired on errors
  * @event log - Fired for debug logging
  */
-/** Timer info for countdown display */
-export interface TimerInfo {
-  name: string;
-  durationMs: number;
-  endsAt: number;
-  reason?: string;
-}
-
 /** Action log entry for detailed UI feedback */
-export interface ActionLogEntry {
+interface ActionLogEntry {
   type: string;
   detail: string;
   timestamp: number;
-}
-
-export interface RespawnEvents {
-  /** State machine transition */
-  stateChanged: (state: RespawnState, prevState: RespawnState) => void;
-  /** New respawn cycle started */
-  respawnCycleStarted: (cycleNumber: number) => void;
-  /** Respawn cycle finished */
-  respawnCycleCompleted: (cycleNumber: number) => void;
-  /** Command sent to session */
-  stepSent: (step: string, input: string) => void;
-  /** Step completed (ready indicator detected) */
-  stepCompleted: (step: string) => void;
-  /** Detection status update for UI display */
-  detectionUpdate: (status: DetectionStatus) => void;
-  /** Auto-accept sent for plan mode approval */
-  autoAcceptSent: () => void;
-  /** AI idle check started */
-  aiCheckStarted: () => void;
-  /** AI idle check completed with verdict */
-  aiCheckCompleted: (result: AiCheckResult) => void;
-  /** AI idle check failed */
-  aiCheckFailed: (error: string) => void;
-  /** AI idle check cooldown state changed */
-  aiCheckCooldown: (active: boolean, endsAt: number | null) => void;
-  /** AI plan check started */
-  planCheckStarted: () => void;
-  /** AI plan check completed with verdict */
-  planCheckCompleted: (result: AiPlanCheckResult) => void;
-  /** AI plan check failed */
-  planCheckFailed: (error: string) => void;
-  /** Timer started for countdown display */
-  timerStarted: (timer: TimerInfo) => void;
-  /** Timer cancelled */
-  timerCancelled: (timerName: string, reason?: string) => void;
-  /** Timer completed */
-  timerCompleted: (timerName: string) => void;
-  /** Verbose action log for detailed UI feedback */
-  actionLog: (action: ActionLogEntry) => void;
-  /** Error occurred */
-  error: (error: Error) => void;
-  /** Debug log message */
-  log: (message: string) => void;
-  /** Stuck state warning emitted */
-  stuckStateWarning: (state: RespawnState, durationMs: number) => void;
-  /** Stuck state recovery triggered */
-  stuckStateRecovery: (state: RespawnState, durationMs: number, attempt: number) => void;
-  /** Respawn blocked by external signal */
-  respawnBlocked: (data: { reason: string; details: string }) => void;
 }
 
 /**

@@ -23,7 +23,7 @@ import {
 export const AUTH_COOKIE_NAME = 'codeman_session';
 
 /** State returned from registerAuthMiddleware for cleanup in server stop() */
-export interface AuthState {
+interface AuthState {
   authSessions: StaleExpirationMap<string, AuthSessionRecord> | null;
   authFailures: StaleExpirationMap<string, number> | null;
   qrAuthFailures: StaleExpirationMap<string, number> | null;

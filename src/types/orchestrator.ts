@@ -268,18 +268,3 @@ export function createInitialOrchestratorStats(): OrchestratorStats {
     replanCount: 0,
   };
 }
-
-/** Factory function for initial orchestrator persist state */
-export function createInitialOrchestratorPersistState(
-  config: OrchestratorConfig = DEFAULT_ORCHESTRATOR_CONFIG
-): OrchestratorPersistState {
-  return {
-    state: 'idle',
-    plan: null,
-    currentPhaseIndex: 0,
-    startedAt: null,
-    completedAt: null,
-    config,
-    stats: createInitialOrchestratorStats(),
-  };
-}

@@ -68,7 +68,7 @@ export interface DetailedPlanResult {
 
 export type ProgressCallback = (phase: string, detail: string) => void;
 
-export interface PlanSubagentEvent {
+interface PlanSubagentEvent {
   type: 'started' | 'progress' | 'completed' | 'failed';
   agentId: string;
   agentType: 'research' | 'planner';
@@ -80,7 +80,7 @@ export interface PlanSubagentEvent {
   error?: string;
 }
 
-export type SubagentCallback = (event: PlanSubagentEvent) => void;
+type SubagentCallback = (event: PlanSubagentEvent) => void;
 
 // ============================================================================
 // JSON Repair Helper

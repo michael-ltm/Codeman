@@ -35,7 +35,7 @@ import {
 const SSE_PADDING = ':' + 'p'.repeat(SSE_PADDING_SIZE) + '\n';
 
 /** Dependencies injected by WebServer — keeps SseStreamManager decoupled from session/respawn state. */
-export interface SseStreamManagerDeps {
+interface SseStreamManagerDeps {
   /** Get session state with respawn info for session:updated broadcasts */
   getSessionStateWithRespawn(sessionId: string): unknown;
 }

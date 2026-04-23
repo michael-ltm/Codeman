@@ -134,17 +134,6 @@ export interface SubagentToolResult {
   isError: boolean; // Whether result is an error
 }
 
-export interface SubagentEvents {
-  'subagent:discovered': (info: SubagentInfo) => void;
-  'subagent:updated': (info: SubagentInfo) => void;
-  'subagent:tool_call': (data: SubagentToolCall) => void;
-  'subagent:tool_result': (data: SubagentToolResult) => void;
-  'subagent:progress': (data: SubagentProgress) => void;
-  'subagent:message': (data: SubagentMessage) => void;
-  'subagent:completed': (info: SubagentInfo) => void;
-  'subagent:error': (error: Error, agentId?: string) => void;
-}
-
 // ========== Constants ==========
 
 const CLAUDE_PROJECTS_DIR = join(homedir(), '.claude/projects');

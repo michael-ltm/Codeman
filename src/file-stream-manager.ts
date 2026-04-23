@@ -48,7 +48,7 @@ const STREAM_INACTIVITY_TIMEOUT_MS = INACTIVITY_TIMEOUT_MS;
 /**
  * Represents an active file stream.
  */
-export interface FileStream {
+interface FileStream {
   /** Unique stream identifier */
   id: string;
   /** Session this stream belongs to */
@@ -74,7 +74,7 @@ export interface FileStream {
 /**
  * Options for creating a file stream.
  */
-export interface CreateStreamOptions {
+interface CreateStreamOptions {
   /** Session ID requesting the stream */
   sessionId: string;
   /** Path to the file to stream */
@@ -94,7 +94,7 @@ export interface CreateStreamOptions {
 /**
  * Result of creating a stream.
  */
-export interface CreateStreamResult {
+interface CreateStreamResult {
   success: boolean;
   streamId?: string;
   error?: string;
