@@ -49,10 +49,11 @@ When user says "COM":
    CHANGESET
    ```
    Replace `patch` with `minor` or `major` as needed. Include `"xterm-zerolag-input": patch` on a separate line if that package changed too.
-3. **Consume the changeset**: `npm run version-packages` (auto-bumps versions in `package.json` files and auto-updates `CHANGELOG.md` — never hand-edit `CHANGELOG.md`)
-4. **Sync `package-lock.json`**: `npm install --package-lock-only` (changesets does NOT touch the lockfile; skipping this leaves `package-lock.json` stuck on an old version and breaks `npm ci`)
-5. **Sync CLAUDE.md version**: Update the `**Version**` line below to match the new version from `package.json`
-6. **Commit and deploy**: `git add -A && git commit -m "chore: version packages" && git push && npm run build && systemctl --user restart codeman-web`
+3. **Consume the changeset**: `npm run version-packages` (auto-bumps `package.json` files, updates `CHANGELOG.md`, runs `npm install --package-lock-only`, and verifies lockfile sync via `scripts/check-lockfile-sync.mjs` — all in one command; never hand-edit `CHANGELOG.md` or `package-lock.json` versions)
+4. **Sync CLAUDE.md version**: Update the `**Version**` line below to match the new version from `package.json`
+5. **Commit and deploy**: `git add -A && git commit -m "chore: version packages" && git push && npm run build && systemctl --user restart codeman-web`
+
+CI runs `npm run check:lockfile` on every push/PR, so lockfile drift fails the build even if the `version-packages` script is bypassed.
 
 **Version**: 0.6.0 (must match `package.json`)
 

@@ -25,7 +25,8 @@
     "format:check": "prettier --check 'src/**/*.ts'",
     "capture:subagents": "node scripts/capture-subagent-screenshots.mjs",
     "changeset": "changeset",
-    "version-packages": "changeset version",
+    "version-packages": "changeset version && npm install --package-lock-only && node scripts/check-lockfile-sync.mjs",
+    "check:lockfile": "node scripts/check-lockfile-sync.mjs",
     "release": "changeset publish"
   },
   "workspaces": [
