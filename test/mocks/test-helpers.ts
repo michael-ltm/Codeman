@@ -1,18 +1,17 @@
 /**
  * Reusable async test helpers.
- * Extracted from respawn-test-utils.ts.
  */
 
 /** Wait for an EventEmitter to emit a specific event, with timeout */
 export function waitForEvent(
   emitter: { once: (event: string, listener: (...args: unknown[]) => void) => void },
   event: string,
-  timeoutMs = 5000,
+  timeoutMs = 5000
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error(`Timed out waiting for event "${event}" after ${timeoutMs}ms`)),
-      timeoutMs,
+      timeoutMs
     );
     emitter.once(event, (...args: unknown[]) => {
       clearTimeout(timer);

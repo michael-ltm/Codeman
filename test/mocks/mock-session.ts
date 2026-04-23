@@ -1,7 +1,5 @@
 /**
  * Shared MockSession for tests that need terminal simulation.
- *
- * Copied from test/respawn-test-utils.ts (the canonical, most complete version).
  * Used by respawn, route, and subagent tests.
  */
 import { EventEmitter } from 'node:events';
