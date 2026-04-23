@@ -1,5 +1,14 @@
 # aicodeman
 
+## 0.6.1
+
+### Patch Changes
+
+- Internal cleanup and release hygiene:
+  - **Dead-code sweep via knip**: added `knip.json` for dead-code detection and ran a full sweep — removed unused test files, unused scripts, and narrowed internal module exports to the minimum surface area actually consumed.
+  - **Lockfile drift prevention**: `version-packages` now runs `npm install --package-lock-only` and verifies the lockfile is in sync via `scripts/check-lockfile-sync.mjs`; CI runs the same check on every push/PR so version drift fails the build instead of reaching production. Resolves the `package-lock.json` / `package.json` version mismatch that shipped in 0.6.0.
+  - **Docs tightening**: archived 22 completed plan docs from `docs/`, corrected file/handler counts in `CLAUDE.md`, documented the lockfile step in the COM workflow, and removed footer redundancy.
+
 ## 0.6.0
 
 ### Minor Changes
