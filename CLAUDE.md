@@ -10,7 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Type check | `tsc --noEmit` |
 | Lint | `npm run lint` (fix: `npm run lint:fix`) |
 | Format | `npm run format` (check: `npm run format:check`) |
-| Single test | `npx vitest run test/<file>.test.ts` |
+| Single test | `npm test -- test/<file>.test.ts` (or `npx vitest run --config config/vitest.config.ts test/<file>.test.ts`) |
+| Build | `npm run build` (esbuild via `scripts/build.mjs`, NOT tsc — `tsc --noEmit` is type-check only) |
 | Production | `npm run build && systemctl --user restart codeman-web` |
 
 ## CRITICAL: Session Safety
@@ -48,9 +49,10 @@ When user says "COM":
    CHANGESET
    ```
    Replace `patch` with `minor` or `major` as needed. Include `"xterm-zerolag-input": patch` on a separate line if that package changed too.
-3. **Consume the changeset**: `npm run version-packages` (bumps versions in `package.json` files and updates `CHANGELOG.md`)
-4. **Sync CLAUDE.md version**: Update the `**Version**` line below to match the new version from `package.json`
-5. **Commit and deploy**: `git add -A && git commit -m "chore: version packages" && git push && npm run build && systemctl --user restart codeman-web`
+3. **Consume the changeset**: `npm run version-packages` (auto-bumps versions in `package.json` files and auto-updates `CHANGELOG.md` — never hand-edit `CHANGELOG.md`)
+4. **Sync `package-lock.json`**: `npm install --package-lock-only` (changesets does NOT touch the lockfile; skipping this leaves `package-lock.json` stuck on an old version and breaks `npm ci`)
+5. **Sync CLAUDE.md version**: Update the `**Version**` line below to match the new version from `package.json`
+6. **Commit and deploy**: `git add -A && git commit -m "chore: version packages" && git push && npm run build && systemctl --user restart codeman-web`
 
 **Version**: 0.6.0 (must match `package.json`)
 
@@ -113,7 +115,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 | **Frontend** | `src/web/public/app.js` (~2.8K lines, core) + 5 infra modules (`constants.js`, `mobile-handlers.js`, `voice-input.js`, `notification-manager.js`, `keyboard-accessory.js`) + 7 domain modules (`terminal-ui.js`, `respawn-ui.js`, `ralph-panel.js`, `orchestrator-panel.js`, `settings-ui.js`, `panels-ui.js`, `session-ui.js`) + 4 feature modules (`ralph-wizard.js`, `api-client.js`, `subagent-windows.js`, `input-cjk.js`) + `sw.js` | |
 | **Types** | `src/types/index.ts` → 14 domain files | See `@fileoverview` in index.ts |
 
-★ = Large file (>50KB). All files have `@fileoverview` JSDoc — read that before diving in.
+★ = Large file (>50KB). All files have `@fileoverview` JSDoc — read that before diving in. Discovery aid: `grep -l '@fileoverview' src/web/routes/*.ts` lists all route modules; same grep works for `src/types/`, `src/web/public/*.js`.
 
 **Local package**: `packages/xterm-zerolag-input/` — local echo overlay for xterm.js; copy embedded in `app.js`.
 
@@ -193,10 +195,12 @@ All in `~/.codeman/`: `state.json` (sessions, settings, respawn), `mux-sessions.
 **CRITICAL: You are running inside a Codeman-managed tmux session.** Never run `npx vitest run` (full suite) — it spawns/kills tmux sessions and will crash your own session. Only run individual files:
 
 ```bash
-npx vitest run test/<specific-file>.test.ts     # Single file (SAFE)
-npx vitest run -t "pattern"                      # By name (SAFE)
-# npx vitest run                                 # DANGEROUS — DON'T DO THIS
+npm test -- test/<specific-file>.test.ts         # Single file (SAFE, uses config/vitest.config.ts)
+npm test -- -t "pattern"                          # By name (SAFE)
+# npm test                                        # DANGEROUS — runs full suite, DON'T DO THIS
 ```
+
+Raw `npx vitest` skips `config/vitest.config.ts`; always use `npm test --` or pass `--config config/vitest.config.ts`.
 
 **Config**: Vitest with `globals: true`, `fileParallelism: false`. Timeout 30s, teardown 60s.
 
@@ -234,7 +238,7 @@ Key: `scripts/tmux-manager.sh` (safe tmux mgmt), `scripts/tunnel.sh` (tunnel sta
 
 ## Memory Leak Prevention
 
-24+ hour sessions: use `CleanupManager`, clear Maps in `stop()`, guard async with `if (this.cleanup.isStopped) return`. Frontend: store handler refs, clean in `close*()`. Verify: `npx vitest run test/memory-leak-prevention.test.ts`.
+24+ hour sessions: use `CleanupManager`, clear Maps in `stop()`, guard async with `if (this.cleanup.isStopped) return`. Frontend: store handler refs, clean in `close*()`. Verify: `npm test -- test/memory-leak-prevention.test.ts`.
 
 ## Common Workflows
 
