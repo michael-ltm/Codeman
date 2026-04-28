@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TmuxManager } from '../src/tmux-manager.js';
+import { TmuxManager, parsePaneList } from '../src/tmux-manager.js';
 import { execSync } from 'node:child_process';
 
 // ============================================================================
@@ -287,13 +287,27 @@ describe('TmuxManager (unit)', () => {
     });
 
     it('should update respawn config', () => {
-      const config = { enabled: true, idleTimeoutMs: 5000, updatePrompt: 'test', interStepDelayMs: 1000, sendClear: true, sendInit: true };
+      const config = {
+        enabled: true,
+        idleTimeoutMs: 5000,
+        updatePrompt: 'test',
+        interStepDelayMs: 1000,
+        sendClear: true,
+        sendInit: true,
+      };
       manager.updateRespawnConfig('meta-test', config);
       expect(manager.getSession('meta-test')?.respawnConfig).toEqual(config);
     });
 
     it('should clear respawn config', () => {
-      manager.updateRespawnConfig('meta-test', { enabled: true, idleTimeoutMs: 5000, updatePrompt: 'test', interStepDelayMs: 1000, sendClear: true, sendInit: true });
+      manager.updateRespawnConfig('meta-test', {
+        enabled: true,
+        idleTimeoutMs: 5000,
+        updatePrompt: 'test',
+        interStepDelayMs: 1000,
+        sendClear: true,
+        sendInit: true,
+      });
       manager.clearRespawnConfig('meta-test');
       expect(manager.getSession('meta-test')?.respawnConfig).toBeUndefined();
     });
@@ -327,8 +341,8 @@ describe('TmuxManager (unit)', () => {
 
       const sessions = manager.getSessions();
       expect(sessions).toHaveLength(2);
-      expect(sessions.map(s => s.sessionId)).toContain('s1');
-      expect(sessions.map(s => s.sessionId)).toContain('s2');
+      expect(sessions.map((s) => s.sessionId)).toContain('s1');
+      expect(sessions.map((s) => s.sessionId)).toContain('s2');
     });
   });
 
@@ -342,3 +356,68 @@ describe('TmuxManager (unit)', () => {
   });
 });
 
+// ============================================================================
+// Parser Tests — locks in the '|' separator contract for `tmux list-panes -F`
+// output, guarding against regressions in non-tty execution contexts where
+// `\t` in tmux FORMAT strings can be emitted as the literal two characters
+// `\` + `t` instead of a tab byte (launchd, systemd without TTYPath, docker
+// exec without TTY). See PR #71.
+// ============================================================================
+
+describe('parsePaneList', () => {
+  it('parses well-formed output into name → pid', () => {
+    const out = 'codeman-aaaa|1234\ncodeman-bbbb|5678\nclaudeman-cccc|9999';
+    const result = parsePaneList(out);
+    expect(result.size).toBe(3);
+    expect(result.get('codeman-aaaa')).toBe(1234);
+    expect(result.get('codeman-bbbb')).toBe(5678);
+    expect(result.get('claudeman-cccc')).toBe(9999);
+  });
+
+  it('returns an empty map for empty output', () => {
+    expect(parsePaneList('').size).toBe(0);
+  });
+
+  it('skips blank lines', () => {
+    const result = parsePaneList('\ncodeman-aaaa|100\n\n\ncodeman-bbbb|200\n');
+    expect(result.size).toBe(2);
+    expect(result.get('codeman-aaaa')).toBe(100);
+    expect(result.get('codeman-bbbb')).toBe(200);
+  });
+
+  it('skips lines without the separator', () => {
+    const result = parsePaneList('codeman-aaaa 1234\ncodeman-bbbb|5678');
+    expect(result.size).toBe(1);
+    expect(result.get('codeman-bbbb')).toBe(5678);
+  });
+
+  it('skips lines with a non-numeric pid', () => {
+    const result = parsePaneList('codeman-aaaa|notapid\ncodeman-bbbb|5678');
+    expect(result.size).toBe(1);
+    expect(result.get('codeman-bbbb')).toBe(5678);
+  });
+
+  it('skips lines with an empty session name', () => {
+    const result = parsePaneList('|1234\ncodeman-bbbb|5678');
+    expect(result.size).toBe(1);
+    expect(result.get('codeman-bbbb')).toBe(5678);
+  });
+
+  it('treats a literal backslash-t in input as part of the session name, not a delimiter', () => {
+    // Reproduces the launchd/systemd regression: under non-tty contexts tmux
+    // was emitting FORMAT '\t' as the two characters `\` + `t` rather than a
+    // tab byte. With the '|' separator, such literals must not be silently
+    // treated as a delimiter — the line is discarded because there is no '|'.
+    const literalBackslashT = 'codeman-aaaa\\t1234';
+    const result = parsePaneList(literalBackslashT);
+    expect(result.size).toBe(0);
+  });
+
+  it('splits on the first separator only', () => {
+    // Numeric trailing junk after the pid is tolerated by parseInt — proves
+    // that splitting on the first '|' leaves the pid extractable even if a
+    // future tmux ever appended extra fields.
+    const result = parsePaneList('codeman-aaaa|1234|extra-field');
+    expect(result.get('codeman-aaaa')).toBe(1234);
+  });
+});

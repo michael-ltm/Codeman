@@ -98,6 +98,44 @@ const LEGACY_MUX_NAME_PATTERN = /^claudeman-[a-f0-9-]+$/;
 /** Regex to validate tmux pane targets (e.g., "%0", "%1", "0", "1") */
 const SAFE_PANE_TARGET_PATTERN = /^(%\d+|\d+)$/;
 
+/**
+ * Separator used in `tmux list-panes -F` output between session name and pid.
+ *
+ * Must NOT be a backslash-escape (e.g. `\t`, `\n`): under non-tty execution
+ * contexts (launchd on macOS, systemd without TTYPath) tmux can emit such
+ * escapes as the literal two characters `\` + letter rather than the control
+ * byte, breaking the parser and causing every tracked session to be classified
+ * as dead — which wipes state.json on restart. '|' is passed through verbatim
+ * in every environment and is rejected by tmux's own session-name validation,
+ * so it cannot appear inside `#{session_name}` and cause a false split.
+ */
+const PANE_LIST_SEP = '|';
+
+/** Format string for `tmux list-panes -F`. Keep in sync with {@link parsePaneList}. */
+const PANE_LIST_FORMAT = `#{session_name}${PANE_LIST_SEP}#{pane_pid}`;
+
+/**
+ * Parse the output of `tmux list-panes -a -F '#{session_name}|#{pane_pid}'`
+ * into a Map of session-name → pane pid. Exported for unit testing.
+ *
+ * - Skips empty lines and lines without the separator.
+ * - Skips entries with a non-numeric pid or empty name.
+ */
+export function parsePaneList(output: string): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const line of output.split('\n')) {
+    if (!line) continue;
+    const sep = line.indexOf(PANE_LIST_SEP);
+    if (sep === -1) continue;
+    const name = line.slice(0, sep);
+    const pid = parseInt(line.slice(sep + 1), 10);
+    if (name && !Number.isNaN(pid)) {
+      result.set(name, pid);
+    }
+  }
+  return result;
+}
+
 /** Characters unsafe in paths — shell metacharacters, quotes, and control chars */
 const UNSAFE_PATH_CHARS = /[;&|$`(){}<>'"\n\r]/;
 
@@ -902,23 +940,13 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
     const discovered: string[] = [];
 
     // Batch: single tmux call to get all session names + pane PIDs (replaces N per-session subprocess calls)
-    const activeSessions = new Map<string, number>();
+    let activeSessions = new Map<string, number>();
     try {
-      const output = execSync("tmux list-panes -a -F '#{session_name}\t#{pane_pid}' 2>/dev/null || true", {
+      const output = execSync(`tmux list-panes -a -F '${PANE_LIST_FORMAT}' 2>/dev/null || true`, {
         encoding: 'utf-8',
         timeout: EXEC_TIMEOUT_MS,
       }).trim();
-
-      for (const line of output.split('\n')) {
-        if (!line) continue;
-        const sep = line.indexOf('\t');
-        if (sep === -1) continue;
-        const name = line.slice(0, sep);
-        const pid = parseInt(line.slice(sep + 1), 10);
-        if (name && !Number.isNaN(pid)) {
-          activeSessions.set(name, pid);
-        }
-      }
+      activeSessions = parsePaneList(output);
     } catch (err) {
       console.error('[TmuxManager] Failed to list tmux panes:', err);
     }
