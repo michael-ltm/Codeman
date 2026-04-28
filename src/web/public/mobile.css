@@ -893,6 +893,7 @@ html.mobile-init .file-browser-panel {
     gap: 8px;
     align-items: center;
     overflow-x: auto;
+    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     z-index: 51;
     transition: transform 0.15s ease-out;
@@ -2097,6 +2098,7 @@ html.mobile-init .file-browser-panel {
   gap: 8px;
   align-items: center;
   overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   z-index: 51;
 }
