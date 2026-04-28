@@ -323,6 +323,10 @@ Object.assign(CodemanApp.prototype, {
       if (caseSettings.agentTeams || globalSettings.agentTeamsEnabled) {
         envOverrides.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
       }
+      const thinkingEffort = globalSettings.thinkingEffort;
+      if (thinkingEffort) {
+        envOverrides.CLAUDE_CODE_EFFORT_LEVEL = thinkingEffort;
+      }
       const hasEnvOverrides = Object.keys(envOverrides).length > 0;
       const useOpus1m = caseSettings.opusContext1m || globalSettings.opusContext1mEnabled;
       const modelOverride = useOpus1m ? 'opus[1m]' : '';
