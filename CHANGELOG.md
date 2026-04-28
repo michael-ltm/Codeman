@@ -1,5 +1,12 @@
 # aicodeman
 
+## 0.6.3
+
+### Patch Changes
+
+- **Fix**
+  - Allowlist `opusContext1mEnabled` in `SettingsUpdateSchema`. Without this entry, the strict schema rejected `PUT /api/settings {"opusContext1mEnabled":...}` with `INVALID_INPUT`, so the toggle's value never persisted across reloads. The frontend was already reading and writing this key (`settings-ui.js:336/1137`, `session-ui.js:340`), so saves were silently failing — users never noticed because the load path falls back to `false` on missing keys, hiding the bug. (#78)
+
 ## 0.6.2
 
 ### Patch Changes
