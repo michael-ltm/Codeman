@@ -152,7 +152,7 @@ export class SessionManager extends EventEmitter {
       await session.start();
 
       this.sessions.set(session.id, session);
-      this.store.setSession(session.id, session.toState());
+      this.updateSessionState(session);
 
       this.emit('sessionStarted', session);
       return session;
@@ -247,7 +247,15 @@ export class SessionManager extends EventEmitter {
   }
 
   private updateSessionState(session: Session): void {
-    this.store.setSession(session.id, session.toState());
+    // envOverrides is intentionally NOT on SessionState (API safety). For disk
+    // persistence we augment the stored object with __envOverrides so reboot
+    // recovery can restore them without leaking through any API serializer.
+    // The key uses the reserved `__` prefix so it is visibly "internal" to any
+    // future reader of state.json.
+    const state = session.toState();
+    const envOverrides = session.getEnvOverridesForPersist();
+    const toStore = envOverrides ? { ...state, __envOverrides: envOverrides } : state;
+    this.store.setSession(session.id, toStore as SessionState);
   }
 
   /** Gets all sessions from persistent storage (including stopped). */

@@ -85,6 +85,42 @@ export function generateHooksConfig(): { hooks: Record<string, unknown[]> } {
 }
 
 /**
+ * Remove a subset of env keys from .claude/settings.local.json.env if present.
+ * Used during the disk→tmux-setenv migration: when the caller is actively setting
+ * a fresh value for a Codeman-managed key, any stale disk entry for THAT KEY is
+ * superseded and should be removed. Keys NOT in `keysToRemove` are left alone
+ * (they may be user-managed). No-op if the file/keys don't exist.
+ */
+export async function stripCaseEnvKeys(casePath: string, keysToRemove: readonly string[]): Promise<void> {
+  if (keysToRemove.length === 0) return;
+
+  const settingsPath = join(casePath, '.claude', 'settings.local.json');
+  if (!existsSync(settingsPath)) return;
+
+  let existing: Record<string, unknown>;
+  try {
+    existing = JSON.parse(await readFile(settingsPath, 'utf-8'));
+  } catch {
+    return; // Malformed — don't rewrite it
+  }
+
+  const env = existing.env as Record<string, string> | undefined;
+  if (!env) return;
+
+  let changed = false;
+  for (const key of keysToRemove) {
+    if (key in env) {
+      delete env[key];
+      changed = true;
+    }
+  }
+  if (!changed) return;
+
+  existing.env = env;
+  await writeFile(settingsPath, JSON.stringify(existing, null, 2) + '\n');
+}
+
+/**
  * Updates env vars in .claude/settings.local.json for the given case path.
  * Merges with existing env field; removes vars set to empty string.
  */

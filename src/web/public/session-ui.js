@@ -12,6 +12,22 @@
  */
 
 Object.assign(CodemanApp.prototype, {
+  /**
+   * Build envOverrides payload from case + global settings.
+   * Single source of truth for the server-side tmux setenv values.
+   * Keys omitted when value is default/falsy — backend treats unset as "no override".
+   */
+  buildEnvOverrides(caseSettings, globalSettings) {
+    const env = {};
+    if (caseSettings?.agentTeams || globalSettings?.agentTeamsEnabled) {
+      env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
+    }
+    if (globalSettings?.thinkingEffort) {
+      env.CLAUDE_CODE_EFFORT_LEVEL = globalSettings.thinkingEffort;
+    }
+    return env;
+  },
+
   // ═══════════════════════════════════════════════════════════════
   // Quick Start
   // ═══════════════════════════════════════════════════════════════
@@ -319,14 +335,7 @@ Object.assign(CodemanApp.prototype, {
       // Build env overrides from global + case settings (case overrides global)
       const caseSettings = this.getCaseSettings(caseName);
       const globalSettings = this.loadAppSettingsFromStorage();
-      const envOverrides = {};
-      if (caseSettings.agentTeams || globalSettings.agentTeamsEnabled) {
-        envOverrides.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
-      }
-      const thinkingEffort = globalSettings.thinkingEffort;
-      if (thinkingEffort) {
-        envOverrides.CLAUDE_CODE_EFFORT_LEVEL = thinkingEffort;
-      }
+      const envOverrides = this.buildEnvOverrides(caseSettings, globalSettings);
       const hasEnvOverrides = Object.keys(envOverrides).length > 0;
       const useOpus1m = caseSettings.opusContext1m || globalSettings.opusContext1mEnabled;
       const modelOverride = useOpus1m ? 'opus[1m]' : '';
@@ -530,6 +539,7 @@ Object.assign(CodemanApp.prototype, {
       }
 
       // Quick-start with opencode mode (auto-allow tools by default)
+      const envOverrides = this.buildEnvOverrides(this.getCaseSettings(caseName), this.loadAppSettingsFromStorage());
       const res = await fetch('/api/quick-start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -537,6 +547,7 @@ Object.assign(CodemanApp.prototype, {
           caseName,
           mode: 'opencode',
           openCodeConfig: { autoAllowTools: true },
+          ...(Object.keys(envOverrides).length > 0 ? { envOverrides } : {}),
         })
       });
       const data = await res.json();

@@ -273,6 +273,10 @@ export class Session extends EventEmitter {
   private _openCodeConfig: OpenCodeConfig | undefined;
   private _resumeSessionId: string | undefined;
 
+  // Ephemeral env overrides (e.g., CLAUDE_CODE_EFFORT_LEVEL). Exported by tmux at spawn,
+  // preserved across respawns via persisted state. Not written to .claude/settings.local.json.
+  private _envOverrides: Record<string, string> | undefined;
+
   // Session color for visual differentiation
   private _color: import('./types.js').SessionColor = 'default';
 
@@ -332,6 +336,8 @@ export class Session extends EventEmitter {
       openCodeConfig?: OpenCodeConfig;
       /** Resume a previous Claude conversation (used after server reboot) */
       resumeSessionId?: string;
+      /** Extra env vars exported to the CLI at spawn time (no disk persistence) */
+      envOverrides?: Record<string, string>;
     }
   ) {
     super();
@@ -377,6 +383,11 @@ export class Session extends EventEmitter {
     // Apply OpenCode configuration
     if (config.openCodeConfig) {
       this._openCodeConfig = config.openCodeConfig;
+    }
+
+    // Apply env overrides (exported at spawn, not persisted to disk)
+    if (config.envOverrides && Object.keys(config.envOverrides).length > 0) {
+      this._envOverrides = { ...config.envOverrides };
     }
 
     // Initialize task tracker and forward events (store handlers for cleanup)
@@ -789,7 +800,27 @@ export class Session extends EventEmitter {
       cliLatestVersion: this._cliLatestVersion || undefined,
       openCodeConfig: this._openCodeConfig,
       resumeSessionId: this._resumeSessionId,
+      // envOverrides intentionally NOT on the public SessionState type — they must not
+      // leak into SSE / GET /api/sessions broadcasts (schema allows OPENCODE_*, which
+      // can carry secrets). For disk persistence, session-manager calls
+      // getEnvOverridesForPersist() and writes alongside state.
     };
+  }
+
+  /**
+   * Returns a subset of env overrides safe for disk persistence (state.json).
+   * Only non-sensitive `CLAUDE_CODE_*` keys are included. `OPENCODE_*` keys are
+   * filtered out because the schema permits them and they can carry secrets
+   * (e.g., OPENCODE_API_KEY); secrets must not land in `~/.codeman/state.json`.
+   * Must NOT be included in any API-bound serializer — see toState() comment.
+   */
+  getEnvOverridesForPersist(): Record<string, string> | undefined {
+    if (!this._envOverrides) return undefined;
+    const safe: Record<string, string> = {};
+    for (const [key, value] of Object.entries(this._envOverrides)) {
+      if (key.startsWith('CLAUDE_CODE_')) safe[key] = value;
+    }
+    return Object.keys(safe).length > 0 ? safe : undefined;
   }
 
   toDetailedState() {
@@ -957,6 +988,7 @@ export class Session extends EventEmitter {
             allowedTools: this._allowedTools,
             openCodeConfig: this._openCodeConfig,
             resumeSessionId: this._resumeSessionId,
+            envOverrides: this._envOverrides,
           },
           createSessionOptions: {
             sessionId: this.id,
@@ -969,6 +1001,7 @@ export class Session extends EventEmitter {
             allowedTools: this._allowedTools,
             openCodeConfig: this._openCodeConfig,
             resumeSessionId: this._resumeSessionId,
+            envOverrides: this._envOverrides,
           },
           spawnErrLabel: 'mux attachment',
         });
@@ -1044,7 +1077,8 @@ export class Session extends EventEmitter {
           cols: 120,
           rows: 40,
           cwd: this.workingDir,
-          env: buildClaudeEnv(this.id),
+          // Merge envOverrides after buildClaudeEnv so user settings shadow defaults.
+          env: { ...buildClaudeEnv(this.id), ...(this._envOverrides ?? {}) },
         });
       } catch (spawnErr) {
         console.error('[Session] Failed to spawn Claude PTY:', spawnErr);
@@ -1289,6 +1323,7 @@ export class Session extends EventEmitter {
             workingDir: this.workingDir,
             mode: 'shell',
             niceConfig: this._niceConfig,
+            envOverrides: this._envOverrides,
           },
           createSessionOptions: {
             sessionId: this.id,
@@ -1296,6 +1331,7 @@ export class Session extends EventEmitter {
             mode: 'shell',
             name: this._name,
             niceConfig: this._niceConfig,
+            envOverrides: this._envOverrides,
           },
           spawnErrLabel: 'shell mux attachment',
         });
@@ -1431,7 +1467,8 @@ export class Session extends EventEmitter {
             cols: 120,
             rows: 40,
             cwd: this.workingDir,
-            env: buildClaudeEnv(this.id),
+            // Merge envOverrides after buildClaudeEnv so user settings shadow defaults.
+            env: { ...buildClaudeEnv(this.id), ...(this._envOverrides ?? {}) },
           });
         } catch (spawnErr) {
           console.error('[Session] Failed to spawn Claude PTY for runPrompt:', spawnErr);

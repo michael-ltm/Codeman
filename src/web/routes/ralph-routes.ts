@@ -14,7 +14,7 @@ import { RespawnController } from '../../respawn-controller.js';
 import { RalphConfigSchema, FixPlanImportSchema, RalphPromptWriteSchema, RalphLoopStartSchema } from '../schemas.js';
 import { SseEvent } from '../sse-events.js';
 import { autoConfigureRalph, CASES_DIR, SETTINGS_PATH, findSessionOrFail, parseBody } from '../route-helpers.js';
-import { writeHooksConfig } from '../../hooks-config.js';
+import { writeHooksConfig, stripCaseEnvKeys } from '../../hooks-config.js';
 import { generateClaudeMd } from '../../templates/claude-md.js';
 import { getLifecycleLog } from '../../session-lifecycle-log.js';
 import type { SessionPort, EventPort, RespawnPort, ConfigPort, InfraPort } from '../ports/index.js';
@@ -268,10 +268,8 @@ export function registerRalphRoutes(
       );
     }
 
-    const { caseName, taskDescription, completionPhrase, maxIterations, enableRespawn, planItems } = parseBody(
-      RalphLoopStartSchema,
-      req.body
-    );
+    const { caseName, taskDescription, completionPhrase, maxIterations, enableRespawn, planItems, envOverrides } =
+      parseBody(RalphLoopStartSchema, req.body);
 
     const casePath = join(CASES_DIR, caseName);
 
@@ -298,6 +296,11 @@ export function registerRalphRoutes(
       }
     }
 
+    // Strip stale disk entries for keys this request is actively setting.
+    if (envOverrides && Object.keys(envOverrides).length > 0) {
+      await stripCaseEnvKeys(casePath, Object.keys(envOverrides));
+    }
+
     // Create session
     const niceConfig = await ctx.getGlobalNiceConfig();
     const rlModelConfig = await ctx.getModelConfig();
@@ -311,6 +314,7 @@ export function registerRalphRoutes(
       model: rlModelConfig?.defaultModel || undefined,
       claudeMode: rlClaudeModeConfig.claudeMode,
       allowedTools: rlClaudeModeConfig.allowedTools,
+      envOverrides,
     });
 
     // Configure Ralph tracker

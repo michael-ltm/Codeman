@@ -77,6 +77,10 @@ vi.mock('../src/session.js', () => {
       };
     }
 
+    getEnvOverridesForPersist() {
+      return undefined;
+    }
+
     getOutput() {
       return 'mock output';
     }
@@ -147,19 +151,14 @@ describe('SessionManager', () => {
     it('should persist session to store', async () => {
       const session = await manager.createSession('/tmp/test');
 
-      expect(mockState.store.setSession).toHaveBeenCalledWith(
-        session.id,
-        expect.any(Object)
-      );
+      expect(mockState.store.setSession).toHaveBeenCalledWith(session.id, expect.any(Object));
     });
 
     it('should throw when max sessions reached', async () => {
       mockState.store.state.config.maxConcurrentSessions = 1;
       await manager.createSession('/tmp/test1');
 
-      await expect(manager.createSession('/tmp/test2')).rejects.toThrow(
-        /Maximum concurrent sessions/
-      );
+      await expect(manager.createSession('/tmp/test2')).rejects.toThrow(/Maximum concurrent sessions/);
     });
 
     it('should forward session output events', async () => {
@@ -325,9 +324,7 @@ describe('SessionManager', () => {
 
   describe('sendToSession', () => {
     it('should throw for non-existent session', async () => {
-      await expect(manager.sendToSession('non-existent', 'test')).rejects.toThrow(
-        /Session non-existent not found/
-      );
+      await expect(manager.sendToSession('non-existent', 'test')).rejects.toThrow(/Session non-existent not found/);
     });
 
     it('should send input to session', async () => {

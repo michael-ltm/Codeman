@@ -178,6 +178,7 @@ export const QuickStartSchema = z.object({
     .optional(),
   mode: z.enum(['claude', 'shell', 'opencode']).optional(),
   openCodeConfig: OpenCodeConfigSchema,
+  envOverrides: safeEnvOverridesSchema,
 });
 
 // ========== Hook Events ==========
@@ -417,6 +418,7 @@ export const FlickerFilterSchema = z.object({
 export const QuickRunSchema = z.object({
   prompt: z.string().min(1).max(100000),
   workingDir: safePathSchema.optional(),
+  envOverrides: safeEnvOverridesSchema,
 });
 
 /** POST /api/scheduled */
@@ -539,6 +541,7 @@ export const RalphLoopStartSchema = z.object({
   completionPhrase: z.string().max(100).default('COMPLETE'),
   maxIterations: z.number().int().min(0).max(1000).nullable().default(10),
   enableRespawn: z.boolean().default(false),
+  envOverrides: safeEnvOverridesSchema,
   planItems: z
     .array(
       z.object({

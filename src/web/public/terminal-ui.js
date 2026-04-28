@@ -953,11 +953,21 @@ Object.assign(CodemanApp.prototype, {
       }
       const name = `w${startNumber}-${dirName}`;
 
-      // Create session with resumeSessionId
+      // Create session with resumeSessionId — include envOverrides so resumed
+      // conversations inherit current UI settings (effort, agent teams, etc.).
+      // Match by path (not basename) so linked/renamed cases still resolve correctly.
+      const matchingCase = (this.cases || []).find((c) => c.path === workingDir);
+      const caseName = matchingCase?.name || workingDir.split('/').pop() || '';
+      const envOverrides = this.buildEnvOverrides(this.getCaseSettings(caseName), this.loadAppSettingsFromStorage());
       const createRes = await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workingDir, name, resumeSessionId: sessionId }),
+        body: JSON.stringify({
+          workingDir,
+          name,
+          resumeSessionId: sessionId,
+          ...(Object.keys(envOverrides).length > 0 ? { envOverrides } : {}),
+        }),
       });
       const createData = await createRes.json();
       if (!createData.success) throw new Error(createData.error);

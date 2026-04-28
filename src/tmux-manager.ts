@@ -399,6 +399,10 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
   /**
    * Build the array of environment export commands shared by createSession() and respawnPane().
    * Includes locale, mux markers, session identity, and API URL.
+   *
+   * User-supplied envOverrides are NOT inlined here — they go through applyEnvOverrides()
+   * via `tmux setenv` so secret values (e.g., OPENCODE_API_KEY) never appear in the bash
+   * command line (visible in `ps`). This also sidesteps shell-metachar injection via keys.
    */
   private buildEnvExports(sessionId: string, muxName: string, mode: SessionMode): string[] {
     const exports = [
@@ -413,6 +417,35 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
     // Only unset CLAUDECODE for Claude sessions
     if (mode === 'claude') exports.splice(2, 0, 'unset CLAUDECODE');
     return exports;
+  }
+
+  /**
+   * Apply user-supplied env overrides to a tmux session via `tmux setenv`.
+   * Values stay off the bash command line (not visible in `ps`), and are inherited
+   * by new panes — including `respawn-pane`. Persists at tmux-session level, so
+   * Codeman server restarts don't lose the setting as long as the tmux session lives.
+   *
+   * Key validation is strict (`/^[A-Z_][A-Z0-9_]*$/`) as defense-in-depth against
+   * shell-metachar injection even if upstream schema check is bypassed.
+   */
+  private applyEnvOverrides(muxName: string, envOverrides?: Record<string, string>): void {
+    if (!envOverrides) return;
+    const VALID_KEY = /^[A-Z_][A-Z0-9_]*$/;
+    for (const [key, value] of Object.entries(envOverrides)) {
+      if (!value) continue; // Skip empty — nothing to set
+      if (!VALID_KEY.test(key)) {
+        console.warn(`[TmuxManager] Skipping invalid env override key: ${JSON.stringify(key)}`);
+        continue;
+      }
+      try {
+        execSync(`tmux setenv -t ${shellescape(muxName)} ${key} ${shellescape(value)}`, {
+          timeout: EXEC_TIMEOUT_MS,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } catch (err) {
+        console.warn(`[TmuxManager] Failed to set env override ${key}:`, err);
+      }
+    }
   }
 
   /**
@@ -458,6 +491,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       allowedTools,
       openCodeConfig,
       resumeSessionId,
+      envOverrides,
     } = options;
     const muxName = `codeman-${sessionId.slice(0, 8)}`;
 
@@ -544,6 +578,10 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       if (mode === 'opencode') {
         this._configureOpenCode(muxName, openCodeConfig);
       }
+
+      // Apply user-supplied env overrides (e.g., CLAUDE_CODE_EFFORT_LEVEL) via tmux setenv
+      // so secret values stay off the bash command line. Must run before respawn-pane.
+      this.applyEnvOverrides(muxName, envOverrides);
 
       // Replace the shell with the actual command (no echo in terminal)
       execSync(`tmux respawn-pane -k -t "${muxName}" bash -c ${JSON.stringify(fullCmd)}`, {
@@ -685,6 +723,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       allowedTools,
       openCodeConfig,
       resumeSessionId,
+      envOverrides,
     } = options;
     const session = this.sessions.get(sessionId);
     if (!session) return null;
@@ -715,6 +754,9 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       if (mode === 'opencode') {
         this._configureOpenCode(muxName, openCodeConfig);
       }
+
+      // Re-apply user env overrides before respawn so the new shell inherits them.
+      this.applyEnvOverrides(muxName, envOverrides);
 
       await execAsync(`tmux respawn-pane -k -t "${muxName}" bash -c ${JSON.stringify(fullCmd)}`, {
         timeout: EXEC_TIMEOUT_MS,

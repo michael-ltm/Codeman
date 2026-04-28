@@ -40,7 +40,7 @@ import { execSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { EventEmitter } from 'node:events';
 import { Session, type BackgroundTask } from '../session.js';
-import type { ClaudeMode } from '../types.js';
+import type { ClaudeMode, SessionState } from '../types.js';
 import { RespawnController, RespawnConfig } from '../respawn-controller.js';
 import type { TerminalMultiplexer } from '../mux-interface.js';
 import { createMultiplexer } from '../mux-factory.js';
@@ -731,7 +731,11 @@ export class WebServer extends EventEmitter {
 
   /** Persists full session state including respawn config to state.json */
   private _persistSessionStateNow(session: Session): void {
-    const state = session.toState();
+    // See session-manager.updateSessionState: __envOverrides is an internal disk-only
+    // field kept off SessionState to avoid leaking via API broadcasts.
+    const base = session.toState();
+    const envOverrides = session.getEnvOverridesForPersist();
+    const state = (envOverrides ? { ...base, __envOverrides: envOverrides } : base) as SessionState;
     const controller = this.respawnControllers.get(session.id);
     if (controller) {
       const config = controller.getConfig();
@@ -1631,6 +1635,9 @@ export class WebServer extends EventEmitter {
 
             // Create a session object for this mux session
             const recoveryClaudeMode = await this.getClaudeModeConfig();
+            // Recover envOverrides from the internal __envOverrides field written by
+            // session-manager (see updateSessionState). Cast to read the non-public field.
+            const savedEnvOverrides = (savedState as { __envOverrides?: Record<string, string> })?.__envOverrides;
             const session = new Session({
               id: muxSession.sessionId, // Preserve the original session ID
               workingDir: muxSession.workingDir,
@@ -1641,6 +1648,7 @@ export class WebServer extends EventEmitter {
               muxSession: muxSession, // Pass the existing session so startInteractive() can attach to it
               claudeMode: recoveryClaudeMode.claudeMode,
               allowedTools: recoveryClaudeMode.allowedTools,
+              envOverrides: savedEnvOverrides,
             });
 
             // Update session name if it was a "Restored:" placeholder or doesn't match saved name
