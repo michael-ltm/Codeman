@@ -792,7 +792,7 @@ Object.assign(CodemanApp.prototype, {
       const res = await fetch(`/api/sessions/${this.editingSessionId}/respawn/enable`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: respawnConfig, durationMinutes })
+        body: JSON.stringify({ config: respawnConfig, durationMinutes: durationMinutes ?? undefined })
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);

@@ -1,5 +1,11 @@
 # aicodeman
 
+## 0.6.4
+
+### Patch Changes
+
+- Fix "Failed to enable respawn: Invalid request body" error when selecting infinity duration (∞) in the respawn modal. Frontend was sending `durationMinutes: null`, which Zod's `.optional()` schema rejected (it accepts `undefined` only). The body now omits the field when no duration is selected.
+
 ## 0.6.3
 
 ### Patch Changes
