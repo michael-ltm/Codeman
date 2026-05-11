@@ -1575,7 +1575,7 @@ Object.assign(CodemanApp.prototype, {
         lineHeight: 1.2,
         cursorBlink: true,
         cursorStyle: 'block',
-        scrollback: 5000,
+        scrollback: DEFAULT_SCROLLBACK,
         allowTransparency: true,
         allowProposedApi: true,
       });

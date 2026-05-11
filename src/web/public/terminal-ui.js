@@ -18,8 +18,10 @@ Object.assign(CodemanApp.prototype, {
   // ═══════════════════════════════════════════════════════════════
 
   initTerminal() {
-    // Load scrollback setting from localStorage (default 5000)
-    const scrollback = parseInt(localStorage.getItem('codeman-scrollback')) || DEFAULT_SCROLLBACK;
+    // Load scrollback setting from localStorage, treating DEFAULT_SCROLLBACK as a floor
+    // so users who picked up the previous (smaller) default get the new minimum on upgrade.
+    const stored = parseInt(localStorage.getItem('codeman-scrollback'));
+    const scrollback = Number.isFinite(stored) && stored > 0 ? Math.max(stored, DEFAULT_SCROLLBACK) : DEFAULT_SCROLLBACK;
 
     this.terminal = new Terminal({
       theme: {

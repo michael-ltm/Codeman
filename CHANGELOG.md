@@ -1,5 +1,18 @@
 # aicodeman
 
+## 0.6.6
+
+### Patch Changes
+
+- **Terminal scrollback significantly increased** — both the xterm.js viewport and the tmux backing buffer were bottlenecking how far back you could scroll. Three changes:
+  - `DEFAULT_SCROLLBACK` raised from 20000 → 50000 lines (xterm.js, main terminal). The previous bump from 5000 only helped users with empty localStorage; existing users were stuck on whatever value they first picked up. The loader now treats `DEFAULT_SCROLLBACK` as a floor — if your stored value is below the new minimum, you're raised to it automatically.
+  - Subagent / teammate terminals (`panels-ui.js`) were stuck at 5000; now use the same `DEFAULT_SCROLLBACK` constant (50000).
+  - New tmux sessions now run with `history-limit 50000` (tmux defaults to 2000). This matters for hard-reload / re-attach — without it, only the last ~2000 lines survive the round-trip back into a fresh xterm.
+
+  **Tmux flicker on session re-attach fixed (PR #80 by @aakhter)**: the PTY now queries the existing tmux window size via `tmux display -p` before spawning, instead of hardcoding 120x40. Previously, every re-attach forced tmux to resize down to 120x40, causing a visible flicker and one frame of scrollback loss. The `-x 120 -y 40` flag was also dropped from `tmux new-session` so the initial size matches the first attaching client. Uses `execFileSync` (not shell) for safety and falls back to 120x40 on any error.
+
+  **Docs**: CLAUDE.md now documents two recurring foot-guns — the `xterm-zerolag-input` overlay code is duplicated between `packages/xterm-zerolag-input/src/` and inline inside `src/web/public/app.js`, so any overlay change must touch both; and the COM workflow explicitly includes a post-push `gh run watch` step to confirm CI before considering the release done.
+
 ## 0.6.5
 
 ### Patch Changes

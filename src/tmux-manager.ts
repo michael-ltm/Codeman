@@ -609,6 +609,13 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
           .catch(() => {
             /* Already set globally as fallback */
           }),
+        // Raise tmux scrollback from its 2000-line default so re-attach preserves
+        // more context. Matches the xterm-side default in constants.js.
+        execAsync(`tmux set-option -t "${muxName}" history-limit 50000`, { timeout: EXEC_TIMEOUT_MS })
+          .then(() => {})
+          .catch(() => {
+            /* Non-critical — falls back to tmux default */
+          }),
       ];
 
       // Enable 24-bit true color passthrough — server-wide, set once per lifetime

@@ -52,10 +52,11 @@ When user says "COM":
 3. **Consume the changeset**: `npm run version-packages` (auto-bumps `package.json` files, updates `CHANGELOG.md`, runs `npm install --package-lock-only`, and verifies lockfile sync via `scripts/check-lockfile-sync.mjs` — all in one command; never hand-edit `CHANGELOG.md` or `package-lock.json` versions)
 4. **Sync CLAUDE.md version**: Update the `**Version**` line below to match the new version from `package.json`
 5. **Commit and deploy**: `git add -A && git commit -m "chore: version packages" && git push && npm run build && systemctl --user restart codeman-web`
+6. **Wait for CI**: after `git push`, find the run with `gh run list -L 1 --json databaseId,headBranch -q '.[0].databaseId'` and watch it with `gh run watch <id> --exit-status`. Confirm all checks pass before considering the release done.
 
 CI runs `npm run check:lockfile` on every push/PR, so lockfile drift fails the build even if the `version-packages` script is bypassed.
 
-**Version**: 0.6.5 (must match `package.json`)
+**Version**: 0.6.6 (must match `package.json`)
 
 ## Project Overview
 
@@ -94,6 +95,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 - **Global regex `lastIndex`** — Shared `g`-flag patterns in loops must reset `lastIndex = 0` first, or use the `execPattern()` helper in `utils/regex-patterns.ts` (resets automatically)
 - **`envOverrides` flow `CLAUDE_CODE_*` / `OPENCODE_*` env vars** — Set via `POST /api/sessions { envOverrides }`, stored on `Session._envOverrides`, exported by `tmux-manager.buildEnvExports()` at spawn time, persisted in `SessionState.envOverrides`. **Do NOT** write these to `<case>/.claude/settings.local.json` — that's the old path and creates UI/disk drift
 - **Zod `.optional()` rejects `null`** — accepts `undefined` only. When the frontend builds a request body with `JSON.stringify`, an explicit `null` field is preserved on the wire and fails validation with `INVALID_INPUT`. Convert `null` → `undefined` before stringifying (e.g. `field: value ?? undefined`), or declare the schema `.nullish()`. Real bugs caused: 0.6.4 (`durationMinutes` for ∞ respawn), and the same shape pattern hit `opusContext1mEnabled` in 0.6.3
+- **`xterm-zerolag-input` is duplicated** — the local-echo overlay lives in BOTH `packages/xterm-zerolag-input/src/` (published package) AND inline inside `src/web/public/app.js` (runtime copy used by the web UI). Any change to overlay behavior MUST be applied to both, or dev and prod diverge. Always test on mobile after touching it.
 
 **Import conventions**: Utils from `./utils`, types from `./types` (barrel), config from specific `./config/*` files.
 
