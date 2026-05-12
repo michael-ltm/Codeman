@@ -121,6 +121,37 @@ const NEWLINE_SPLIT_PATTERN = /\r?\n/;
 
 // Note: Claude CLI PATH resolution moved to session-cli-builder.ts (buildClaudeEnv)
 
+/** PTY fallback geometry when tmux can't be queried (matches pre-#80 hardcoded values). */
+const DEFAULT_PTY_COLS = 120;
+const DEFAULT_PTY_ROWS = 40;
+const TMUX_DISPLAY_TIMEOUT_MS = 2000;
+
+/**
+ * Ask tmux for the current window geometry of `muxName` so a re-attaching PTY
+ * client can spawn at the same size and avoid the resize-flicker / scrollback
+ * loss documented in #80. Returns `{ cols: 120, rows: 40 }` on any failure
+ * (tmux dead, muxName unknown, malformed output) — caller never has to
+ * differentiate "tmux unreachable" from "size 120x40".
+ *
+ * Argv form (execFileSync, not execSync) keeps `muxName` out of any shell so
+ * a hostile session name can't inject options.
+ */
+export function queryTmuxWindowSize(muxName: string): { cols: number; rows: number } {
+  try {
+    const sizeStr = execFileSync('tmux', ['display', '-t', muxName, '-p', '#{window_width} #{window_height}'], {
+      timeout: TMUX_DISPLAY_TIMEOUT_MS,
+      encoding: 'utf8',
+    }).trim();
+    const [w, h] = sizeStr.split(' ').map(Number);
+    if (w > 0 && h > 0) {
+      return { cols: w, rows: h };
+    }
+  } catch {
+    /* fall back below */
+  }
+  return { cols: DEFAULT_PTY_COLS, rows: DEFAULT_PTY_ROWS };
+}
+
 /**
  * Represents a JSON message from Claude CLI's stream-json output format.
  * Messages are newline-delimited JSON objects parsed from PTY output.
@@ -947,22 +978,7 @@ export class Session extends EventEmitter {
 
     // Attach to the mux session via PTY
     // Query existing tmux window size so re-attach matches (avoids flicker from 120x40 default)
-    let ptyCols = 120;
-    let ptyRows = 40;
-    try {
-      const sizeStr = execFileSync(
-        'tmux',
-        ['display', '-t', this._muxSession!.muxName, '-p', '#{window_width} #{window_height}'],
-        { timeout: 2000, encoding: 'utf8' }
-      ).trim();
-      const [w, h] = sizeStr.split(' ').map(Number);
-      if (w > 0 && h > 0) {
-        ptyCols = w;
-        ptyRows = h;
-      }
-    } catch {
-      /* fall back to 120x40 */
-    }
+    const { cols: ptyCols, rows: ptyRows } = queryTmuxWindowSize(this._muxSession!.muxName);
     try {
       this.ptyProcess = pty.spawn(mux.getAttachCommand(), mux.getAttachArgs(this._muxSession!.muxName), {
         name: 'xterm-256color',

@@ -235,7 +235,7 @@ codeman web                                # codeman:<os.hostname()>
 codeman web --title-hostname dev-box       # codeman:dev-box (manual override for noisy hostnames)
 ```
 
-The title is templated into the served HTML on first byte, so it's correct from the very first paint and works without JavaScript.
+The title is templated into the served HTML on first byte, so it's correct from the very first paint and works without JavaScript. The same hostname prefix is applied to the tab-flash format (`⚠️ (N) codeman:<host>`) and to OS-level desktop notifications (`codeman:<host>: <event>`), so cross-host alerts in the system notification center are also unambiguous.
 
 ### Smart Token Management
 

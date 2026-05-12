@@ -3,7 +3,7 @@
  *
  * The NotificationManager class implements five notification layers:
  *   1. In-app notification drawer (slide-out panel with grouped notifications)
- *   2. Tab title flash (alternating "(*) Codeman" when tab is hidden)
+ *   2. Tab title flash (alternating "⚠️ (N) codeman:<host>" / "codeman:<host>" when tab is hidden; uses this.originalTitle so it tracks any per-host title)
  *   3. Browser Notification API (desktop push with auto-close after 8s)
  *   4. Web Push via service worker (OS-level notifications when tab is closed)
  *   5. Audio alerts (Web Audio API beep, user-opt-in)
@@ -330,7 +330,7 @@ class NotificationManager {
     if (now - this.lastBrowserNotifTime < BROWSER_NOTIF_RATE_LIMIT_MS) return;
     this.lastBrowserNotifTime = now;
 
-    const notif = new Notification(`Codeman: ${title}`, {
+    const notif = new Notification(`${this.originalTitle}: ${title}`, {
       body,
       tag, // Groups same-tag notifications
       icon: '/favicon.ico',
