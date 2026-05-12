@@ -66,48 +66,60 @@ const LEADING_WHITESPACE_PATTERN = /^[\s\r\n]+/;
 
 /**
  * Strip redundant Ink spinner/status-bar redraw frames from the terminal buffer.
- * Ink (Claude Code's TUI) uses absolute cursor positioning (CSI n d = VPA, CSI n;m H = CUP)
- * to animate the spinner and update the status bar. During long thinking phases, these frames
- * accumulate to 500KB+ of repeated overwrites to the same rows. When the buffer is tailed,
- * only spinner frames are returned, making the terminal appear empty.
+ * Ink (Claude Code's TUI) uses absolute cursor positioning (CSI n d = VPA) to animate
+ * the spinner and update the status bar. During long thinking phases, these frames
+ * accumulate to 500KB+ of repeated overwrites to the same rows.
  *
- * Strategy: find where absolute-positioned redraws begin (first VPA sequence), then keep
- * only the last ~4KB of redraw frames (the final visual state) and discard the rest.
+ * Strategy: detect "redraw clusters" — dense runs of VPA escapes where each is within
+ * FRAME_GAP bytes of the previous (i.e. continuous rerendering of the same UI region).
+ * Collapse each big cluster down to just the bytes from its last VPA onwards (the final
+ * frame). Content *between* clusters (Claude's streamed response text) is preserved.
+ *
+ * Without clustering, a single first-VPA-finds-all approach would discard the entire
+ * conversation after Claude's first render — losing 100KB+ of legitimate scrollback.
  */
 function stripInkRedrawBloat(buffer: string): string {
-  // Find where Ink's absolute-positioned redraws start (first CSI n d = VPA)
   // eslint-disable-next-line no-control-regex
-  const firstVPA = buffer.search(/\x1b\[\d+d/);
-  if (firstVPA === -1) return buffer; // No Ink redraws
-
-  const contentPart = buffer.slice(0, firstVPA);
-  const redrawPart = buffer.slice(firstVPA);
-
-  // If the redraw section is small (<16KB), not worth stripping
-  if (redrawPart.length < 16384) return buffer;
-
-  // Find the last complete Ink frame by searching for where the VPA row
-  // number drops (cursor jumps back to viewport top for a new render cycle).
-  // Search the last 64KB — a single Ink frame with response content can be
-  // 10-20KB, so 4KB was too small and caused partial frames (blank gap).
-  const searchLen = Math.min(redrawPart.length, 65536);
-  const searchWindow = redrawPart.slice(-searchLen);
-
-  // eslint-disable-next-line no-control-regex
-  const vpaRe = /\x1b\[(\d+)d/g;
-  let lastFrameStart = 0;
-  let prevRow = -1;
-  let match;
-  while ((match = vpaRe.exec(searchWindow)) !== null) {
-    const row = parseInt(match[1], 10);
-    // Row number dropped significantly — Ink started a new frame
-    if (prevRow > 0 && row < prevRow - 5) {
-      lastFrameStart = match.index;
-    }
-    prevRow = row;
+  const vpaRe = /\x1b\[\d+d/g;
+  const positions: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = vpaRe.exec(buffer)) !== null) {
+    positions.push(m.index);
   }
+  if (positions.length < 10) return buffer; // Too few VPAs to be bloat
 
-  return contentPart + searchWindow.slice(lastFrameStart);
+  // Group consecutive VPAs into clusters separated by gaps > FRAME_GAP.
+  // Within a cluster, VPAs are close together (continuous rerenders).
+  // Between clusters, real terminal output (response text) lives.
+  const FRAME_GAP = 8 * 1024; // 8KB — one Ink frame is typically 1-4KB
+  const MIN_BLOAT_SIZE = 32 * 1024; // Only collapse clusters spanning >= 32KB
+
+  const clusters: { start: number; end: number }[] = [];
+  let cs = positions[0];
+  let ce = positions[0];
+  for (let i = 1; i < positions.length; i++) {
+    if (positions[i] - ce <= FRAME_GAP) {
+      ce = positions[i];
+    } else {
+      clusters.push({ start: cs, end: ce });
+      cs = positions[i];
+      ce = positions[i];
+    }
+  }
+  clusters.push({ start: cs, end: ce });
+
+  // For each big cluster, replace [start..end] with the bytes from `end` onwards
+  // (which contains the last frame's content up to where the next cluster, or
+  // post-cluster content, begins).
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const cl of clusters) {
+    if (cl.end - cl.start < MIN_BLOAT_SIZE) continue;
+    parts.push(buffer.slice(cursor, cl.start));
+    cursor = cl.end;
+  }
+  parts.push(buffer.slice(cursor));
+  return parts.join('');
 }
 
 export function registerSessionRoutes(

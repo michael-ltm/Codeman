@@ -56,7 +56,7 @@ When user says "COM":
 
 CI runs `npm run check:lockfile` on every push/PR, so lockfile drift fails the build even if the `version-packages` script is bypassed.
 
-**Version**: 0.6.6 (must match `package.json`)
+**Version**: 0.6.7 (must match `package.json`)
 
 ## Project Overview
 
@@ -77,6 +77,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 | Task | Command |
 |------|---------|
 | Dev with TLS | `npx tsx src/index.ts web --https` |
+| Override window title hostname | `npx tsx src/index.ts web --title-hostname <name>` (default: `os.hostname()` — tab title renders as `codeman:<name>`) |
 | Continuous typecheck | `tsc --noEmit --watch` |
 | Test coverage | `npm run test:coverage` |
 | Dead-code sweep | `npm run knip` (config in `knip.json`) |

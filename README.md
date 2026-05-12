@@ -226,6 +226,17 @@ Run **20 parallel sessions** with full visibility — real-time xterm.js termina
 
 Every session runs inside **tmux** — sessions survive server restarts, network drops, and machine sleep. Auto-recovery on startup with dual redundancy. Ghost session discovery finds orphaned tmux sessions. Managed sessions are environment-tagged so the agent won't kill its own session.
 
+### Hostname-Aware Window Title
+
+Running Codeman on multiple hosts (laptop, dev box, NAS)? The browser tab title is `codeman:<hostname>` so you can tell which backend each tab points at without clicking in:
+
+```bash
+codeman web                                # codeman:<os.hostname()>
+codeman web --title-hostname dev-box       # codeman:dev-box (manual override for noisy hostnames)
+```
+
+The title is templated into the served HTML on first byte, so it's correct from the very first paint and works without JavaScript.
+
 ### Smart Token Management
 
 | Threshold | Action | Result |

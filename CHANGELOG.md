@@ -1,5 +1,15 @@
 # aicodeman
 
+## 0.6.7
+
+### Patch Changes
+
+- - **fix(client): preserve inline rename input across tab re-renders** (#81) — Right-click → rename on a session tab no longer loses keystrokes when SSE traffic from sibling sessions triggers a tab re-render. Adds an `_inlineRenameActive` guard at the top of `renderSessionTabs()` and `_fullRenameSessionTabs()` so the in-progress input isn't destroyed mid-typing. Also fixes a latent double-fire of `finishRename` (blur + Enter could both invoke it). Drive-by: safer DOM child clearing in place of `innerHTML = ''`.
+  - **feat: hostname-aware window title** (#82) — The browser tab title is now `codeman:<hostname>` instead of the bare `Codeman` literal, so users running Codeman on multiple hosts (laptop, dev box, NAS) can tell at a glance which tab points at which backend. New `--title-hostname <name>` CLI flag overrides the detected `os.hostname()` when it's noisy or you want a cosmetic name. The title is templated into the served HTML on first byte (with narrow HTML escaping), so it's correct from the first paint and works without JavaScript. Title-flash logic now respects the per-host title.
+  - **perf: larger terminal tail on tab switch** — `TERMINAL_TAIL_SIZE` raised from 128KB to 1MB. When switching back to a busy session tab you now get ~8× more scrollback restored immediately.
+  - **fix: preserve response text in Ink redraw stripping** — `stripInkRedrawBloat()` rewritten from a first-VPA approach to cluster-based detection. The previous algorithm assumed all VPA escapes after the first one belonged to a single redraw region and discarded everything in between, which silently lost 100KB+ of legitimate Claude response text once a render had occurred. The new approach groups VPAs into clusters separated by ≥8KB gaps and only collapses clusters spanning ≥32KB, so streamed response content between redraw bursts is preserved.
+  - **docs**: `CLAUDE.md` Additional Commands gains the `--title-hostname` row; `README.md` gets a "Hostname-Aware Window Title" subsection under Multi-Session Dashboard.
+
 ## 0.6.6
 
 ### Patch Changes

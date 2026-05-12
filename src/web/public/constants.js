@@ -54,7 +54,7 @@ const BROWSER_NOTIF_RATE_LIMIT_MS = 3000;   // Rate limit for browser notificati
 const AUTO_CLOSE_NOTIFICATION_MS = 8000;    // Auto-close browser notifications
 const THROTTLE_DELAY_MS = 100;              // General UI throttle delay
 const TERMINAL_CHUNK_SIZE = 32 * 1024;      // 32KB chunks for terminal buffer loading
-const TERMINAL_TAIL_SIZE = 128 * 1024;      // 128KB tail for initial load
+const TERMINAL_TAIL_SIZE = 1024 * 1024;     // 1MB tail for initial load (more scrollback on tab switch)
 const SYNC_WAIT_TIMEOUT_MS = 50;            // Wait timeout for terminal sync
 const STATS_POLLING_INTERVAL_MS = 2000;     // System stats polling
 
