@@ -1,5 +1,5 @@
 /**
- * @fileoverview Quick start (case loading, session spawning for Claude/Shell/OpenCode),
+ * @fileoverview Quick start (case loading, session spawning for Claude/Shell/OpenCode/Codex/Gemini),
  * session options modal (per-session settings, color picker, rename),
  * session options tabs (Ralph config tab), case settings (CRUD, links),
  * create case modal, and mobile case picker.
@@ -151,7 +151,7 @@ Object.assign(CodemanApp.prototype, {
     return this.run();
   },
 
-  /** Run using the selected mode (Claude Code, OpenCode, or Codex) */
+  /** Run using the selected mode (Claude Code, OpenCode, Codex, or Gemini) */
   async run() {
     const mode = this._runMode || 'claude';
     if (mode === 'opencode') {
@@ -159,6 +159,9 @@ Object.assign(CodemanApp.prototype, {
     }
     if (mode === 'codex') {
       return this.runCodex();
+    }
+    if (mode === 'gemini') {
+      return this.runGemini();
     }
     return this.runClaude();
   },
@@ -257,7 +260,7 @@ Object.assign(CodemanApp.prototype, {
       gearBtn.className = `btn-toolbar btn-run-gear mode-${mode}`;
     }
     if (label) {
-      label.textContent = mode === 'opencode' ? 'Run OC' : mode === 'codex' ? 'Run CX' : 'Run';
+      label.textContent = mode === 'opencode' ? 'Run OC' : mode === 'codex' ? 'Run CX' : mode === 'gemini' ? 'Run GM' : 'Run';
     }
   },
 
@@ -640,6 +643,47 @@ Object.assign(CodemanApp.prototype, {
     }
   },
 
+  async runGemini() {
+    const caseName = document.getElementById('quickStartCase').value || 'testcase';
+
+    this.terminal.clear();
+    this.terminal.writeln(`\x1b[1;32m Starting Gemini session in ${caseName}...\x1b[0m`);
+    this.terminal.writeln('');
+    this.terminal.focus();
+
+    try {
+      const statusRes = await fetch('/api/gemini/status');
+      const status = await statusRes.json();
+      if (!status.available) {
+        this.terminal.writeln('\x1b[1;31m Gemini CLI not found.\x1b[0m');
+        this.terminal.writeln('\x1b[90m Install with: npm install -g @google/gemini-cli\x1b[0m');
+        return;
+      }
+
+      const envOverrides = this.buildEnvOverrides(this.getCaseSettings(caseName), this.loadAppSettingsFromStorage());
+      const res = await fetch('/api/quick-start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          caseName,
+          mode: 'gemini',
+          geminiConfig: { approvalMode: 'yolo' },
+          ...(Object.keys(envOverrides).length > 0 ? { envOverrides } : {}),
+        })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Failed to start Gemini');
+
+      if (data.sessionId) {
+        await this.selectSession(data.sessionId);
+      }
+
+      this.terminal.focus();
+    } catch (err) {
+      this.terminal.writeln(`\x1b[1;31m Error: ${err.message}\x1b[0m`);
+    }
+  },
+
 
   // ═══════════════════════════════════════════════════════════════
   // Session Options Modal
@@ -651,8 +695,9 @@ Object.assign(CodemanApp.prototype, {
 
     this.editingSessionId = sessionId;
 
-    // Reset to an appropriate tab — Summary for OpenCode (Respawn/Ralph are Claude-only)
-    this.switchOptionsTab(session.mode === 'opencode' || session.mode === 'codex' ? 'summary' : 'respawn');
+    // Reset to an appropriate tab — Summary for external CLIs (Respawn/Ralph are Claude-only)
+    const isAltMode = session.mode === 'opencode' || session.mode === 'codex' || session.mode === 'gemini';
+    this.switchOptionsTab(isAltMode ? 'summary' : 'respawn');
 
     // Update respawn status display and buttons
     const respawnStatus = document.getElementById('sessionRespawnStatus');
@@ -680,10 +725,10 @@ Object.assign(CodemanApp.prototype, {
       respawnSection.style.display = 'none';
     }
 
-    // Hide Claude-specific options for OpenCode sessions
-    const isOpenCode = session.mode === 'opencode' || session.mode === 'codex';
+    // Hide Claude-specific options for external CLI sessions
+    const isExternalCli = session.mode === 'opencode' || session.mode === 'codex' || session.mode === 'gemini';
     const claudeOnlyEls = document.querySelectorAll('[data-claude-only]');
-    claudeOnlyEls.forEach(el => { el.style.display = isOpenCode ? 'none' : ''; });
+    claudeOnlyEls.forEach(el => { el.style.display = isExternalCli ? 'none' : ''; });
 
     // Reset duration presets to default (unlimited)
     this.selectDurationPreset('');
@@ -731,21 +776,21 @@ Object.assign(CodemanApp.prototype, {
     document.getElementById('respawnPresetSelect').value = '';
     document.getElementById('presetDescriptionHint').textContent = '';
 
-    // Hide Ralph/Todo tab and Respawn tab for opencode sessions (not supported)
+    // Hide Ralph/Todo tab and Respawn tab for external CLI sessions (not supported)
     const ralphTabBtn = document.querySelector('#sessionOptionsModal .modal-tab-btn[data-tab="ralph"]');
     const respawnTabBtn = document.querySelector('#sessionOptionsModal .modal-tab-btn[data-tab="respawn"]');
-    if (isOpenCode) {
+    if (isExternalCli) {
       if (ralphTabBtn) ralphTabBtn.style.display = 'none';
       if (respawnTabBtn) respawnTabBtn.style.display = 'none';
-      // Default to Context tab for opencode sessions since Respawn is hidden
+      // Default to Context tab for external CLI sessions since Respawn is hidden
       this.switchOptionsTab('context');
     } else {
       if (ralphTabBtn) ralphTabBtn.style.display = '';
       if (respawnTabBtn) respawnTabBtn.style.display = '';
     }
 
-    // Populate Ralph Wiggum form with current session values (skip for opencode)
-    if (!isOpenCode) {
+    // Populate Ralph Wiggum form with current session values (skip for external CLI sessions)
+    if (!isExternalCli) {
       const ralphState = this.ralphStates.get(sessionId);
       this.populateRalphForm({
         enabled: ralphState?.loop?.enabled ?? session.ralphLoop?.enabled ?? false,
@@ -1579,6 +1624,7 @@ Object.defineProperty(CodemanApp.prototype, 'runMode', {
     return this._runMode || 'claude';
   },
   set(mode) {
-    this._runMode = mode === 'opencode' || mode === 'codex' || mode === 'claude' ? mode : 'claude';
+    this._runMode =
+      mode === 'opencode' || mode === 'codex' || mode === 'gemini' || mode === 'claude' ? mode : 'claude';
   },
 });

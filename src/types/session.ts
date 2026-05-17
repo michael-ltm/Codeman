@@ -8,10 +8,12 @@
  * - SessionConfig — creation-time config (id, workingDir, createdAt)
  * - SessionOutput — captured stdout/stderr/exitCode
  * - SessionStatus — 'idle' | 'busy' | 'stopped' | 'error'
- * - SessionMode — 'claude' | 'shell' | 'opencode' | 'codex' (which CLI backend)
+ * - SessionMode — 'claude' | 'shell' | 'opencode' | 'codex' | 'gemini' (which CLI backend)
  * - ClaudeMode — CLI permission mode ('dangerously-skip-permissions' | 'normal' | 'allowedTools')
  * - SessionColor — visual differentiation color
  * - OpenCodeConfig — OpenCode-specific settings (model, autoAllowTools, continueSession)
+ * - CodexConfig — Codex (OpenAI CLI)-specific settings (model, resumeSessionId)
+ * - GeminiConfig — Gemini CLI-specific settings (model, approvalMode, resumeSession)
  *
  * Cross-domain relationships:
  * - SessionState.respawnConfig embeds RespawnConfig (respawn domain)
@@ -39,7 +41,7 @@ export type SessionStatus = 'idle' | 'busy' | 'stopped' | 'error';
 export type ClaudeMode = 'dangerously-skip-permissions' | 'normal' | 'allowedTools';
 
 /** Session mode: which CLI backend a session runs */
-export type SessionMode = 'claude' | 'shell' | 'opencode' | 'codex';
+export type SessionMode = 'claude' | 'shell' | 'opencode' | 'codex' | 'gemini';
 
 /**
  * Valid Claude CLI effort levels (claude >= 2.1.154).
@@ -83,6 +85,16 @@ export interface CodexConfig {
   dangerouslyBypassApprovals?: boolean;
   /** Browser rendering strategy for Codex sessions. Hybrid TUI is the only supported mode. */
   renderMode?: CodexRenderMode;
+}
+
+/** Gemini CLI session configuration */
+export interface GeminiConfig {
+  /** Model identifier (e.g., "gemini-2.5-pro"). Passed via --model. */
+  model?: string;
+  /** Gemini approval mode for tool calls. */
+  approvalMode?: 'default' | 'auto_edit' | 'yolo' | 'plan';
+  /** Resume a previous Gemini session ("latest", index, or session id). */
+  resumeSession?: string;
 }
 
 /**
@@ -214,6 +226,8 @@ export interface SessionState {
   openCodeConfig?: OpenCodeConfig;
   /** Codex-specific configuration (only for mode === 'codex') */
   codexConfig?: CodexConfig;
+  /** Gemini-specific configuration (only for mode === 'gemini') */
+  geminiConfig?: GeminiConfig;
   /** Claude conversation session ID to resume after reboot (set by restore script) */
   resumeSessionId?: string;
   /** Claude CLI effort level (soft default via --settings, switchable in-session via /effort) */

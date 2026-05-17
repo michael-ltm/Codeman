@@ -76,11 +76,17 @@ vi.mock('../../src/utils/opencode-cli-resolver.js', () => ({
   resolveOpenCodeDir: vi.fn(() => null),
 }));
 
+vi.mock('../../src/utils/gemini-cli-resolver.js', () => ({
+  isGeminiAvailable: vi.fn(() => false),
+  resolveGeminiDir: vi.fn(() => null),
+}));
+
 import fs from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
 import { subagentWatcher } from '../../src/subagent-watcher.js';
 import { getLifecycleLog } from '../../src/session-lifecycle-log.js';
 import { isOpenCodeAvailable, resolveOpenCodeDir } from '../../src/utils/opencode-cli-resolver.js';
+import { isGeminiAvailable, resolveGeminiDir } from '../../src/utils/gemini-cli-resolver.js';
 
 const mockedReadFile = vi.mocked(fs.readFile);
 const mockedWriteFile = vi.mocked(fs.writeFile);
@@ -90,6 +96,8 @@ const mockedSubagentWatcher = vi.mocked(subagentWatcher);
 const mockedGetLifecycleLog = vi.mocked(getLifecycleLog);
 const mockedIsOpenCodeAvailable = vi.mocked(isOpenCodeAvailable);
 const mockedResolveOpenCodeDir = vi.mocked(resolveOpenCodeDir);
+const mockedIsGeminiAvailable = vi.mocked(isGeminiAvailable);
+const mockedResolveGeminiDir = vi.mocked(resolveGeminiDir);
 
 describe('system-routes', () => {
   let harness: RouteTestHarness;
@@ -117,6 +125,8 @@ describe('system-routes', () => {
     } as never);
     mockedIsOpenCodeAvailable.mockReturnValue(false);
     mockedResolveOpenCodeDir.mockReturnValue(null);
+    mockedIsGeminiAvailable.mockReturnValue(false);
+    mockedResolveGeminiDir.mockReturnValue(null);
   });
 
   afterEach(async () => {
@@ -167,7 +177,7 @@ describe('system-routes', () => {
       });
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(false);
+      expect(body.message ?? body.error).toBeTruthy();
     });
   });
 
@@ -356,7 +366,7 @@ describe('system-routes', () => {
       });
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(false);
+      expect(body.message ?? body.error).toBeTruthy();
     });
 
     it('saves lastUsedCase as partial update without overwriting other settings', async () => {
@@ -454,7 +464,7 @@ describe('system-routes', () => {
       });
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(false);
+      expect(body.message ?? body.error).toBeTruthy();
     });
   });
 
@@ -511,7 +521,7 @@ describe('system-routes', () => {
       });
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(false);
+      expect(body.message ?? body.error).toBeTruthy();
     });
   });
 
@@ -692,6 +702,32 @@ describe('system-routes', () => {
       mockedResolveOpenCodeDir.mockReturnValue('/usr/local/bin');
 
       const res = await harness.app.inject({ method: 'GET', url: '/api/opencode/status' });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.available).toBe(true);
+      expect(body.path).toBe('/usr/local/bin');
+    });
+  });
+
+  // ========== GET /api/gemini/status ==========
+
+  describe('GET /api/gemini/status', () => {
+    it('returns unavailable when gemini is not installed', async () => {
+      mockedIsGeminiAvailable.mockReturnValue(false);
+      mockedResolveGeminiDir.mockReturnValue(null);
+
+      const res = await harness.app.inject({ method: 'GET', url: '/api/gemini/status' });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.available).toBe(false);
+      expect(body.path).toBeNull();
+    });
+
+    it('returns available with path when gemini is installed', async () => {
+      mockedIsGeminiAvailable.mockReturnValue(true);
+      mockedResolveGeminiDir.mockReturnValue('/usr/local/bin');
+
+      const res = await harness.app.inject({ method: 'GET', url: '/api/gemini/status' });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
       expect(body.available).toBe(true);

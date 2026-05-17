@@ -61,6 +61,16 @@ describe('run mode UI', () => {
     expect(app.runMode).toBe('claude');
     expect(runBtnLabel.textContent).toBe('Run');
   });
+
+  it('accepts Gemini mode from server sync and updates the run button label', async () => {
+    const { app, storage, runBtnLabel } = loadRunModeHarness();
+
+    storage.set('codeman_runMode', 'claude');
+    await app.loadAppSettingsFromServer(Promise.resolve({ runMode: 'gemini' }));
+
+    expect(app.runMode).toBe('gemini');
+    expect(runBtnLabel.textContent).toBe('Run GM');
+  });
 });
 
 describe('Codex quick start settings', () => {

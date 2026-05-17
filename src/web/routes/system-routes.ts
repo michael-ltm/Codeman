@@ -331,7 +331,7 @@ export function registerSystemRoutes(
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // CLI Integrations (OpenCode)
+  // CLI Integrations (OpenCode, Codex, Gemini)
   // ═══════════════════════════════════════════════════════════════
 
   // ========== OpenCode ==========
@@ -349,6 +349,16 @@ export function registerSystemRoutes(
     return {
       available: isCodexAvailable(),
       path: resolveCodexDir(),
+    };
+  });
+
+  // ========== Gemini ==========
+
+  app.get('/api/gemini/status', async () => {
+    const { isGeminiAvailable, resolveGeminiDir } = await import('../../utils/gemini-cli-resolver.js');
+    return {
+      available: isGeminiAvailable(),
+      path: resolveGeminiDir(),
     };
   });
 

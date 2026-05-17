@@ -305,6 +305,10 @@
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               Run OpenCode
             </button>
+            <button class="welcome-btn welcome-btn-gemini" onclick="app.setRunMode('gemini'); app.runGemini()">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Run Gemini
+            </button>
           </div>
           <div class="welcome-qr" id="welcomeQr" onclick="app.toggleWelcomeQrSize()">
             <div class="welcome-qr-inner" id="welcomeQrInner"></div>
@@ -399,6 +403,9 @@
               </button>
               <button class="run-mode-option" data-mode="codex" onclick="app.setRunMode('codex')">
                 <span class="run-mode-dot codex"></span>Codex
+              </button>
+              <button class="run-mode-option" data-mode="gemini" onclick="app.setRunMode('gemini')">
+                <span class="run-mode-dot gemini"></span>Gemini
               </button>
               <div class="run-mode-sep"></div>
               <div class="run-mode-header">Recent Sessions</div>
