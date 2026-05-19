@@ -2369,6 +2369,56 @@ body {
   color: var(--text);
 }
 
+.history-detail-actions {
+  margin-top: 0.5rem;
+}
+
+.history-view-all-btn {
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  background: rgba(99, 179, 237, 0.08);
+  border: 1px solid rgba(99, 179, 237, 0.25);
+  border-radius: 6px;
+  color: rgba(99, 179, 237, 0.95);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-smooth), border-color var(--transition-smooth);
+}
+
+.history-view-all-btn:hover {
+  background: rgba(99, 179, 237, 0.15);
+  border-color: rgba(99, 179, 237, 0.5);
+}
+
+/* Folder history modal */
+.folder-history-modal .modal-body {
+  padding: 0.75rem 1rem 1rem;
+}
+
+.folder-history-subtitle {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  word-break: break-all;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.folder-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.folder-history-empty {
+  padding: 2rem 0.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
 .welcome-hint {
   color: var(--text-muted);
   font-size: 0.8rem;

@@ -1448,96 +1448,104 @@ export function registerSessionRoutes(
     }
   }
 
-  app.get('/api/history/sessions', async () => {
+  type HistorySession = {
+    sessionId: string;
+    workingDir: string;
+    projectKey: string;
+    sizeBytes: number;
+    lastModified: string;
+    firstPrompt?: string;
+  };
+
+  // Scan a single project directory and return all valid history sessions in it.
+  // Reused by both the global overview and the single-folder drill-down.
+  async function scanProjectDir(projPath: string, projDir: string, headBuf: Buffer): Promise<HistorySession[]> {
+    const out: HistorySession[] = [];
+    const stat = await fs.stat(projPath).catch(() => null);
+    if (!stat?.isDirectory()) return out;
+
+    const workingDir = await decodeProjectKey(projDir);
+    const entries = await fs.readdir(projPath).catch(() => [] as string[]);
+
+    for (const entry of entries) {
+      if (!entry.endsWith('.jsonl')) continue;
+      const sessionId = entry.replace('.jsonl', '');
+      if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(sessionId)) continue;
+
+      const filePath = join(projPath, entry);
+      const fileStat = await fs.stat(filePath).catch(() => null);
+      if (!fileStat) continue;
+      if (fileStat.size < 4000) continue;
+
+      let firstPrompt: string | undefined;
+      const head = await readFileHead(filePath, headBuf);
+      const hasConversation = (text: string) =>
+        text.includes('"type":"user"') || text.includes('"type":"assistant"') || text.includes('"type":"summary"');
+
+      let foundContent = head ? hasConversation(head) : false;
+      let tail: string | null = null;
+      if (!foundContent && fileStat.size > 16384) {
+        const tailBuf = Buffer.alloc(32768);
+        tail = await readFileTail(filePath, tailBuf, fileStat.size);
+        if (tail) foundContent = hasConversation(tail);
+      }
+      if (!foundContent) continue;
+
+      if (head) firstPrompt = extractFirstUserPrompt(head);
+      if (!firstPrompt && fileStat.size > 65536) {
+        if (!tail) {
+          const tailBuf = Buffer.alloc(32768);
+          tail = await readFileTail(filePath, tailBuf, fileStat.size);
+        }
+        if (tail) firstPrompt = extractFirstUserPrompt(tail);
+      }
+
+      out.push({
+        sessionId,
+        workingDir,
+        projectKey: projDir,
+        sizeBytes: fileStat.size,
+        lastModified: fileStat.mtime.toISOString(),
+        firstPrompt,
+      });
+    }
+    return out;
+  }
+
+  app.get('/api/history/sessions', async (req) => {
+    const query = req.query as { projectKey?: string; offset?: string; limit?: string };
     const projectsDir = join(process.env.HOME || '/tmp', '.claude', 'projects');
-    const results: Array<{
-      sessionId: string;
-      workingDir: string;
-      projectKey: string;
-      sizeBytes: number;
-      lastModified: string;
-      firstPrompt?: string;
-    }> = [];
     const headBuf = Buffer.alloc(16384);
 
+    // Single-folder drill-down: when projectKey is provided, scan only that
+    // directory, bypass the 50-cap, and honor offset/limit pagination.
+    if (query.projectKey) {
+      // Validate projectKey format to prevent path traversal
+      if (!/^[A-Za-z0-9_-]+$/.test(query.projectKey)) {
+        return { sessions: [], total: 0 };
+      }
+      const offset = Math.max(0, parseInt(query.offset || '0', 10) || 0);
+      const limit = Math.min(100, Math.max(1, parseInt(query.limit || '20', 10) || 20));
+      const projPath = join(projectsDir, query.projectKey);
+      const all = await scanProjectDir(projPath, query.projectKey, headBuf);
+      all.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
+      return { sessions: all.slice(offset, offset + limit), total: all.length };
+    }
+
+    // Global overview: scan all projects, return up to 50 most-recent sessions.
+    const results: HistorySession[] = [];
     try {
       const projectDirs = await fs.readdir(projectsDir);
       for (const projDir of projectDirs) {
         const projPath = join(projectsDir, projDir);
-        const stat = await fs.stat(projPath).catch(() => null);
-        if (!stat?.isDirectory()) continue;
-
-        // Decode project key to working dir. Claude CLI encodes '/' as '-',
-        // but path components may also contain '-' (e.g. "AI_project" vs "AI-project").
-        // Use recursive backtracking: try each '-' as either '/' or literal '-',
-        // verify which decoded path actually exists on disk.
-        const workingDir = await decodeProjectKey(projDir);
-
-        const entries = await fs.readdir(projPath);
-        for (const entry of entries) {
-          if (!entry.endsWith('.jsonl')) continue;
-          const sessionId = entry.replace('.jsonl', '');
-          // Only valid UUIDs
-          if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(sessionId)) continue;
-
-          const filePath = join(projPath, entry);
-          const fileStat = await fs.stat(filePath).catch(() => null);
-          if (!fileStat) continue;
-          // Skip files too small to contain real conversation (metadata-only sessions
-          // like file-history-snapshot entries are typically < 4KB)
-          if (fileStat.size < 4000) continue;
-
-          // Quick content check: verify actual conversation data exists.
-          // Sessions with only file-history-snapshot or hook_progress entries have
-          // no "user"/"assistant" messages and will fail claude --resume.
-          // Read first 16KB to check content and extract first user prompt.
-          let firstPrompt: string | undefined;
-          const head = await readFileHead(filePath, headBuf);
-          const hasConversation = (text: string) =>
-            text.includes('"type":"user"') || text.includes('"type":"assistant"') || text.includes('"type":"summary"');
-
-          let foundContent = head ? hasConversation(head) : false;
-
-          // For large files, head may not contain user messages (e.g. /init followed
-          // by large system entries). Check the tail as well.
-          let tail: string | null = null;
-          if (!foundContent && fileStat.size > 16384) {
-            const tailBuf = Buffer.alloc(32768);
-            tail = await readFileTail(filePath, tailBuf, fileStat.size);
-            if (tail) foundContent = hasConversation(tail);
-          }
-
-          if (!foundContent) continue; // No conversation content — skip
-
-          if (head) firstPrompt = extractFirstUserPrompt(head);
-
-          // If head scan found no usable prompt (e.g. session started with /init),
-          // try reading the tail for a recent user message.
-          if (!firstPrompt && fileStat.size > 65536) {
-            if (!tail) {
-              const tailBuf = Buffer.alloc(32768);
-              tail = await readFileTail(filePath, tailBuf, fileStat.size);
-            }
-            if (tail) firstPrompt = extractFirstUserPrompt(tail);
-          }
-
-          results.push({
-            sessionId,
-            workingDir,
-            projectKey: projDir,
-            sizeBytes: fileStat.size,
-            lastModified: fileStat.mtime.toISOString(),
-            firstPrompt,
-          });
-        }
+        const list = await scanProjectDir(projPath, projDir, headBuf);
+        results.push(...list);
       }
     } catch {
       // Projects dir may not exist
     }
 
-    // Sort by lastModified descending
     results.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
-
     return { sessions: results.slice(0, 50) };
   });
 

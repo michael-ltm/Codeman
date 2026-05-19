@@ -917,8 +917,15 @@ Object.assign(CodemanApp.prototype, {
       .replace(/^\/Users\/[^/]+\//, '~/');
   },
 
-  /** Build a single history item DOM element */
-  _buildHistoryItem(s, cases) {
+  /**
+   * Build a single history item DOM element.
+   * @param {object} s session record
+   * @param {Array} cases linked cases (for #caseName label)
+   * @param {object} [options]
+   * @param {boolean} [options.showViewAll=true] show "View all in folder" button in detail panel
+   */
+  _buildHistoryItem(s, cases, options) {
+    const showViewAll = options?.showViewAll !== false;
     const size =
       s.sizeBytes < 1024
         ? `${s.sizeBytes}B`
@@ -1000,6 +1007,21 @@ Object.assign(CodemanApp.prototype, {
 
     detail.append(promptRow, pathRow, metaRow);
 
+    if (showViewAll && s.projectKey) {
+      const actionRow = document.createElement('div');
+      actionRow.className = 'history-detail-row history-detail-actions';
+      const viewAllBtn = document.createElement('button');
+      viewAllBtn.type = 'button';
+      viewAllBtn.className = 'history-view-all-btn';
+      viewAllBtn.textContent = 'View all in this folder';
+      viewAllBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        this.openFolderHistoryModal(s.projectKey, s.workingDir, cases);
+      });
+      actionRow.appendChild(viewAllBtn);
+      detail.appendChild(actionRow);
+    }
+
     expandBtn.addEventListener('click', (ev) => {
       ev.stopPropagation();
       const expanded = item.classList.toggle('expanded');
@@ -1063,9 +1085,144 @@ Object.assign(CodemanApp.prototype, {
     }
   },
 
+  /** Page size for the folder history modal */
+  _FOLDER_HISTORY_PAGE_SIZE: 20,
+
+  /**
+   * Open a modal showing all history sessions in a single folder.
+   * Paginated by FOLDER_HISTORY_PAGE_SIZE; "Show more" loads next page.
+   */
+  openFolderHistoryModal(projectKey, workingDir, cases) {
+    // Close any existing instance first
+    this._closeFolderHistoryModal();
+
+    const modal = document.createElement('div');
+    modal.className = 'modal active folder-history-modal';
+    modal.id = 'folderHistoryModal';
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => this._closeFolderHistoryModal());
+
+    const content = document.createElement('div');
+    content.className = 'modal-content modal-lg';
+
+    const header = document.createElement('div');
+    header.className = 'modal-header';
+    const title = document.createElement('h3');
+    title.textContent = 'Folder History';
+    const subtitle = document.createElement('div');
+    subtitle.className = 'folder-history-subtitle';
+    subtitle.textContent = this._shortenHomePath(workingDir);
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'modal-close';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.innerHTML = '&times;';
+    closeBtn.addEventListener('click', () => this._closeFolderHistoryModal());
+    header.append(title, closeBtn);
+
+    const body = document.createElement('div');
+    body.className = 'modal-body';
+    const list = document.createElement('div');
+    list.className = 'folder-history-list';
+    list.setAttribute('data-loading', 'true');
+    list.textContent = 'Loading...';
+    body.append(subtitle, list);
+
+    content.append(header, body);
+    modal.append(backdrop, content);
+    document.body.appendChild(modal);
+
+    // Track state for pagination
+    this._folderHistoryState = {
+      projectKey,
+      workingDir,
+      cases: cases || [],
+      offset: 0,
+      total: null,
+      list,
+    };
+
+    // ESC to close
+    this._folderHistoryEscHandler = (ev) => {
+      if (ev.key === 'Escape') this._closeFolderHistoryModal();
+    };
+    document.addEventListener('keydown', this._folderHistoryEscHandler);
+
+    this._loadFolderHistoryPage();
+  },
+
+  async _loadFolderHistoryPage() {
+    const state = this._folderHistoryState;
+    if (!state) return;
+    const { projectKey, cases, list } = state;
+    const limit = this._FOLDER_HISTORY_PAGE_SIZE;
+    const offset = state.offset;
+
+    // Remove existing "Show more" button while loading
+    const existingMore = list.querySelector('.folder-history-more');
+    if (existingMore) existingMore.remove();
+
+    // First page: clear loading placeholder
+    if (offset === 0) {
+      list.replaceChildren();
+      list.removeAttribute('data-loading');
+    }
+
+    try {
+      const url = `/api/history/sessions?projectKey=${encodeURIComponent(projectKey)}&offset=${offset}&limit=${limit}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const sessions = data.sessions || [];
+      state.total = typeof data.total === 'number' ? data.total : sessions.length + offset;
+
+      if (offset === 0 && sessions.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'folder-history-empty';
+        empty.textContent = 'No conversations found in this folder.';
+        list.appendChild(empty);
+        return;
+      }
+
+      for (const s of sessions) {
+        list.appendChild(this._buildHistoryItem(s, cases, { showViewAll: false }));
+      }
+
+      state.offset = offset + sessions.length;
+
+      // Add "Show more" if there are more sessions
+      if (state.offset < state.total) {
+        const remaining = state.total - state.offset;
+        const moreBtn = document.createElement('button');
+        moreBtn.className = 'history-show-more folder-history-more';
+        moreBtn.textContent = `Show ${Math.min(limit, remaining)} more (${remaining} remaining)`;
+        moreBtn.addEventListener('click', () => this._loadFolderHistoryPage());
+        list.appendChild(moreBtn);
+      }
+    } catch (err) {
+      console.error('[loadFolderHistoryPage]', err);
+      const errorEl = document.createElement('div');
+      errorEl.className = 'folder-history-empty';
+      errorEl.textContent = 'Failed to load folder history.';
+      list.appendChild(errorEl);
+    }
+  },
+
+  _closeFolderHistoryModal() {
+    const modal = document.getElementById('folderHistoryModal');
+    if (modal) modal.remove();
+    if (this._folderHistoryEscHandler) {
+      document.removeEventListener('keydown', this._folderHistoryEscHandler);
+      this._folderHistoryEscHandler = null;
+    }
+    this._folderHistoryState = null;
+  },
+
   async resumeHistorySession(sessionId, workingDir) {
     // Close the run mode menu if open
     document.getElementById('runModeMenu')?.classList.remove('active');
+    // Close folder history modal if open
+    this._closeFolderHistoryModal();
     try {
       this.terminal.clear();
       this.terminal.writeln(`\x1b[1;32m Resuming conversation ${sessionId.slice(0, 8)}...\x1b[0m`);
