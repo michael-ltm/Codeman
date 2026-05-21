@@ -1,3 +1,9 @@
+> **⚠️ ARCHIVED 2026-05-21 — superseded, kept for history.**
+> The "Critical" structural items here are done: `server.ts` 6,736→2,065 LOC,
+> `app.js` 15,196→3,083 LOC, `types.ts` 1,443→12 LOC (now a barrel → `src/types/`).
+> The phase plans that executed this work are in `docs/archive/phase*-plan.md`.
+> Do not treat this as a live TODO; see CLAUDE.md for current architecture.
+
 # Code Structure & Quality Findings
 
 **Date**: 2026-02-28

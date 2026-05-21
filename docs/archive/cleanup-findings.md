@@ -1,3 +1,9 @@
+> **⚠️ ARCHIVED 2026-05-21 — superseded, kept for history.**
+> The headline items here were verified resolved: the P0 `{WORKING_DIR}` placeholder
+> is now replaced (`plan-orchestrator.ts:431`), and the "~66 dead functions in app.js"
+> are gone (app.js was modularized 15K→3K LOC). A fresh `npm run knip` sweep on
+> 2026-05-21 found only a handful of unused test helpers. Do not treat this as a live TODO.
+
 # Codebase Cleanup Findings
 
 Compiled from parallel analysis of the entire Codeman codebase by 3 research agents (2026-02-19).
