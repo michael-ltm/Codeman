@@ -2705,19 +2705,15 @@ class CodemanApp {
         });
       }
 
-      // Fire-and-forget resize + Ctrl+L to force Ink redraw.
-      // Tailed buffers accumulate stale CUP-positioned Ink frames that overlap
-      // in the viewport (e.g. duplicate "bypass permissions" bars). Ctrl+L
-      // triggers a full Ink redraw which overwrites all stale frame content.
-      // sendResize may be a no-op if dimensions match, so Ctrl+L is essential.
-      this.sendResize(sessionId).then(() => {
-        if (selectGen !== this._selectGeneration) return;
-        fetch(`/api/sessions/${sessionId}/input`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ input: '\x0c' })
-        }).catch(() => {});
-      });
+      // Fire-and-forget resize to nudge Ink via SIGWINCH on real size changes.
+      // Previously we also sent Ctrl+L (\x0c) here to force a full Ink redraw,
+      // but Claude Code 2.x treats Ctrl+L as a two-step "clear conversation"
+      // command — if a page refresh or SSE reconnect ran selectSession twice
+      // within Claude's confirmation window, the second \x0c silently wiped the
+      // conversation. Stale Ink frames in the tailed buffer are a cosmetic
+      // annoyance that disappear on the user's next keypress; data loss is not
+      // acceptable. Do NOT re-introduce Ctrl+L here.
+      this.sendResize(sessionId);
 
       // Defer secondary panel updates so they don't block the main thread
       // after terminal content is already visible.

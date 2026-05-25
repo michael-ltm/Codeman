@@ -1704,7 +1704,8 @@ Object.assign(CodemanApp.prototype, {
   /**
    * Restore terminal size to match web UI dimensions.
    * Use this after mobile screen attachment has squeezed the terminal.
-   * Sends resize to PTY and Ctrl+L to trigger Claude to redraw.
+   * Sends only resize — SIGWINCH triggers Ink redraw on real dimension changes.
+   * Ctrl+L is NOT sent here (Claude Code 2.x treats it as "clear conversation").
    */
   async restoreTerminalSize() {
     if (!this.activeSessionId) {
@@ -1719,15 +1720,9 @@ Object.assign(CodemanApp.prototype, {
     }
 
     try {
-      // Send resize to restore proper dimensions (with minimum enforcement)
+      // Send resize to restore proper dimensions (with minimum enforcement).
+      // The PTY's SIGWINCH on real dim change is enough for Ink to redraw.
       await this.sendResize(this.activeSessionId);
-
-      // Send Ctrl+L to trigger Claude to redraw at new size
-      await fetch(`/api/sessions/${this.activeSessionId}/input`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: '\x0c' }),
-      });
 
       this.showToast(`Terminal restored to ${dims.cols}x${dims.rows}`, 'success');
     } catch (err) {
@@ -1736,26 +1731,20 @@ Object.assign(CodemanApp.prototype, {
     }
   },
 
-  // Send Ctrl+L to fix display for newly created sessions once Claude is running
-  sendPendingCtrlL(sessionId) {
-    if (!this.pendingCtrlL || !this.pendingCtrlL.has(sessionId)) {
-      return;
-    }
-    this.pendingCtrlL.delete(sessionId);
-
-    // Only send if this is the active session
-    if (sessionId !== this.activeSessionId) {
-      return;
-    }
-
-    // Send resize + Ctrl+L to fix the display (with minimum dimension enforcement)
-    this.sendResize(sessionId).then(() => {
-      fetch(`/api/sessions/${sessionId}/input`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: '\x0c' }),
-      });
-    });
+  // Legacy hook for newly-created sessions; kept as a no-op so the SSE
+  // idle/working handlers can still call it without conditional guards.
+  //
+  // Originally this sent Ctrl+L (\x0c) when a flagged session first reached
+  // idle/working to scrub mux-init junk from the screen. Two problems:
+  //   1. `pendingCtrlL` was never actually populated anywhere (dead path).
+  //   2. Claude Code 2.x interprets Ctrl+L as a two-step "clear conversation"
+  //      command — sending it from background flows risked nuking the user's
+  //      conversation if it coincided with another Ctrl+L (e.g. from
+  //      selectSession on page reload).
+  // If a per-session display-fix is ever needed again, do it via sendResize
+  // or an Ink-safe control sequence, NOT \x0c.
+  sendPendingCtrlL(_sessionId) {
+    // intentionally empty
   },
 
   async copyTerminal() {
