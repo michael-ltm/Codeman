@@ -7,6 +7,14 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createRouteTestHarness, type RouteTestHarness } from './_route-test-utils.js';
+
+// Mock execFile so the send-key route's `tmux` invocation is observable (not run for real).
+const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
+vi.mock('node:child_process', async (orig) => {
+  const actual = await orig<typeof import('node:child_process')>();
+  return { ...actual, execFile };
+});
+
 import { registerSessionRoutes } from '../../src/web/routes/session-routes.js';
 
 describe('session-routes', () => {
@@ -18,6 +26,44 @@ describe('session-routes', () => {
 
   afterEach(async () => {
     await harness.app.close();
+  });
+
+  // ========== POST /api/sessions/:id/send-key ==========
+
+  describe('POST /api/sessions/:id/send-key', () => {
+    it('routes tmux send-keys through the dedicated Codeman socket (-L)', async () => {
+      // Regression guard: bare `tmux` would hit the user's default server and never
+      // find a session that lives only on the Codeman socket (#80 regression class).
+      execFile.mockReset();
+      execFile.mockImplementation((_bin: string, _argv: string[], _opts: unknown, cb: (e: Error | null) => void) =>
+        cb(null)
+      );
+
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/sessions/test-session-1/send-key',
+        payload: { key: 'S-Enter' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(execFile).toHaveBeenCalledTimes(1);
+      const [bin, argv] = execFile.mock.calls[0];
+      expect(bin).toBe('tmux');
+      expect((argv as string[]).slice(0, 2)).toEqual(['-L', 'codeman']);
+      expect(argv).toContain('send-keys');
+      expect(argv).toContain('-H');
+    });
+
+    it('rejects keys outside the hex allowlist without invoking tmux', async () => {
+      execFile.mockReset();
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/sessions/test-session-1/send-key',
+        payload: { key: 'rm -rf' },
+      });
+      expect(JSON.parse(res.body).success).toBe(false);
+      expect(execFile).not.toHaveBeenCalled();
+    });
   });
 
   // ========== GET /api/sessions ==========

@@ -90,6 +90,7 @@ export function createMockRouteContext(options?: { sessionId?: string }) {
 
     // -- InfraPort --
     mux: {
+      muxSocket: 'codeman',
       createSession: vi.fn(),
       killSession: vi.fn(),
       listSessions: vi.fn(() => []),

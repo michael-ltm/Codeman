@@ -98,6 +98,9 @@ export interface TerminalMultiplexer extends EventEmitter {
   /** Which backend this instance uses */
   readonly backend: 'tmux';
 
+  /** The dedicated tmux socket name all sessions live on (e.g. "codeman"). */
+  readonly muxSocket: string;
+
   // ========== Lifecycle ==========
 
   /**

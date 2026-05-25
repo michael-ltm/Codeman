@@ -652,11 +652,18 @@ export function registerSessionRoutes(
     }
 
     try {
+      // Route through the dedicated Codeman socket — bare `tmux` would target the
+      // user's default server and never find this session (same #80 regression class).
       await new Promise<void>((resolve, reject) => {
-        execFile('tmux', ['send-keys', '-H', '-t', muxName, ...hex], { timeout: 5000 }, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
+        execFile(
+          'tmux',
+          ['-L', ctx.mux.muxSocket, 'send-keys', '-H', '-t', muxName, ...hex],
+          { timeout: 5000 },
+          (err) => {
+            if (err) reject(err);
+            else resolve();
+          }
+        );
       });
     } catch (err) {
       console.error('[Server] send-key failed:', err);

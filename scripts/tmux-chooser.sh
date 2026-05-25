@@ -32,6 +32,13 @@ set -e
 CODEMAN_STATE="$HOME/.codeman/state.json"
 CODEMAN_SESSIONS="$HOME/.codeman/mux-sessions.json"
 
+# Dedicated tmux socket all Codeman sessions live on. MUST match
+# DEFAULT_CODEMAN_TMUX_SOCKET / CODEMAN_TMUX_SOCKET in src/tmux-manager.ts —
+# otherwise list-sessions would enumerate the user's default tmux server
+# (missing the real Codeman sessions, surfacing unrelated ones).
+CODEMAN_TMUX_SOCKET="${CODEMAN_TMUX_SOCKET:-codeman}"
+TMUX_CMD=(tmux -L "$CODEMAN_TMUX_SOCKET")
+
 
 # iPhone 17 Pro portrait width (conservative)
 MAX_WIDTH=44
@@ -286,7 +293,7 @@ parse_sessions() {
 
         # Get PID from tmux
         local pid
-        pid=$(tmux display-message -t "$session_name" -p '#{pane_pid}' 2>/dev/null || echo "0")
+        pid=$("${TMUX_CMD[@]}" display-message -t "$session_name" -p '#{pane_pid}' 2>/dev/null || echo "0")
 
         SESSION_PIDS+=("$pid")
         MUX_NAMES+=("$session_name")
@@ -314,7 +321,7 @@ parse_sessions() {
         fi
 
         i=$((i + 1))
-    done < <(tmux list-sessions 2>/dev/null || true)
+    done < <("${TMUX_CMD[@]}" list-sessions 2>/dev/null || true)
 }
 
 # ============================================================================
@@ -462,7 +469,7 @@ attach_session() {
     echo -e "${D}(Ctrl+B D to detach)${R}"
     sleep 0.3
 
-    tmux attach-session -t "$mux_name"
+    "${TMUX_CMD[@]}" attach-session -t "$mux_name"
 
     return 0
 }

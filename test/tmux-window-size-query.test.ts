@@ -8,7 +8,8 @@
  * the next frame — visible flicker and one lost repaint of scrollback.
  *
  * The fix queries tmux for the actual window geometry first via
- * `tmux display -t <name> -p '#{window_width} #{window_height}'`. We cover:
+ * `tmux -L <socket> display -t <name> -p '#{window_width} #{window_height}'`
+ * (the `-L <socket>` targets the isolated Codeman socket). We cover:
  *   - Happy path: tmux reports valid geometry → those numbers are used.
  *   - Browser-resize-between-attaches: tmux reports a non-default size
  *     (because a prior client resized it) → the helper picks that up.
@@ -49,7 +50,7 @@ beforeEach(() => {
 describe('queryTmuxWindowSize — happy path', () => {
   it('returns the geometry tmux reports', () => {
     execFileSync.mockReturnValue('200 50\n');
-    expect(queryTmuxWindowSize('codeman-abc')).toEqual({ cols: 200, rows: 50 });
+    expect(queryTmuxWindowSize('codeman-abc', 'codeman')).toEqual({ cols: 200, rows: 50 });
   });
 
   it('picks up a non-default size left behind by a prior client (browser-resize-between-attaches)', () => {
@@ -57,12 +58,12 @@ describe('queryTmuxWindowSize — happy path', () => {
     // tmux keeps the last-attached geometry. Client B re-attaches and should spawn
     // its PTY at 220x60, not 120x40 — that's the whole point of #80.
     execFileSync.mockReturnValue('220 60');
-    expect(queryTmuxWindowSize('codeman-abc')).toEqual({ cols: 220, rows: 60 });
+    expect(queryTmuxWindowSize('codeman-abc', 'codeman')).toEqual({ cols: 220, rows: 60 });
   });
 
   it('tolerates trailing whitespace and newlines in tmux output', () => {
     execFileSync.mockReturnValue('  180 45  \n\n');
-    expect(queryTmuxWindowSize('codeman-abc')).toEqual({ cols: 180, rows: 45 });
+    expect(queryTmuxWindowSize('codeman-abc', 'codeman')).toEqual({ cols: 180, rows: 45 });
   });
 });
 
@@ -75,7 +76,7 @@ describe('queryTmuxWindowSize — fallback paths', () => {
       err.status = 1;
       throw err;
     });
-    expect(queryTmuxWindowSize('bogus')).toEqual(DEFAULT);
+    expect(queryTmuxWindowSize('bogus', 'codeman')).toEqual(DEFAULT);
   });
 
   it('falls back when tmux dies between query and parse (ETIMEDOUT / ENOENT)', () => {
@@ -85,63 +86,65 @@ describe('queryTmuxWindowSize — fallback paths', () => {
       err.code = 'ETIMEDOUT';
       throw err;
     });
-    expect(queryTmuxWindowSize('codeman-abc')).toEqual(DEFAULT);
+    expect(queryTmuxWindowSize('codeman-abc', 'codeman')).toEqual(DEFAULT);
   });
 
   it('falls back when tmux returns empty output', () => {
     execFileSync.mockReturnValue('');
-    expect(queryTmuxWindowSize('codeman-abc')).toEqual(DEFAULT);
+    expect(queryTmuxWindowSize('codeman-abc', 'codeman')).toEqual(DEFAULT);
   });
 
   it('falls back when tmux returns whitespace-only output', () => {
     execFileSync.mockReturnValue('   \n');
-    expect(queryTmuxWindowSize('codeman-abc')).toEqual(DEFAULT);
+    expect(queryTmuxWindowSize('codeman-abc', 'codeman')).toEqual(DEFAULT);
   });
 
   it('falls back when tmux returns non-numeric output', () => {
     execFileSync.mockReturnValue('not a size\n');
-    expect(queryTmuxWindowSize('codeman-abc')).toEqual(DEFAULT);
+    expect(queryTmuxWindowSize('codeman-abc', 'codeman')).toEqual(DEFAULT);
   });
 
   it('falls back when only one dimension is present', () => {
     execFileSync.mockReturnValue('200\n');
-    expect(queryTmuxWindowSize('codeman-abc')).toEqual(DEFAULT);
+    expect(queryTmuxWindowSize('codeman-abc', 'codeman')).toEqual(DEFAULT);
   });
 
   it('falls back when a dimension is zero (degenerate geometry)', () => {
     // tmux reporting `0` would crash node-pty downstream — must not propagate.
     execFileSync.mockReturnValue('0 40\n');
-    expect(queryTmuxWindowSize('codeman-abc')).toEqual(DEFAULT);
+    expect(queryTmuxWindowSize('codeman-abc', 'codeman')).toEqual(DEFAULT);
     execFileSync.mockReturnValue('120 0\n');
-    expect(queryTmuxWindowSize('codeman-abc')).toEqual(DEFAULT);
+    expect(queryTmuxWindowSize('codeman-abc', 'codeman')).toEqual(DEFAULT);
   });
 
   it('falls back when a dimension is negative', () => {
     execFileSync.mockReturnValue('-200 -50\n');
-    expect(queryTmuxWindowSize('codeman-abc')).toEqual(DEFAULT);
+    expect(queryTmuxWindowSize('codeman-abc', 'codeman')).toEqual(DEFAULT);
   });
 
   it('falls back when tmux returns NaN-producing tokens', () => {
     execFileSync.mockReturnValue('abc def\n');
-    expect(queryTmuxWindowSize('codeman-abc')).toEqual(DEFAULT);
+    expect(queryTmuxWindowSize('codeman-abc', 'codeman')).toEqual(DEFAULT);
   });
 });
 
 describe('queryTmuxWindowSize — call shape', () => {
-  it('invokes tmux with display -t <name> -p ... via argv (not a shell)', () => {
+  it('invokes tmux on the dedicated socket via argv (not a shell)', () => {
     execFileSync.mockReturnValue('120 40\n');
-    queryTmuxWindowSize('codeman-abc');
+    queryTmuxWindowSize('codeman-abc', 'codeman');
     expect(execFileSync).toHaveBeenCalledTimes(1);
     const [bin, argv, opts] = execFileSync.mock.calls[0];
     expect(bin).toBe('tmux');
-    expect(argv).toEqual(['display', '-t', 'codeman-abc', '-p', '#{window_width} #{window_height}']);
+    // `-L <socket>` MUST lead: querying the default server would never find a
+    // session that lives on the isolated Codeman socket (the #80 regression).
+    expect(argv).toEqual(['-L', 'codeman', 'display', '-t', 'codeman-abc', '-p', '#{window_width} #{window_height}']);
     // execFileSync — not execSync — so muxName is never substituted into a shell string.
     expect(opts).toMatchObject({ encoding: 'utf8' });
   });
 
   it('uses a bounded timeout so a hung tmux server cannot block startup forever', () => {
     execFileSync.mockReturnValue('120 40\n');
-    queryTmuxWindowSize('codeman-abc');
+    queryTmuxWindowSize('codeman-abc', 'codeman');
     const [, , opts] = execFileSync.mock.calls[0];
     // Whatever the exact constant, the contract is: ≤5s so the user-visible
     // attach path can't hang on a stuck tmux server.
@@ -152,12 +155,12 @@ describe('queryTmuxWindowSize — call shape', () => {
 
   it('passes a muxName that looks like a tmux flag as an argv element (no option injection)', () => {
     execFileSync.mockReturnValue('120 40\n');
-    queryTmuxWindowSize('-x 1 -y 1; rm -rf');
+    queryTmuxWindowSize('-x 1 -y 1; rm -rf', 'codeman');
     const [, argv] = execFileSync.mock.calls[0];
-    // The whole "name" lives in a single argv slot, so tmux interprets it as a
-    // target session name, not as additional flags. The `-t` flag preceding it
-    // pins it as the target argument.
-    expect(argv?.[2]).toBe('-x 1 -y 1; rm -rf');
+    // The whole "name" lives in a single argv slot (index 4, after `-L codeman
+    // display -t`), so tmux interprets it as a target session name, not as
+    // additional flags. The `-t` flag preceding it pins it as the target.
+    expect(argv?.[4]).toBe('-x 1 -y 1; rm -rf');
     expect((argv as string[]).indexOf('-x')).toBe(-1);
   });
 });

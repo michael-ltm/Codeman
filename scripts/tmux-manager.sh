@@ -20,6 +20,13 @@ REVERSE='\033[7m'
 # Use the same path as codeman (src/tmux-manager.ts)
 SESSIONS_FILE="${HOME}/.codeman/mux-sessions.json"
 
+# Dedicated tmux socket all Codeman sessions live on. MUST match
+# DEFAULT_CODEMAN_TMUX_SOCKET / CODEMAN_TMUX_SOCKET in src/tmux-manager.ts —
+# otherwise this script would talk to the user's default tmux server and never
+# see (or could mis-target) Codeman's sessions.
+CODEMAN_TMUX_SOCKET="${CODEMAN_TMUX_SOCKET:-codeman}"
+TMUX_CMD=(tmux -L "$CODEMAN_TMUX_SOCKET")
+
 
 # Cached data
 CACHED_JSON=""
@@ -92,7 +99,7 @@ declare -A ALIVE_CACHE
 check_alive() {
     local mux_name=$1
     if [[ -z "${ALIVE_CACHE[$mux_name]+x}" ]]; then
-        if tmux has-session -t "$mux_name" 2>/dev/null; then
+        if "${TMUX_CMD[@]}" has-session -t "$mux_name" 2>/dev/null; then
             ALIVE_CACHE[$mux_name]=1
         else
             ALIVE_CACHE[$mux_name]=0
@@ -111,8 +118,10 @@ kill_session() {
     local mux_name=$(get_session_field $idx "muxName")
     local pid=$(get_session_field $idx "pid")
 
-    # SAFETY: Never kill own tmux session
-    local current_session=$(tmux display-message -p '#{session_name}' 2>/dev/null || echo "")
+    # SAFETY: Never kill own tmux session. Queried on the Codeman socket; if run
+    # from a session on a different socket this returns empty (no match), which
+    # is fine — you can't be "inside" a Codeman-socket session you didn't attach to.
+    local current_session=$("${TMUX_CMD[@]}" display-message -p '#{session_name}' 2>/dev/null || echo "")
     if [[ -n "$current_session" && "$mux_name" == "$current_session" ]]; then
         echo -e "${RED}BLOCKED: Cannot kill own tmux session: $mux_name${NC}"
         return 1
@@ -120,7 +129,7 @@ kill_session() {
 
     pkill -TERM -P $pid 2>/dev/null
     kill -TERM -$pid 2>/dev/null
-    tmux kill-session -t "$mux_name" 2>/dev/null
+    "${TMUX_CMD[@]}" kill-session -t "$mux_name" 2>/dev/null
     kill -KILL $pid 2>/dev/null
 
     # Remove from JSON
@@ -345,7 +354,7 @@ interactive_menu() {
                         clear
                         echo -e "${CYAN}Attaching... (Ctrl+B D to detach)${NC}"
                         sleep 0.3
-                        tmux attach-session -t "$mux_name"
+                        "${TMUX_CMD[@]}" attach-session -t "$mux_name"
                         tput civis
                         need_full_redraw=1
                         force_refresh
@@ -474,7 +483,7 @@ main() {
             [[ -z "${2:-}" ]] && { echo "Usage: $0 attach <N>"; exit 1; }
             force_refresh
             local mux_name=$(get_session_field $(($2-1)) "muxName")
-            check_alive "$mux_name" && tmux attach-session -t "$mux_name" || echo "Session dead or not found"
+            check_alive "$mux_name" && "${TMUX_CMD[@]}" attach-session -t "$mux_name" || echo "Session dead or not found"
             ;;
         kill)
             [[ -z "${2:-}" ]] && { echo "Usage: $0 kill <N|N,M|N-M>"; exit 1; }
@@ -492,8 +501,8 @@ main() {
             ;;
         kill-all)
             force_refresh
-            # SAFETY: Never kill own tmux session
-            local current_session=$(tmux display-message -p '#{session_name}' 2>/dev/null || echo "")
+            # SAFETY: Never kill own tmux session (queried on the Codeman socket)
+            local current_session=$("${TMUX_CMD[@]}" display-message -p '#{session_name}' 2>/dev/null || echo "")
             local killed=0
             for ((i=CACHED_COUNT-1; i>=0; i--)); do
                 local mux_name=$(get_session_field $i "muxName")

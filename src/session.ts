@@ -133,15 +133,22 @@ const TMUX_DISPLAY_TIMEOUT_MS = 2000;
  * (tmux dead, muxName unknown, malformed output) — caller never has to
  * differentiate "tmux unreachable" from "size 120x40".
  *
+ * `socket` MUST be the same dedicated socket the session lives on (`mux.muxSocket`);
+ * querying the default server would never find the session and silently fall back.
+ *
  * Argv form (execFileSync, not execSync) keeps `muxName` out of any shell so
  * a hostile session name can't inject options.
  */
-export function queryTmuxWindowSize(muxName: string): { cols: number; rows: number } {
+export function queryTmuxWindowSize(muxName: string, socket: string): { cols: number; rows: number } {
   try {
-    const sizeStr = execFileSync('tmux', ['display', '-t', muxName, '-p', '#{window_width} #{window_height}'], {
-      timeout: TMUX_DISPLAY_TIMEOUT_MS,
-      encoding: 'utf8',
-    }).trim();
+    const sizeStr = execFileSync(
+      'tmux',
+      ['-L', socket, 'display', '-t', muxName, '-p', '#{window_width} #{window_height}'],
+      {
+        timeout: TMUX_DISPLAY_TIMEOUT_MS,
+        encoding: 'utf8',
+      }
+    ).trim();
     const [w, h] = sizeStr.split(' ').map(Number);
     if (w > 0 && h > 0) {
       return { cols: w, rows: h };
@@ -978,7 +985,7 @@ export class Session extends EventEmitter {
 
     // Attach to the mux session via PTY
     // Query existing tmux window size so re-attach matches (avoids flicker from 120x40 default)
-    const { cols: ptyCols, rows: ptyRows } = queryTmuxWindowSize(this._muxSession!.muxName);
+    const { cols: ptyCols, rows: ptyRows } = queryTmuxWindowSize(this._muxSession!.muxName, mux.muxSocket);
     try {
       this.ptyProcess = pty.spawn(mux.getAttachCommand(), mux.getAttachArgs(this._muxSession!.muxName), {
         name: 'xterm-256color',
