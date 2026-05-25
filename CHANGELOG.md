@@ -1,5 +1,16 @@
 # aicodeman
 
+## 0.6.12
+
+### Patch Changes
+
+- Fix new-session crash after a tmux upgrade and isolate Codeman sessions on a dedicated tmux socket.
+  - **Pane file-descriptor limit**: raise `ulimit -Sn` before launching the CLI (in both the spawn and respawn paths) so the newer tmux + macOS launchd combination — which hands panes a low soft `nofile` limit (256) that recent Claude Code refuses to start under — no longer kills every freshly spawned session on startup.
+  - **Single-socket isolation**: all Codeman-owned tmux sessions now live on a dedicated socket (`tmux -L codeman`, overridable via `CODEMAN_TMUX_SOCKET`), fully separated from the user's default tmux server. The socket name is validated and shell-escaped at every call site.
+  - **Drop the drift-prone per-session `tmuxSocket` field**: session reconciliation collapses to a single `list-panes` query against the one socket, eliminating live sessions being wrongly marked dead ("session not found") and duplicate "Restored:" tabs. Stale per-session socket tags and duplicate records are cleaned from disk on load (dedup by `muxName`, keeping the real entry over `restored-` placeholders).
+  - **Route remaining bare-`tmux` call sites through the socket**: the window-size query on re-attach (previously fell back to 120×40 and lost scrollback) and the send-key route (Shift+Enter / Ctrl+Enter newline).
+  - **SSH chooser scripts** (`tmux-manager.sh`, `tmux-chooser.sh`) route every tmux call through the dedicated socket.
+
 ## 0.6.11
 
 ### Patch Changes

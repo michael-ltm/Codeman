@@ -56,7 +56,7 @@ When user says "COM":
 
 CI runs `npm run check:lockfile` on every push/PR, so lockfile drift fails the build even if the `version-packages` script is bypassed.
 
-**Version**: 0.6.11 (must match `package.json`)
+**Version**: 0.6.12 (must match `package.json`)
 
 ## Project Overview
 
@@ -95,7 +95,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 - **Package ≠ product name** — npm: `aicodeman`, product: **Codeman**. Release renames tags accordingly
 - **Global regex `lastIndex`** — Shared `g`-flag patterns in loops must reset `lastIndex = 0` first, or use the `execPattern()` helper in `utils/regex-patterns.ts` (resets automatically)
 - **`envOverrides` flow `CLAUDE_CODE_*` / `OPENCODE_*` env vars** — Set via `POST /api/sessions { envOverrides }`, stored on `Session._envOverrides`, exported by `tmux-manager.buildEnvExports()` at spawn time, persisted in `SessionState.envOverrides`. **Do NOT** write these to `<case>/.claude/settings.local.json` — that's the old path and creates UI/disk drift
-- **Dual-CLI prefix discipline** — Codeman supports both Claude Code and OpenCode (`claude-cli-resolver.ts` / `opencode-cli-resolver.ts`); env-var prefix is CLI-specific (`CLAUDE_CODE_*` vs `OPENCODE_*`) and the allowlist in `schemas.ts` enforces this. When adding settings, decide which CLI(s) it applies to and gate the env export accordingly — don't blindly forward both prefixes
+- **Dual-CLI prefix discipline** — Codeman supports both Claude Code and OpenCode (`claude-cli-resolver.ts` / `opencode-cli-resolver.ts`); env-var prefix is CLI-specific (`CLAUDE_CODE_*` vs `OPENCODE_*`) and the allowlist in `schemas.ts` enforces this. When adding settings, decide which CLI(s) it applies to and gate the env export accordingly — don't blindly forward both prefixes. See `docs/opencode-integration.md` for the OpenCode resolver design
 - **Zod `.optional()` rejects `null`** — accepts `undefined` only. When the frontend builds a request body with `JSON.stringify`, an explicit `null` field is preserved on the wire and fails validation with `INVALID_INPUT`. Convert `null` → `undefined` before stringifying (e.g. `field: value ?? undefined`), or declare the schema `.nullish()`. Real bugs caused: 0.6.4 (`durationMinutes` for ∞ respawn), and the same shape pattern hit `opusContext1mEnabled` in 0.6.3
 - **`xterm-zerolag-input` is duplicated** — the local-echo overlay lives in BOTH `packages/xterm-zerolag-input/src/` (published to npm as a standalone library for external consumers — see README "Published Packages") AND inline inside `src/web/public/app.js` (runtime copy the web UI actually loads, since the page ships as plain JS without a bundler). Any change to overlay behavior MUST be applied to both, or dev and prod diverge — and a public API break in the package warrants a separate version bump for `xterm-zerolag-input` in the changeset. Always test on mobile after touching it. See `docs/local-echo-overlay-plan.md`.
 
