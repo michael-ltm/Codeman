@@ -1,5 +1,15 @@
 # aicodeman
 
+## 0.8.0
+
+### Minor Changes
+
+- Event-loop responsiveness fix, mobile image upload, response-viewer polish, and a mobile-UI trim.
+  - **fix: avoid event-loop stalls from synchronous tmux/ps calls (#100):** The session manager ran `execSync` for tmux mouse-mode toggles, `list-panes`, and `ps`/`pgrep` resource-stat queries on the main thread. Under multi-session / many-pane load these blocking spawns froze Node's single event loop, stalling SSE broadcasts and PTY I/O (the ":3000 briefly unreachable, process never restarts" class of incident). Converted those calls to async `execAsync` and updated all callers to `await`. Added a lightweight `utils/event-loop-monitor.ts` that samples loop-delay and logs when a stall threshold is exceeded, started on web-server boot and stopped on shutdown — so future regressions leave a timestamped, quantified log line instead of vanishing silently.
+  - **feat(web): mobile image upload to active session via paste dialog (#101):** The mobile keyboard-accessory paste dialog now attaches images, not just text — via a native picker (`accept=image/*` → camera / photo library / files) plus best-effort capture of images pasted into the textarea. Both paths reuse the existing `_uploadAndInsertImages()` → `POST /api/sessions/:id/paste-image` pipeline. Images are re-encoded client-side before upload (PNG→PNG to preserve transparency, everything else→JPEG, animated GIFs passed through untouched) so the bytes always match their declared extension — fixing the Android/MIUI case where a WebP/HEIF mislabeled as `image/jpeg` passed the extension allowlist but failed the server's magic-byte check. The server logs a precise diagnostic on any remaining magic-byte mismatch.
+  - **feat(web): response-viewer transcript fallback + code-block rendering (#102):** A substantial response-viewer styling overhaul — proportional prose font (monospace kept for code), refined heading/code/blockquote/list styling, readable max content width, and a smoother slide-in animation; the `.rv-text` rules now also apply to `.response-viewer-body` so transcript-missing fallback content gets the same typography. Plus a `_renderMarkdown` null-safety fix (`text` → `src = text || ''`).
+  - **feat(web): remove /compact button from the mobile keyboard accessory bar:** Dropped `/compact` from both the simple and extended accessory-bar layouts and the associated action handling. `/clear` retains its double-tap confirmation. Verified on a touch-emulated viewport that neither layout renders a compact action.
+
 ## 0.7.1
 
 ### Patch Changes
