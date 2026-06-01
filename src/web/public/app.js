@@ -1110,9 +1110,10 @@ class CodemanApp {
 
   /** Render markdown to sanitized HTML, falling back to plain text if marked.js unavailable */
   _renderMarkdown(text) {
+    const src = text || '';
     if (typeof marked !== 'undefined' && marked.parse) {
       try {
-        const prepared = this._preprocessAsciiArt(text);
+        const prepared = this._preprocessAsciiArt(src);
         let html = this._sanitizeHtml(marked.parse(prepared, { breaks: true, gfm: true }));
         // Wrap tables in a horizontal-scroll container so they overflow gracefully
         // on mobile without collapsing into block-level cells.
@@ -1168,7 +1169,7 @@ class CodemanApp {
       } catch { /* fall through */ }
     }
     // Fallback: escape HTML and preserve whitespace
-    const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const escaped = src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return `<pre style="white-space:pre-wrap;word-break:break-word">${escaped}</pre>`;
   }
 
