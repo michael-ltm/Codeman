@@ -94,7 +94,8 @@ import {
   type ImageDetectedEvent,
   DEFAULT_NICE_CONFIG,
 } from '../types.js';
-import { CleanupManager, KeyedDebouncer, StaleExpirationMap } from '../utils/index.js';
+import { CleanupManager, KeyedDebouncer, StaleExpirationMap, startEventLoopMonitor } from '../utils/index.js';
+import type { EventLoopMonitorHandle } from '../utils/index.js';
 import { MAX_CONCURRENT_SESSIONS, MAX_SSE_CLIENTS } from '../config/map-limits.js';
 import { SseEvent } from './sse-events.js';
 import type { ScheduledRun } from './ports/index.js';
@@ -231,6 +232,7 @@ export class WebServer extends EventEmitter {
   private teamWatcher: TeamWatcher = new TeamWatcher();
   private _orchestratorLoop: import('../orchestrator-loop.js').OrchestratorLoop | null = null;
   private _pasteImageGcStop: (() => void) | null = null;
+  private _eventLoopMonitor: EventLoopMonitorHandle | null = null;
   private teamWatcherHandlers: {
     teamCreated: (config: unknown) => void;
     teamUpdated: (config: unknown) => void;
@@ -1551,6 +1553,10 @@ export class WebServer extends EventEmitter {
     // older than 7 days from each live session's .claude-images/ hourly.
     if (!this.testMode) {
       this._pasteImageGcStop = startPasteImageGc({ sessions: this.sessions });
+      // Surface event-loop stalls (e.g. a slow synchronous tmux/ps call) so the
+      // intermittent ":3000 briefly unreachable, process never restarts" class of
+      // incident leaves a quantified log line instead of vanishing silently.
+      this._eventLoopMonitor = startEventLoopMonitor();
     }
 
     await this.app.listen({ port: this.port, host: '0.0.0.0' });
@@ -1909,6 +1915,11 @@ export class WebServer extends EventEmitter {
     if (this._pasteImageGcStop) {
       this._pasteImageGcStop();
       this._pasteImageGcStop = null;
+    }
+
+    if (this._eventLoopMonitor) {
+      this._eventLoopMonitor.stop();
+      this._eventLoopMonitor = null;
     }
 
     // Dispose all managed timers (intervals + resettable timeouts)

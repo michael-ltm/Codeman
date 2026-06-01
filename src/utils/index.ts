@@ -9,6 +9,8 @@
 export { BufferAccumulator } from './buffer-accumulator.js';
 export { CleanupManager } from './cleanup-manager.js';
 export { Debouncer, KeyedDebouncer } from './debouncer.js';
+export { startEventLoopMonitor } from './event-loop-monitor.js';
+export type { EventLoopMonitorHandle } from './event-loop-monitor.js';
 export { StaleExpirationMap } from './stale-expiration-map.js';
 export {
   ANSI_ESCAPE_PATTERN_FULL,

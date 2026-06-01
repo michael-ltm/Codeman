@@ -1153,19 +1153,23 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
     }
 
     try {
-      const psOutput = execSync(`ps -o rss=,pcpu= -p ${session.pid} 2>/dev/null || echo "0 0"`, {
-        encoding: 'utf-8',
-        timeout: EXEC_TIMEOUT_MS,
-      }).trim();
+      const psOutput = (
+        await execAsync(`ps -o rss=,pcpu= -p ${session.pid} 2>/dev/null || echo "0 0"`, {
+          encoding: 'utf-8',
+          timeout: EXEC_TIMEOUT_MS,
+        })
+      ).stdout.trim();
 
       const [rss, cpu] = psOutput.split(/\s+/).map((x) => parseFloat(x) || 0);
 
       let childCount = 0;
       try {
-        const childOutput = execSync(`pgrep -P ${session.pid} | wc -l`, {
-          encoding: 'utf-8',
-          timeout: EXEC_TIMEOUT_MS,
-        }).trim();
+        const childOutput = (
+          await execAsync(`pgrep -P ${session.pid} | wc -l`, {
+            encoding: 'utf-8',
+            timeout: EXEC_TIMEOUT_MS,
+          })
+        ).stdout.trim();
         childCount = parseInt(childOutput, 10) || 0;
       } catch {
         // No children or command failed
@@ -1202,13 +1206,15 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       // Step 1: Get descendant PIDs
       const descendantMap = new Map<number, number[]>();
 
-      const pgrepOutput = execSync(
-        `for p in ${sessionPids.join(' ')}; do children=$(pgrep -P $p 2>/dev/null | tr '\\n' ','); echo "$p:$children"; done`,
-        {
-          encoding: 'utf-8',
-          timeout: EXEC_TIMEOUT_MS,
-        }
-      ).trim();
+      const pgrepOutput = (
+        await execAsync(
+          `for p in ${sessionPids.join(' ')}; do children=$(pgrep -P $p 2>/dev/null | tr '\\n' ','); echo "$p:$children"; done`,
+          {
+            encoding: 'utf-8',
+            timeout: EXEC_TIMEOUT_MS,
+          }
+        )
+      ).stdout.trim();
 
       for (const line of pgrepOutput.split('\n')) {
         const [pidStr, childrenStr] = line.split(':');
@@ -1233,10 +1239,12 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       // Step 3: Single ps call
       const pidArray = Array.from(allPids);
       if (pidArray.length > 0) {
-        const psOutput = execSync(`ps -o pid=,rss=,pcpu= -p ${pidArray.join(',')} 2>/dev/null || true`, {
-          encoding: 'utf-8',
-          timeout: EXEC_TIMEOUT_MS,
-        }).trim();
+        const psOutput = (
+          await execAsync(`ps -o pid=,rss=,pcpu= -p ${pidArray.join(',')} 2>/dev/null || true`, {
+            encoding: 'utf-8',
+            timeout: EXEC_TIMEOUT_MS,
+          })
+        ).stdout.trim();
 
         const processStats = new Map<number, { rss: number; cpu: number }>();
         for (const line of psOutput.split('\n')) {
@@ -1324,11 +1332,11 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       clearInterval(this.mouseSyncInterval);
     }
 
-    this.mouseSyncInterval = setInterval(() => {
+    this.mouseSyncInterval = setInterval(async () => {
       if (IS_TEST_MODE) return;
 
       for (const session of this.sessions.values()) {
-        const panes = this.listPanes(session.muxName);
+        const panes = await this.listPanes(session.muxName);
         const count = panes.length;
         if (count === 0) continue;
 
@@ -1337,12 +1345,12 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
 
         // Pane count changed — toggle mouse mode
         if (count > 1) {
-          if (this.enableMouseMode(session.muxName)) {
+          if (await this.enableMouseMode(session.muxName)) {
             this.lastPaneCount.set(session.muxName, count);
           }
           // If enableMouseMode fails, DON'T update lastPaneCount — retry next poll
         } else {
-          if (this.disableMouseMode(session.muxName)) {
+          if (await this.disableMouseMode(session.muxName)) {
             this.lastPaneCount.set(session.muxName, count);
           }
         }
@@ -1473,7 +1481,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
    * Allows clicking to select panes in agent team split-pane layouts.
    * When mouse mode is on, tmux intercepts mouse events (slow selection, no browser copy).
    */
-  enableMouseMode(muxName: string): boolean {
+  async enableMouseMode(muxName: string): Promise<boolean> {
     if (IS_TEST_MODE) return true;
     if (!isValidMuxName(muxName)) {
       console.error('[TmuxManager] Invalid session name in enableMouseMode:', muxName);
@@ -1481,7 +1489,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
     }
 
     try {
-      execSync(`${this.tmux()} set-option -t "${muxName}" mouse on`, {
+      await execAsync(`${this.tmux()} set-option -t "${muxName}" mouse on`, {
         encoding: 'utf-8',
         timeout: EXEC_TIMEOUT_MS,
       });
@@ -1497,7 +1505,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
    * Disable mouse mode for an existing tmux session.
    * Restores native xterm.js text selection and browser clipboard copy.
    */
-  disableMouseMode(muxName: string): boolean {
+  async disableMouseMode(muxName: string): Promise<boolean> {
     if (IS_TEST_MODE) return true;
     if (!isValidMuxName(muxName)) {
       console.error('[TmuxManager] Invalid session name in disableMouseMode:', muxName);
@@ -1505,7 +1513,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
     }
 
     try {
-      execSync(`${this.tmux()} set-option -t "${muxName}" mouse off`, {
+      await execAsync(`${this.tmux()} set-option -t "${muxName}" mouse off`, {
         encoding: 'utf-8',
         timeout: EXEC_TIMEOUT_MS,
       });
@@ -1522,9 +1530,9 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
    * Called by TeamWatcher when teammates spawn/despawn panes.
    * Uses `tmux list-panes` for bulletproof detection — counts actual panes, not config.
    */
-  syncMouseMode(muxName: string): boolean {
+  async syncMouseMode(muxName: string): Promise<boolean> {
     if (IS_TEST_MODE) return true;
-    const panes = this.listPanes(muxName);
+    const panes = await this.listPanes(muxName);
     if (panes.length > 1) {
       return this.enableMouseMode(muxName);
     } else {
@@ -1536,7 +1544,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
    * List all panes in a tmux session.
    * Returns structured info for each pane.
    */
-  listPanes(muxName: string): PaneInfo[] {
+  async listPanes(muxName: string): Promise<PaneInfo[]> {
     if (IS_TEST_MODE) return [];
     if (!isValidMuxName(muxName)) {
       console.error('[TmuxManager] Invalid session name in listPanes:', muxName);
@@ -1544,10 +1552,12 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
     }
 
     try {
-      const output = execSync(
-        `${this.tmux()} list-panes -t "${muxName}" -F '#{pane_id}:#{pane_index}:#{pane_pid}:#{pane_width}:#{pane_height}'`,
-        { encoding: 'utf-8', timeout: EXEC_TIMEOUT_MS }
-      ).trim();
+      const output = (
+        await execAsync(
+          `${this.tmux()} list-panes -t "${muxName}" -F '#{pane_id}:#{pane_index}:#{pane_pid}:#{pane_width}:#{pane_height}'`,
+          { encoding: 'utf-8', timeout: EXEC_TIMEOUT_MS }
+        )
+      ).stdout.trim();
 
       return output
         .split('\n')
