@@ -1043,12 +1043,20 @@ html.mobile-init .file-browser-panel {
     margin-top: 10px;
   }
 
-  .paste-cancel, .paste-new, .paste-send {
+  .paste-cancel, .paste-new, .paste-send, .paste-image {
     padding: 8px 18px;
     border: none;
     border-radius: 8px;
     font-size: 14px;
     cursor: pointer;
+  }
+
+  /* Image attach button — left-aligned, accent outline */
+  .paste-image {
+    margin-right: auto;
+    background: var(--bg-tertiary, #333);
+    color: var(--accent-color, #7aa2f7);
+    border: 1px solid var(--accent-color, #7aa2f7);
   }
 
   .paste-cancel {

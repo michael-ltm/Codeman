@@ -113,7 +113,14 @@ Object.assign(CodemanApp.prototype, {
     const paths = [];
     for (const file of files) {
       try {
-        const path = await this._uploadPasteImage(sessionId, file);
+        // Re-encode to a standard JPEG/PNG before upload. Galleries on some
+        // phones (notably Android/MIUI) hand back a WebP/HEIF whose filename and
+        // MIME claim "image/jpeg", which passes the server's extension allowlist
+        // but fails its magic-byte check ("bytes do not match declared type").
+        // Decoding through the browser and re-encoding guarantees the bytes
+        // match the extension we send.
+        const normalized = await this._normalizeImageForUpload(file);
+        const path = await this._uploadPasteImage(sessionId, normalized);
         paths.push(path);
       } catch (err) {
         this.showToast('Upload failed: ' + (err.message || 'unknown error'), 'error');
@@ -143,6 +150,51 @@ Object.assign(CodemanApp.prototype, {
 
     const data = await resp.json();
     return data.path;
+  },
+
+  // Decode an image File through the browser and re-encode it to a format the
+  // server accepts, so the uploaded bytes always match their declared
+  // extension. PNG is re-encoded as PNG (preserves transparency); everything
+  // else (JPEG, WebP, HEIF, unknown) becomes JPEG. Animated GIFs are passed
+  // through untouched since a canvas would flatten them to one frame. On any
+  // decode/encode failure the original file is returned unchanged so the server
+  // still gets a chance (and logs a precise diagnostic).
+  async _normalizeImageForUpload(file) {
+    if (file.type === 'image/gif') return file;
+
+    const toPng = file.type === 'image/png';
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('decode failed'));
+        img.src = url;
+      });
+
+      const width = img.naturalWidth;
+      const height = img.naturalHeight;
+      if (!width || !height) return file;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return file;
+      ctx.drawImage(img, 0, 0);
+
+      const mime = toPng ? 'image/png' : 'image/jpeg';
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, mime, 0.92));
+      if (!blob) return file;
+
+      const baseName = (file.name || 'image').replace(/\.[^.]+$/, '') || 'image';
+      return new File([blob], baseName + (toPng ? '.png' : '.jpg'), { type: mime });
+    } catch (err) {
+      console.warn('Image re-encode failed, uploading original:', err);
+      return file;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
   },
 
 });

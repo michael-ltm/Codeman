@@ -66,3 +66,6 @@ commands
 todo.md
 @fix_plan.md
 readme-preview.mjs
+
+# Uploaded images land here under each session working dir (runtime artifact)
+.claude-images/

@@ -1674,6 +1674,14 @@ export function registerSessionRoutes(
     // Sniff actual bytes — filename and Content-Type are both attacker-supplied.
     // Polyglot HTML/PNG would otherwise pass and serve back with image/png MIME.
     if (!imageMagicMatchesExt(imageBytes, ext)) {
+      // Diagnostic: on some Android galleries (e.g. MIUI) a WebP/HEIF is
+      // mislabeled as image/jpeg, so the declared ext passes the allowlist but
+      // the magic bytes do not. Log the real header so format mismatches can be
+      // pinned down without a reproduce-and-guess loop. The client now
+      // re-encodes images to JPEG/PNG before upload, so this should be rare.
+      console.warn(
+        `[paste-image] magic mismatch: filename=${JSON.stringify(part.filename)} mime=${JSON.stringify(part.mimetype)} declaredExt=${ext} magic=${imageBytes.subarray(0, 12).toString('hex')}`
+      );
       reply.code(415);
       return createErrorResponse(ApiErrorCode.INVALID_INPUT, `Image bytes do not match declared type ${ext}`);
     }

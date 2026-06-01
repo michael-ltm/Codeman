@@ -5,6 +5,8 @@
  *
  * - KeyboardAccessoryBar (singleton object) — Quick action buttons shown above the virtual
  *   keyboard on mobile: arrow up/down, /init, /clear, /compact, paste, and dismiss.
+ *   The paste button opens a dialog that handles both text paste and image attach
+ *   (native picker + best-effort image paste, routed through app._uploadAndInsertImages).
  *   Destructive actions (/clear, /compact) require double-tap confirmation (2s amber state).
  *   Commands are sent as text + Enter separately for Ink compatibility.
  *   Only initializes on touch devices (MobileDetection.isTouchDevice guard).
@@ -264,8 +266,17 @@ const KeyboardAccessoryBar = {
     }).catch(() => {});
   },
 
-  /** Read clipboard and send contents as input */
-  /** Show a paste overlay with a textarea for iOS compatibility */
+  /** Show a paste overlay for iOS compatibility.
+   *  Handles three input paths from one dialog:
+   *   - Text: long-press the textarea → Paste → Send (unchanged).
+   *   - Image (picker): the "Image" button opens a native file picker
+   *     (accept=image/* → camera / photo library / files), the most reliable
+   *     way to attach a photo on mobile.
+   *   - Image (paste): if the browser exposes image blobs on the textarea's
+   *     paste event, we intercept them and upload directly. Support is spotty
+   *     on mobile, so it is a best-effort enhancement layered on the picker.
+   *  All image paths reuse app._uploadAndInsertImages() (image-input.js), which
+   *  uploads to /api/sessions/:id/paste-image and inserts the saved path. */
   pasteFromClipboard() {
     if (typeof app === 'undefined' || !app.activeSessionId) return;
 
@@ -274,23 +285,61 @@ const KeyboardAccessoryBar = {
     overlay.className = 'paste-overlay';
     overlay.innerHTML = `
       <div class="paste-dialog">
-        <textarea class="paste-textarea" placeholder="Long-press here and tap Paste"></textarea>
+        <textarea class="paste-textarea" placeholder="Long-press to paste text — or tap 🖼 to attach an image"></textarea>
         <div class="paste-actions">
+          <button class="paste-image">🖼 Image</button>
           <button class="paste-cancel">Cancel</button>
           <button class="paste-send">Send</button>
         </div>
+        <input type="file" class="paste-file-input" accept="image/*" multiple hidden>
       </div>
     `;
 
     const textarea = overlay.querySelector('.paste-textarea');
-    const send = () => {
+    const fileInput = overlay.querySelector('.paste-file-input');
+
+    const close = () => overlay.remove();
+
+    const sendText = () => {
       const text = textarea.value;
-      overlay.remove();
+      close();
       if (text) app.sendInput(text);
     };
-    overlay.querySelector('.paste-cancel').addEventListener('click', () => overlay.remove());
-    overlay.querySelector('.paste-send').addEventListener('click', send);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    // Filter to images, close the dialog, and hand off to the shared
+    // upload+insert pipeline. Returns true if any image was handled.
+    const handleImages = (files) => {
+      const images = Array.from(files || []).filter((f) => f.type.startsWith('image/'));
+      if (images.length === 0) return false;
+      close();
+      if (typeof app._uploadAndInsertImages === 'function') app._uploadAndInsertImages(images);
+      return true;
+    };
+
+    // Image picker (camera / photo library) — the reliable mobile path.
+    overlay.querySelector('.paste-image').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => handleImages(fileInput.files));
+
+    // Best-effort: capture images pasted straight into the textarea.
+    textarea.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      const imageFiles = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const blob = items[i].getAsFile();
+          if (blob) imageFiles.push(blob);
+        }
+      }
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        handleImages(imageFiles);
+      }
+    });
+
+    overlay.querySelector('.paste-cancel').addEventListener('click', close);
+    overlay.querySelector('.paste-send').addEventListener('click', sendText);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
     document.body.appendChild(overlay);
     textarea.focus();
