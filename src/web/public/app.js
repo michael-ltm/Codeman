@@ -306,6 +306,9 @@ class CodemanApp {
     this.detachedWindows = new Map();    // dashboard-side: id -> WindowProxy
     this._detachWatchTimers = new Map(); // dashboard-side: id -> setInterval handle
     this.windowChannel = null;           // BroadcastChannel for cross-window sync
+    this._redockGrace = new Map();       // id -> timer: deferred redock (debounces popup reloads)
+    this._detachPingPending = null;      // Set of ids awaiting a liveness answer
+    this._detachLivenessTimer = null;    // periodic reconcile of channel-only detached windows
 
     this._initGeneration = 0;     // dedup concurrent handleInit calls
     this._initFallbackTimer = null; // fallback timer if SSE init doesn't arrive
@@ -827,9 +830,13 @@ class CodemanApp {
   detachSession(id) {
     if (this.isSoloWindow) return;            // a solo window can't spawn more
     if (!this.sessions.has(id)) return;
-    // Already out and still open → just raise it (fast path).
-    const existing = this.detachedWindows.get(id);
-    if (existing && !existing.closed) { try { existing.focus(); } catch {} return; }
+    // Already detached → raise the existing popup instead of opening (or
+    // reloading) another. Mirrors the tab-click path: after a dashboard reload
+    // we hold no WindowProxy ref, so this raises via the channel rather than
+    // re-running window.open (which would reload the popup's terminal). Returns
+    // false only when we owned a now-closed window (re-dock + fall through to
+    // genuinely re-open below).
+    if (this.detachedSessions.has(id) && this._raiseDetached(id)) return;
     const features = 'width=960,height=680,menubar=no,toolbar=no,location=no,status=no';
     let win = null;
     try { win = window.open('/session/' + encodeURIComponent(id), 'codeman-session-' + id, features); } catch {}
@@ -842,6 +849,20 @@ class CodemanApp {
     this._watchDetachedWindow(id, win);
     this._postWindowMessage({ type: 'detached', id });
     try { win.focus(); } catch {}
+  }
+
+  /** Raise the popup for an already-detached session. Returns true if the raise
+   *  was handled (caller should stop); false if we owned a now-closed window and
+   *  re-docked it (caller should fall through to inline / re-open). Unifies the
+   *  pop-out icon and tab-click paths so neither reloads a live popup. */
+  _raiseDetached(id) {
+    const win = this.detachedWindows.get(id);
+    if (win && !win.closed) { try { win.focus(); } catch {} return true; }
+    if (win && win.closed) { this._redock(id); return false; }   // owned ref dead → redock + fall through
+    // No local ref (dashboard reloaded): assume alive and raise via the channel.
+    // A liveness ping (or the popup's own unload) heals the badge if it's gone.
+    this._postWindowMessage({ type: 'focus-request', id });
+    return true;
   }
 
   /** Re-dock a session: close its window (which re-docks via its unload
@@ -857,8 +878,24 @@ class CodemanApp {
   _redock(id) {
     const t = this._detachWatchTimers.get(id);
     if (t) { clearInterval(t); this._detachWatchTimers.delete(id); }
+    this._cancelPendingRedock(id);
     this.detachedWindows.delete(id);
     this._markDetached(id, false);
+  }
+
+  /** Defer a channel-driven redock briefly. A popup *reload* emits 'redocked'
+   *  then re-announces 'detached'; the grace window lets that re-announce cancel
+   *  the redock, so a reload doesn't blip the dashboard badge. A real close
+   *  leaves the redock unanswered and it fires. */
+  _scheduleRedock(id) {
+    if (this._redockGrace.has(id)) return;
+    const timer = setTimeout(() => { this._redockGrace.delete(id); this._redock(id); }, 1500);
+    this._redockGrace.set(id, timer);
+  }
+
+  _cancelPendingRedock(id) {
+    const t = this._redockGrace.get(id);
+    if (t) { clearTimeout(t); this._redockGrace.delete(id); }
   }
 
   /** Toggle the "detached" marker on a tab (immediate DOM update + state set).
@@ -902,8 +939,11 @@ class CodemanApp {
       window.addEventListener('beforeunload', announceClose);
     } else {
       // Dashboard: ask any already-open solo windows to re-announce themselves
-      // (covers a dashboard reload while popups remain open).
+      // (covers a dashboard reload while popups remain open), then keep
+      // reconciling so a popup that died WITHOUT a 'redocked' (hard kill / crash)
+      // eventually un-marks its tab.
       this._postWindowMessage({ type: 'roll-call' });
+      this._startDetachLiveness();
     }
   }
 
@@ -923,13 +963,42 @@ class CodemanApp {
     }
     // Dashboard side.
     if (msg.type === 'detached' && msg.id) {
+      this._cancelPendingRedock(msg.id);    // a re-announce (e.g. popup reload) cancels a deferred redock
+      this._detachPingPending?.delete(msg.id);  // and proves liveness for this tick
       this._markDetached(msg.id, true);
     } else if (msg.type === 'redocked' && msg.id) {
-      this._redock(msg.id);
+      this._scheduleRedock(msg.id);         // defer: a popup reload fires redocked→detached; grace avoids a badge blip
     } else if (msg.type === 'detach-request' && msg.id) {
       // Future gesture hook: another window asks the dashboard to detach a tab.
       this.detachSession(msg.id);
     }
+  }
+
+  /** Dashboard: periodically reconcile detached tabs we hold no window ref for
+   *  (e.g. after a dashboard reload). Owned windows are covered by the
+   *  win.closed poll; channel-only ones can only be checked by asking them to
+   *  re-announce and re-docking any that stay silent. */
+  _startDetachLiveness() {
+    if (this._detachLivenessTimer) return;
+    this._detachLivenessTimer = setInterval(() => this._pingDetached(), 5000);
+  }
+
+  _pingDetached() {
+    const orphans = [];
+    for (const id of this.detachedSessions) {
+      const win = this.detachedWindows.get(id);
+      if (!win) orphans.push(id);            // channel-only — must verify via re-announce
+      else if (win.closed) this._redock(id); // owned & closed — heal now
+    }
+    if (!orphans.length) return;
+    this._detachPingPending = new Set(orphans);
+    this._postWindowMessage({ type: 'roll-call' });
+    // Live popups answer 'detached' (clearing themselves above); survivors are gone.
+    setTimeout(() => {
+      if (!this._detachPingPending) return;
+      for (const id of this._detachPingPending) this._redock(id);
+      this._detachPingPending = null;
+    }, 1200);
   }
 
   /** Solo window: select the target session and apply minimal single-session
@@ -2735,16 +2804,9 @@ class CodemanApp {
     // If this session is popped out into its own window, raise that window
     // instead of showing it inline (focus-on-click for detached tabs).
     if (!this.isSoloWindow && this.detachedSessions.has(sessionId)) {
-      const win = this.detachedWindows.get(sessionId);
-      if (win && !win.closed) { try { win.focus(); } catch {} return; }
-      if (win && win.closed) {
-        this._redock(sessionId);   // ref we own is dead → re-dock, fall through to inline
-      } else {
-        // No local ref (dashboard was reloaded). Assume the popup is alive and
-        // raise it via the channel; its unload announcement will heal the badge.
-        this._postWindowMessage({ type: 'focus-request', id: sessionId });
-        return;
-      }
+      // Raise the popup instead of showing inline. If we owned a now-closed
+      // window, _raiseDetached re-docks and returns false so we fall through.
+      if (this._raiseDetached(sessionId)) return;
     }
     if (this.activeSessionId === sessionId) return;
     // Focus terminal SYNCHRONOUSLY before any await — iOS Safari only honors
