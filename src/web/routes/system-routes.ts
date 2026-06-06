@@ -8,9 +8,10 @@ import { FastifyInstance } from 'fastify';
 import { join, dirname } from 'node:path';
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import fs from 'node:fs/promises';
-import { homedir, totalmem, freemem, loadavg, cpus } from 'node:os';
+import { totalmem, freemem, loadavg, cpus } from 'node:os';
 import { execSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { dataPath } from '../../config/instance.js';
 import { ApiErrorCode, createErrorResponse, getErrorMessage, type NiceConfig } from '../../types.js';
 import {
   ConfigUpdateSchema,
@@ -41,7 +42,7 @@ import { AUTH_SESSION_TTL_MS } from '../../config/auth-config.js';
 // Maximum screenshot upload size (10MB)
 const MAX_SCREENSHOT_SIZE = 10 * 1024 * 1024;
 // Screenshots directory
-const SCREENSHOTS_DIR = join(homedir(), '.codeman', 'screenshots');
+const SCREENSHOTS_DIR = dataPath('screenshots');
 
 /** Cached CPU count — doesn't change at runtime */
 const CPU_COUNT = cpus().length;
@@ -96,8 +97,8 @@ export function registerSystemRoutes(
   app: FastifyInstance,
   ctx: SessionPort & EventPort & ConfigPort & InfraPort & AuthPort
 ): void {
-  const windowStatesPath = join(homedir(), '.codeman', 'subagent-window-states.json');
-  const parentMapPath = join(homedir(), '.codeman', 'subagent-parents.json');
+  const windowStatesPath = dataPath('subagent-window-states.json');
+  const parentMapPath = dataPath('subagent-parents.json');
 
   // ═══════════════════════════════════════════════════════════════
   // System Status & Health

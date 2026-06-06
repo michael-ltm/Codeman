@@ -16,10 +16,12 @@ import { parseRalphLoopConfig, extractCompletionPhrase } from '../ralph-config.j
 import { SseEvent } from './sse-events.js';
 import type { SessionPort } from './ports/session-port.js';
 import type { EventPort } from './ports/event-port.js';
+import { dataPath } from '../config/instance.js';
 
-// Shared path constants used across route modules
+// Shared path constants used across route modules. CASES_DIR (project folders)
+// stays shared across instances; SETTINGS_PATH is per-instance runtime state.
 export const CASES_DIR = join(homedir(), 'codeman-cases');
-export const SETTINGS_PATH = join(homedir(), '.codeman', 'settings.json');
+export const SETTINGS_PATH = dataPath('settings.json');
 
 /**
  * Validates that a path component doesn't escape the base directory.

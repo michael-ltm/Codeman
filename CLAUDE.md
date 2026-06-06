@@ -72,7 +72,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 
 ## Additional Commands
 
-`npm run dev` = dev server. Default port: `3000`. Commands not in Quick Reference:
+`npm run dev` = dev server. Default port: `5000` on this `beta/session-detach` branch (`3000` on master). Commands not in Quick Reference:
 
 | Task | Command |
 |------|---------|
@@ -98,6 +98,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 - **Dual-CLI prefix discipline** — Codeman supports both Claude Code and OpenCode (`claude-cli-resolver.ts` / `opencode-cli-resolver.ts`); env-var prefix is CLI-specific (`CLAUDE_CODE_*` vs `OPENCODE_*`) and the allowlist in `schemas.ts` enforces this. When adding settings, decide which CLI(s) it applies to and gate the env export accordingly — don't blindly forward both prefixes. See `docs/opencode-integration.md` for the OpenCode resolver design
 - **Zod `.optional()` rejects `null`** — accepts `undefined` only. When the frontend builds a request body with `JSON.stringify`, an explicit `null` field is preserved on the wire and fails validation with `INVALID_INPUT`. Convert `null` → `undefined` before stringifying (e.g. `field: value ?? undefined`), or declare the schema `.nullish()`. Real bugs caused: 0.6.4 (`durationMinutes` for ∞ respawn), and the same shape pattern hit `opusContext1mEnabled` in 0.6.3
 - **`xterm-zerolag-input` is duplicated** — the local-echo overlay lives in BOTH `packages/xterm-zerolag-input/src/` (published to npm as a standalone library for external consumers — see README "Published Packages") AND inline inside `src/web/public/app.js` (runtime copy the web UI actually loads, since the page ships as plain JS without a bundler). Any change to overlay behavior MUST be applied to both, or dev and prod diverge — and a public API break in the package warrants a separate version bump for `xterm-zerolag-input` in the changeset. Always test on mobile after touching it. See `docs/local-echo-overlay-plan.md`.
+- **Instance isolation / multi-instance attach danger** — data dir (`~/.codeman`) and tmux socket (`tmux -L codeman`) are PROCESS-WIDE and shared by every Codeman on the machine, derived from `CODEMAN_INSTANCE` via `src/config/instance.ts` (`getDataDir()`/`dataPath()`/`DEFAULT_TMUX_SOCKET`). ⚠️ A 2nd instance on the SAME socket **discovers and attaches PTYs to the first instance's live sessions** (`tmux -L codeman attach-session …`), resizing/mutating them — `$HOME` isolation is NOT enough (tmux is system-global). To run two instances, give each a distinct `CODEMAN_INSTANCE` (scopes BOTH dir+socket: `~/.codeman-<name>` + `-L codeman-<name>`), or set `CODEMAN_TMUX_SOCKET` + `CODEMAN_DATA_DIR` individually. **This `beta/session-detach` branch defaults to `CODEMAN_INSTANCE=beta` and port 5000** so it coexists with a prod Codeman out of the box. Any new `~/.codeman/...` path MUST go through `dataPath()`, never `join(homedir(), '.codeman', …)`.
 
 **Import conventions**: Utils from `./utils`, types from `./types` (barrel), config from specific `./config/*` files.
 

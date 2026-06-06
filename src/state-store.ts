@@ -39,6 +39,7 @@ import {
   TokenUsageEntry,
 } from './types.js';
 import { Debouncer, MAX_SESSION_TOKENS } from './utils/index.js';
+import { dataPath } from './config/instance.js';
 
 /** Debounce delay for batching state writes (ms) */
 const SAVE_DEBOUNCE_MS = 500;
@@ -105,7 +106,7 @@ export class StateStore {
       }
     }
 
-    this.filePath = filePath || join(homedir(), '.codeman', 'state.json');
+    this.filePath = filePath || dataPath('state.json');
     this.ralphStatePath = this.filePath.replace('.json', '-inner.json');
     this.state = this.load();
     this.state.config.stateFilePath = this.filePath;

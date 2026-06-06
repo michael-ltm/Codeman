@@ -17,8 +17,9 @@ import { writeHooksConfig } from '../../hooks-config.js';
 import { CASES_DIR, SETTINGS_PATH, validatePathWithinBase, parseBody, readJsonConfig } from '../route-helpers.js';
 import { SseEvent } from '../sse-events.js';
 import type { EventPort, ConfigPort } from '../ports/index.js';
+import { dataPath, getDataDir } from '../../config/instance.js';
 
-const LINKED_CASES_FILE = join(homedir(), '.codeman', 'linked-cases.json');
+const LINKED_CASES_FILE = dataPath('linked-cases.json');
 const SAFE_CASE_NAME = /^[a-zA-Z0-9_-]+$/;
 
 /** Read and parse linked-cases.json, returning empty object on missing/invalid file. */
@@ -151,7 +152,7 @@ export function registerCaseRoutes(app: FastifyInstance, ctx: EventPort & Config
     // Save the linked case
     linkedCases[name] = expandedPath;
     try {
-      const codemanDir = join(homedir(), '.codeman');
+      const codemanDir = getDataDir();
       if (!existsSync(codemanDir)) {
         mkdirSync(codemanDir, { recursive: true });
       }
@@ -206,7 +207,7 @@ export function registerCaseRoutes(app: FastifyInstance, ctx: EventPort & Config
     const { order } = parseBody(CaseOrderSchema, req.body, 'Invalid order data');
 
     try {
-      const dir = join(homedir(), '.codeman');
+      const dir = getDataDir();
       if (!existsSync(dir)) {
         mkdirSync(dir, { recursive: true });
       }

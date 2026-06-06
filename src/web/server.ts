@@ -39,7 +39,8 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, readFileSync, chmodSync, rmSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { execSync } from 'node:child_process';
-import { homedir, hostname as getHostname } from 'node:os';
+import { hostname as getHostname } from 'node:os';
+import { dataPath } from '../config/instance.js';
 import { EventEmitter } from 'node:events';
 import { Session, type BackgroundTask } from '../session.js';
 import type { ClaudeMode, SessionState } from '../types.js';
@@ -146,7 +147,7 @@ import {
  * Certs are stored in ~/.codeman/certs/ and reused across restarts.
  */
 function getOrCreateSelfSignedCert(): { key: string; cert: string } {
-  const certsDir = join(homedir(), '.codeman', 'certs');
+  const certsDir = dataPath('certs');
   const keyPath = join(certsDir, 'server.key');
   const certPath = join(certsDir, 'server.crt');
 
@@ -561,6 +562,17 @@ export class WebServer extends EventEmitter {
     });
     this.app.get('/index.html', async (_req, reply) => {
       return reply.header('Cache-Control', 'no-cache').type('text/html; charset=utf-8').send(this.renderIndexHtml());
+    });
+    // Detached single-session window (undock). Serves the same SPA shell but
+    // flags the client into "solo mode" for one session. Auth applies normally
+    // (the popup carries the dashboard's cookie on navigation). We serve 200
+    // even for an unknown id — the client renders a friendly "session
+    // unavailable" state, which also covers a session that ends while its
+    // detached window is still open. Registered before the static plugin so the
+    // explicit route wins over the '/' static prefix.
+    this.app.get('/session/:id', async (req, reply) => {
+      const { id } = req.params as { id: string };
+      return reply.header('Cache-Control', 'no-cache').type('text/html; charset=utf-8').send(this.renderIndexHtml(id));
     });
     // Service worker must never be cached — browsers check for SW updates on navigation
     this.app.get('/sw.js', async (_req, reply) => {
@@ -980,11 +992,22 @@ export class WebServer extends EventEmitter {
     this.broadcast(SseEvent.SessionDeleted, { id: sessionId });
   }
 
-  private renderIndexHtml(): string {
-    return this.indexHtmlTemplate.replace(
+  private renderIndexHtml(soloSessionId?: string): string {
+    let html = this.indexHtmlTemplate.replace(
       '<title>Codeman</title>',
       `<title>${escapeHtmlText(this.windowTitle)}</title>`
     );
+    // Detached single-session ("solo") window: inject the target session id so
+    // the client can enter solo mode even if a (network-first) service worker
+    // later serves a cached shell. The client primarily detects solo mode from
+    // the /session/:id URL path; this global is a belt-and-suspenders fallback.
+    // The id is gated to JSON + <-escaped so it can't break out of the inline
+    // <script> (ids are UUIDs in practice, but defense-in-depth is cheap).
+    if (soloSessionId) {
+      const safeId = JSON.stringify(soloSessionId).replace(/</g, '\\u003c');
+      html = html.replace('</head>', `<script>window.__CODEMAN_SOLO__=${safeId};</script>\n</head>`);
+    }
+    return html;
   }
 
   private async setupSessionListeners(session: Session): Promise<void> {
@@ -1088,7 +1111,7 @@ export class WebServer extends EventEmitter {
 
   // Helper to get custom CLAUDE.md template path from settings
   private async getDefaultClaudeMdPath(): Promise<string | undefined> {
-    const settingsPath = join(homedir(), '.codeman', 'settings.json');
+    const settingsPath = dataPath('settings.json');
 
     try {
       const content = await fs.readFile(settingsPath, 'utf-8');
@@ -1112,7 +1135,7 @@ export class WebServer extends EventEmitter {
     if (this._settingsCache && now - this._settingsCache.ts < 2000) {
       return this._settingsCache.data;
     }
-    const settingsPath = join(homedir(), '.codeman', 'settings.json');
+    const settingsPath = dataPath('settings.json');
     try {
       const content = await fs.readFile(settingsPath, 'utf-8');
       const data = JSON.parse(content) as Record<string, unknown>;
@@ -1619,7 +1642,7 @@ export class WebServer extends EventEmitter {
     // Tunnel only starts when user clicks the toggle in the UI — never on boot.
     // Reset persisted tunnelEnabled so the UI toggle reflects actual state.
     if (await this.isTunnelEnabled()) {
-      const settingsPath = join(homedir(), '.codeman', 'settings.json');
+      const settingsPath = dataPath('settings.json');
       try {
         const content = await fs.readFile(settingsPath, 'utf-8');
         const settings = JSON.parse(content);
@@ -1640,7 +1663,7 @@ export class WebServer extends EventEmitter {
    * Check if subagent tracking is enabled in settings (default: true)
    */
   private async isSubagentTrackingEnabled(): Promise<boolean> {
-    const settingsPath = join(homedir(), '.codeman', 'settings.json');
+    const settingsPath = dataPath('settings.json');
     try {
       const content = await fs.readFile(settingsPath, 'utf-8');
       const settings = JSON.parse(content);
@@ -1658,7 +1681,7 @@ export class WebServer extends EventEmitter {
    * Check if image watcher is enabled in settings (default: false)
    */
   private async isImageWatcherEnabled(): Promise<boolean> {
-    const settingsPath = join(homedir(), '.codeman', 'settings.json');
+    const settingsPath = dataPath('settings.json');
     try {
       const content = await fs.readFile(settingsPath, 'utf-8');
       const settings = JSON.parse(content);
@@ -1676,7 +1699,7 @@ export class WebServer extends EventEmitter {
    * Check if Cloudflare tunnel is enabled in settings (default: false)
    */
   private async isTunnelEnabled(): Promise<boolean> {
-    const settingsPath = join(homedir(), '.codeman', 'settings.json');
+    const settingsPath = dataPath('settings.json');
     try {
       const content = await fs.readFile(settingsPath, 'utf-8');
       const settings = JSON.parse(content);

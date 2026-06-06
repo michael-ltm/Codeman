@@ -8,12 +8,12 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import webpush from 'web-push';
 import type { VapidKeys, PushSubscriptionRecord } from './types.js';
 import { Debouncer } from './utils/index.js';
+import { getDataDir } from './config/instance.js';
 
-const DATA_DIR = join(homedir(), '.codeman');
+const DATA_DIR = getDataDir();
 const KEYS_FILE = join(DATA_DIR, 'push-keys.json');
 const SUBS_FILE = join(DATA_DIR, 'push-subscriptions.json');
 const SAVE_DEBOUNCE_MS = 500;
