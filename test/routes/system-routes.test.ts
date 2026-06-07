@@ -194,6 +194,72 @@ describe('system-routes', () => {
     });
   });
 
+  // ========== GET /api/away-digest ==========
+
+  describe('GET /api/away-digest', () => {
+    it('returns a classified digest from lifecycle, active sessions, and token stats', async () => {
+      const lifecycleQuery = vi.fn(async () => [
+        {
+          ts: Date.now() - 1000,
+          event: 'exit',
+          sessionId: harness.ctx._sessionId,
+          name: 'Route Session',
+          exitCode: 7,
+        },
+      ]);
+      mockedGetLifecycleLog.mockReturnValue({
+        log: vi.fn(),
+        query: lifecycleQuery,
+      } as never);
+      harness.ctx._session.name = 'Route Session';
+      harness.ctx._session.status = 'working';
+      harness.ctx.store.getDailyStats.mockReturnValue([
+        {
+          date: new Date().toISOString().split('T')[0],
+          inputTokens: 100,
+          outputTokens: 200,
+          estimatedCost: 0.02,
+          sessions: 1,
+        },
+      ]);
+
+      const res = await harness.app.inject({ method: 'GET', url: '/api/away-digest?range=1h' });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.digest.sections.needsAttention[0]).toMatchObject({
+        sessionId: harness.ctx._sessionId,
+        source: 'lifecycle',
+      });
+      expect(body.digest.sections.stillRunning[0]).toMatchObject({
+        sessionId: harness.ctx._sessionId,
+        source: 'status',
+      });
+      expect(body.digest.totals).toMatchObject({
+        activeSessions: 1,
+        needsAttention: 1,
+        inputTokens: 100,
+        outputTokens: 200,
+        tokenWindowPrecision: 'day',
+      });
+      expect(lifecycleQuery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          limit: 1000,
+        })
+      );
+    });
+
+    it('rejects invalid ranges', async () => {
+      const res = await harness.app.inject({ method: 'GET', url: '/api/away-digest?range=forever' });
+
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(false);
+      expect(body.message ?? body.error).toMatch(/range/i);
+    });
+  });
+
   // ========== GET /api/debug/memory ==========
 
   describe('GET /api/debug/memory', () => {
