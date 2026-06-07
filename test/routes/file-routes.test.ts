@@ -363,4 +363,63 @@ describe('file-routes', () => {
       expect(body.success).toBe(false);
     });
   });
+
+  // ========== GET /api/download ==========
+
+  describe('GET /api/download', () => {
+    it('requires a sessionId to scope downloads', async () => {
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: `/api/download?path=${encodeURIComponent('/tmp/test-workdir/report.txt')}`,
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('downloads files scoped to the session working directory', async () => {
+      const content = Buffer.from('download content');
+      mockedReadFile.mockResolvedValue(content as never);
+      mockedStat.mockResolvedValue({ size: content.length, isFile: () => true } as never);
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: `/api/download?sessionId=${harness.ctx._sessionId}&path=report.txt`,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-disposition']).toContain('filename="report.txt"');
+      expect(res.body).toBe('download content');
+    });
+
+    it('rejects absolute paths outside the session working directory', async () => {
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: `/api/download?sessionId=${harness.ctx._sessionId}&path=${encodeURIComponent('/var/log/app.log')}`,
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('rejects symlink targets that escape the session working directory', async () => {
+      mockedRealpathSync.mockReturnValue('/tmp/outside-workdir/link.log' as never);
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: `/api/download?sessionId=${harness.ctx._sessionId}&path=${encodeURIComponent(
+          '/tmp/test-workdir/link.log'
+        )}`,
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('blocks sensitive files even when they are inside the session working directory', async () => {
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: `/api/download?sessionId=${harness.ctx._sessionId}&path=.env`,
+      });
+
+      expect(res.statusCode).toBe(403);
+    });
+  });
 });
