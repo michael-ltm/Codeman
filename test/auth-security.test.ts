@@ -3,12 +3,12 @@
  * 1. Timing-safe password comparison (timingSafeEqual)
  * 2. Hook event endpoint restricted to localhost
  * 3. Session cookie TTL refresh on access
- * 4. Startup warning when no password configured
+ * 4. Startup fails closed when network-bound without auth
  * 5. SSE client limit enforcement
  * 6. Logout endpoint invalidates session
  * 7. Settings schema rejects unknown fields
  *
- * Port: 3160 (auth tests), 3161 (no-auth tests)
+ * Port: 3160 (auth tests), 3161 (loopback no-auth tests), 3162 (network override tests)
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { WebServer } from '../src/web/server.js';
@@ -16,6 +16,7 @@ import { SettingsUpdateSchema } from '../src/web/schemas.js';
 
 const AUTH_PORT = 3160;
 const NOAUTH_PORT = 3161;
+const NETWORK_OVERRIDE_PORT = 3162;
 const TEST_USER = 'admin';
 const TEST_PASS = 'test-password-12345';
 
@@ -220,7 +221,7 @@ describe('Settings Schema Security', () => {
 
   it('should enforce tunnelEnabled as boolean', () => {
     const result = SettingsUpdateSchema.safeParse({
-      tunnelEnabled: 'yes',  // truthy string — should be rejected
+      tunnelEnabled: 'yes', // truthy string — should be rejected
     });
     expect(result.success).toBe(false);
   });
@@ -264,40 +265,69 @@ describe('Settings Schema Security', () => {
     expect(validResult.success).toBe(true);
 
     const invalidResult = SettingsUpdateSchema.safeParse({
-      nice: { enabled: true, niceValue: 100 },  // Out of range
+      nice: { enabled: true, niceValue: 100 }, // Out of range
     });
     expect(invalidResult.success).toBe(false);
   });
 });
 
-describe('No-Auth Server Warning', () => {
+describe('No-Auth Server Startup Policy', () => {
   let server: WebServer;
-  let consoleWarnSpy: string[] = [];
-  const originalWarn = console.warn;
 
   beforeAll(async () => {
     delete process.env.CODEMAN_PASSWORD;
     delete process.env.CODEMAN_USERNAME;
-    consoleWarnSpy = [];
-    console.warn = (...args: unknown[]) => {
-      consoleWarnSpy.push(args.map(String).join(' '));
-    };
-    server = new WebServer(NOAUTH_PORT, false, true);
+    delete process.env.CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK;
+    server = new WebServer(NOAUTH_PORT, false, true, '127.0.0.1');
     await server.start();
   });
 
   afterAll(async () => {
-    console.warn = originalWarn;
+    delete process.env.CODEMAN_PASSWORD;
+    delete process.env.CODEMAN_USERNAME;
+    delete process.env.CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK;
     await server.stop();
   });
 
-  it('should warn when no CODEMAN_PASSWORD is set', () => {
-    const hasWarning = consoleWarnSpy.some(msg => msg.includes('No CODEMAN_PASSWORD set'));
-    expect(hasWarning).toBe(true);
-  });
-
-  it('should allow requests without auth when no password configured', async () => {
+  it('allows loopback requests without auth when no password is configured', async () => {
     const res = await fetch(`http://localhost:${NOAUTH_PORT}/api/status`);
     expect(res.status).toBe(200);
+  });
+
+  it('rejects non-loopback startup without a password or explicit override', async () => {
+    const networkServer = new WebServer(0, false, true, '0.0.0.0');
+
+    await expect(networkServer.start()).rejects.toThrow(/CODEMAN_PASSWORD/);
+
+    await networkServer.stop();
+  });
+
+  it('allows non-loopback startup when CODEMAN_PASSWORD is configured', async () => {
+    process.env.CODEMAN_PASSWORD = TEST_PASS;
+    const networkServer = new WebServer(0, false, true, '0.0.0.0');
+
+    await networkServer.start();
+    await networkServer.stop();
+
+    delete process.env.CODEMAN_PASSWORD;
+  });
+
+  it('allows non-loopback startup with the explicit unauthenticated-network override', async () => {
+    const networkServer = new WebServer(NETWORK_OVERRIDE_PORT, false, true, '0.0.0.0', undefined, true);
+
+    await networkServer.start();
+    const res = await fetch(`http://localhost:${NETWORK_OVERRIDE_PORT}/api/status`);
+    expect(res.status).toBe(200);
+    await networkServer.stop();
+  });
+
+  it('allows non-loopback startup with the explicit unauthenticated-network env override', async () => {
+    process.env.CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK = 'true';
+    const networkServer = new WebServer(0, false, true, '0.0.0.0');
+
+    await networkServer.start();
+    await networkServer.stop();
+
+    delete process.env.CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK;
   });
 });

@@ -42,6 +42,7 @@ import { execSync } from 'node:child_process';
 import { hostname as getHostname } from 'node:os';
 import { dataPath } from '../config/instance.js';
 import { EventEmitter } from 'node:events';
+import { isIP } from 'node:net';
 import { Session, type BackgroundTask } from '../session.js';
 import type { ClaudeMode, SessionState } from '../types.js';
 import { RespawnController, RespawnConfig } from '../respawn-controller.js';
@@ -122,6 +123,26 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+const EXPLICIT_TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
+
+function isExplicitlyEnabled(value: string | undefined): boolean {
+  return value !== undefined && EXPLICIT_TRUE_VALUES.has(value.trim().toLowerCase());
+}
+
+function isLoopbackBindHost(host: string): boolean {
+  const normalized = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[(.*)\]$/, '$1');
+  if (normalized === 'localhost' || normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') {
+    return true;
+  }
+  if (isIP(normalized) === 4 && normalized.startsWith('127.')) {
+    return true;
+  }
+  return normalized.startsWith('::ffff:127.');
+}
+
 // Bounded, predictable shape for SSE client identifiers: alphanumerics, `_`, `-`.
 // Length range covers crypto.randomUUID() (36 chars) plus any short stable IDs,
 // while capping growth of `sseClientsById` and blocking pathological inputs.
@@ -191,6 +212,7 @@ export class WebServer extends EventEmitter {
   private sse: SseStreamManager;
   private store = getStore();
   private port: number;
+  private host: string;
   private https: boolean;
   private testMode: boolean;
   private mux: TerminalMultiplexer;
@@ -232,6 +254,10 @@ export class WebServer extends EventEmitter {
   private pushStore: PushSubscriptionStore = new PushSubscriptionStore();
   private teamWatcher: TeamWatcher = new TeamWatcher();
   private _orchestratorLoop: import('../orchestrator-loop.js').OrchestratorLoop | null = null;
+  private readonly titleHostname: string;
+  private readonly windowTitle: string;
+  private readonly indexHtmlTemplate: string;
+  private readonly allowUnauthenticatedNetwork: boolean;
   private _pasteImageGcStop: (() => void) | null = null;
   private _eventLoopMonitor: EventLoopMonitorHandle | null = null;
   private teamWatcherHandlers: {
@@ -240,15 +266,22 @@ export class WebServer extends EventEmitter {
     teamRemoved: (config: unknown) => void;
     taskUpdated: (data: unknown) => void;
   } | null = null;
-  private readonly titleHostname: string;
-  private readonly windowTitle: string;
-  private readonly indexHtmlTemplate: string;
-  constructor(port: number = 3000, https: boolean = false, testMode: boolean = false, titleHostname?: string) {
+  constructor(
+    port: number = 3000,
+    https: boolean = false,
+    testMode: boolean = false,
+    host: string = '127.0.0.1',
+    titleHostname?: string,
+    allowUnauthenticatedNetwork: boolean = false
+  ) {
     super();
     this.setMaxListeners(0);
+    this.host = host;
     this.port = port;
     this.https = https;
     this.testMode = testMode;
+    this.allowUnauthenticatedNetwork =
+      allowUnauthenticatedNetwork || isExplicitlyEnabled(process.env.CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK);
     this.titleHostname = titleHostname || getHostname();
     this.windowTitle = `codeman:${this.titleHostname}`;
     this.indexHtmlTemplate = readFileSync(join(__dirname, 'public', 'index.html'), 'utf-8');
@@ -1646,6 +1679,13 @@ export class WebServer extends EventEmitter {
   }
 
   async start(): Promise<void> {
+    if (!isLoopbackBindHost(this.host) && !process.env.CODEMAN_PASSWORD && !this.allowUnauthenticatedNetwork) {
+      throw new Error(
+        'Refusing to start Codeman on a non-loopback host without CODEMAN_PASSWORD. ' +
+          'Set CODEMAN_PASSWORD or explicitly allow unauthenticated network access.'
+      );
+    }
+
     await this.setupRoutes();
 
     const lifecycleLog = getLifecycleLog();
@@ -1672,19 +1712,23 @@ export class WebServer extends EventEmitter {
       this._eventLoopMonitor = startEventLoopMonitor();
     }
 
-    await this.app.listen({ port: this.port, host: '0.0.0.0' });
+    await this.app.listen({ port: this.port, host: this.host });
     const protocol = this.https ? 'https' : 'http';
-    console.log(`Codeman web interface running at ${protocol}://localhost:${this.port}`);
+    const displayHost = this.host === '0.0.0.0' ? 'localhost' : this.host;
+    console.log(`Codeman web interface running at ${protocol}://${displayHost}:${this.port}`);
 
-    // Security warning: server binds to 0.0.0.0 (all interfaces) — warn if no auth configured
-    if (!process.env.CODEMAN_PASSWORD) {
+    if (!isLoopbackBindHost(this.host) && !process.env.CODEMAN_PASSWORD && this.allowUnauthenticatedNetwork) {
       console.warn('\n⚠  WARNING: No CODEMAN_PASSWORD set — server is accessible without authentication.');
       console.warn('   Anyone on your network can access and control Claude sessions.');
-      console.warn('   Set CODEMAN_PASSWORD environment variable to enable auth.\n');
+      console.warn(
+        '   This was explicitly allowed by --allow-unauthenticated-network or CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK.\n'
+      );
     }
 
     // Set API URL for child processes (MCP server, spawned sessions)
-    process.env.CODEMAN_API_URL = `${protocol}://localhost:${this.port}`;
+    const apiHost =
+      this.host === '0.0.0.0' || this.host === 'localhost' || this.host === '::1' ? '127.0.0.1' : this.host;
+    process.env.CODEMAN_API_URL = `${protocol}://${apiHost}:${this.port}`;
 
     // Start scheduled runs cleanup timer
     this.cleanup.setInterval(
@@ -2176,9 +2220,11 @@ export async function startWebServer(
   port: number = 3000,
   https: boolean = false,
   testMode: boolean = false,
-  titleHostname?: string
+  host: string = '127.0.0.1',
+  titleHostname?: string,
+  allowUnauthenticatedNetwork: boolean = false
 ): Promise<WebServer> {
-  const server = new WebServer(port, https, testMode, titleHostname);
+  const server = new WebServer(port, https, testMode, host, titleHostname, allowUnauthenticatedNetwork);
   await server.start();
   return server;
 }

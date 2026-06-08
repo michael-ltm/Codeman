@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { program } from '../src/cli.js';
 
 describe('CLI Command Parsing', () => {
   describe('Command Structure', () => {
@@ -72,11 +73,11 @@ describe('CLI Command Parsing', () => {
     ];
 
     const findCommand = (name: string): Command | undefined => {
-      return commands.find(c => c.name === name || c.aliases.includes(name));
+      return commands.find((c) => c.name === name || c.aliases.includes(name));
     };
 
     const findSubcommand = (parent: Command, name: string): Command | undefined => {
-      return parent.subcommands?.find(c => c.name === name || c.aliases.includes(name));
+      return parent.subcommands?.find((c) => c.name === name || c.aliases.includes(name));
     };
 
     it('should find commands by name', () => {
@@ -103,7 +104,7 @@ describe('CLI Command Parsing', () => {
     });
 
     it('should have descriptions for all commands', () => {
-      commands.forEach(cmd => {
+      commands.forEach((cmd) => {
         expect(cmd.description).toBeTruthy();
       });
     });
@@ -267,13 +268,13 @@ describe('CLI Command Parsing', () => {
     });
 
     it('should have defaults for web flags', () => {
-      webFlags.forEach(flag => {
+      webFlags.forEach((flag) => {
         expect(flag.default).toBeDefined();
       });
     });
 
     it('should have defaults for tui flags', () => {
-      tuiFlags.forEach(flag => {
+      tuiFlags.forEach((flag) => {
         expect(flag.default).toBeDefined();
       });
     });
@@ -322,7 +323,7 @@ describe('CLI Command Parsing', () => {
       help += `${description}\n`;
       if (options.length > 0) {
         help += '\nOptions:\n';
-        options.forEach(opt => {
+        options.forEach((opt) => {
           help += `  ${opt}\n`;
         });
       }
@@ -343,6 +344,15 @@ describe('CLI Command Parsing', () => {
       expect(help).toContain('Options:');
       expect(help).toContain('--port');
       expect(help).toContain('--host');
+    });
+
+    it('documents the unauthenticated network override in real web command help', () => {
+      const webCommand = program.commands.find((command) => command.name() === 'web');
+      expect(webCommand).toBeDefined();
+
+      const help = webCommand!.helpInformation();
+      expect(help).toContain('--allow-unauthenticated-network');
+      expect(help).toMatch(/without\s+CODEMAN_PASSWORD/);
     });
 
     it('should format properly', () => {
@@ -474,22 +484,27 @@ describe('CLI Output Formatting', () => {
     }
 
     const formatRow = (values: string[], columns: Column[]): string => {
-      return values.map((val, i) => {
-        const width = columns[i]?.width || 10;
-        return val.padEnd(width).substring(0, width);
-      }).join(' ');
+      return values
+        .map((val, i) => {
+          const width = columns[i]?.width || 10;
+          return val.padEnd(width).substring(0, width);
+        })
+        .join(' ');
     };
 
     const formatTable = (headers: string[], rows: string[][], widths: number[]): string => {
       const columns = headers.map((h, i) => ({ header: h, width: widths[i] }));
       const headerRow = formatRow(headers, columns);
-      const separator = columns.map(c => '-'.repeat(c.width)).join(' ');
-      const dataRows = rows.map(row => formatRow(row, columns));
+      const separator = columns.map((c) => '-'.repeat(c.width)).join(' ');
+      const dataRows = rows.map((row) => formatRow(row, columns));
       return [headerRow, separator, ...dataRows].join('\n');
     };
 
     it('should format single row', () => {
-      const columns = [{ header: 'ID', width: 10 }, { header: 'Status', width: 8 }];
+      const columns = [
+        { header: 'ID', width: 10 },
+        { header: 'Status', width: 8 },
+      ];
       const row = formatRow(['123', 'active'], columns);
       expect(row).toBe('123        active  ');
     });
@@ -503,7 +518,10 @@ describe('CLI Output Formatting', () => {
     it('should format complete table', () => {
       const table = formatTable(
         ['ID', 'Status'],
-        [['1', 'active'], ['2', 'idle']],
+        [
+          ['1', 'active'],
+          ['2', 'idle'],
+        ],
         [5, 8]
       );
       expect(table).toContain('ID');
@@ -587,7 +605,7 @@ describe('CLI Output Formatting', () => {
     });
 
     it('should format normal costs with 2 decimals', () => {
-      expect(formatCost(1.50)).toBe('$1.50');
+      expect(formatCost(1.5)).toBe('$1.50');
       expect(formatCost(0.05)).toBe('$0.05');
     });
 
@@ -633,7 +651,7 @@ describe('CLI Output Formatting', () => {
 
   describe('List Formatting', () => {
     const formatList = (items: string[], bullet: string = '-'): string => {
-      return items.map(item => `${bullet} ${item}`).join('\n');
+      return items.map((item) => `${bullet} ${item}`).join('\n');
     };
 
     const formatNumberedList = (items: string[]): string => {

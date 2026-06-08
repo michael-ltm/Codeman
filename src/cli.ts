@@ -483,21 +483,29 @@ program
 program
   .command('web')
   .description('Start the web interface')
+  .option('-H, --host <host>', 'Host to bind to', process.env.CODEMAN_HOST || '127.0.0.1')
   .option('-p, --port <port>', 'Port to listen on (env: CODEMAN_PORT)', process.env.CODEMAN_PORT || '3000')
   .option('--https', 'Enable HTTPS with self-signed certificate (only needed for remote access, not localhost)')
   .option('--title-hostname <hostname>', 'Override the hostname shown in the browser title')
+  .option(
+    '--allow-unauthenticated-network',
+    'Allow non-loopback web access without CODEMAN_PASSWORD (dangerous; terminal control is exposed)'
+  )
   .action(async (options) => {
     const { startWebServer } = await import('./web/server.js');
+    const host = options.host;
     const port = parseInt(options.port, 10);
     const https = !!options.https;
     const titleHostname = options.titleHostname;
+    const allowUnauthenticatedNetwork = !!options.allowUnauthenticatedNetwork;
     const protocol = https ? 'https' : 'http';
+    const displayHost = host === '0.0.0.0' ? 'localhost' : host;
 
-    console.log(chalk.cyan(`Starting Codeman web interface on port ${port}${https ? ' (HTTPS)' : ''}...`));
+    console.log(chalk.cyan(`Starting Codeman web interface on ${displayHost}:${port}${https ? ' (HTTPS)' : ''}...`));
 
     try {
-      const server = await startWebServer(port, https, false, titleHostname);
-      console.log(chalk.green(`\n✓ Web interface running at ${protocol}://localhost:${port}`));
+      const server = await startWebServer(port, https, false, host, titleHostname, allowUnauthenticatedNetwork);
+      console.log(chalk.green(`\n✓ Web interface running at ${protocol}://${displayHost}:${port}`));
       if (https) {
         console.log(chalk.yellow('  Note: Accept the self-signed certificate in your browser on first visit'));
       }
