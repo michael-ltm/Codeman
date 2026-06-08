@@ -280,6 +280,9 @@ export const SettingsUpdateSchema = z
     showProjectInsights: z.boolean().optional(),
     showFileBrowser: z.boolean().optional(),
     showSubagents: z.boolean().optional(),
+    showMultiMonitorButton: z.boolean().optional(),
+    // Input
+    gestureControlEnabled: z.boolean().optional(),
     // Claude CLI settings
     claudeMode: z.string().max(50).optional(),
     allowedTools: z.string().max(2000).optional(),

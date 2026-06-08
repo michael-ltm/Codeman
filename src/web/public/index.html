@@ -105,7 +105,7 @@
           </div>
         </div>
         <button class="btn-icon-header btn-response-viewer-header" onclick="app.toggleResponseViewer()" title="View last response" aria-label="View last response"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
-        <button class="btn-icon-header btn-multimonitor" onclick="app.launchMultiMonitor()" title="Open Codeman across all displays" aria-label="Open Codeman across all displays"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="13" height="9" rx="1.5"/><rect x="11" y="9" width="11" height="8" rx="1.5"/></svg></button>
+        <button class="btn-icon-header btn-multimonitor" onclick="app.launchMultiMonitor()" title="Open Codeman across all displays" aria-label="Open Codeman across all displays" style="display:none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="13" height="9" rx="1.5"/><rect x="11" y="9" width="11" height="8" rx="1.5"/></svg></button>
         <button class="btn-icon-header btn-notifications" onclick="app.toggleNotifications()" title="Notifications" aria-label="Toggle notifications" style="display:none;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           <span class="notification-badge" id="notifBadge" style="display:none;">0</span>
@@ -968,6 +968,25 @@
                   <input type="checkbox" id="appSettingsShowLifecycleLog">
                   <span class="slider"></span>
                 </label>
+              </div>
+              <div class="settings-item" title="Show the multi-monitor button in the header (opens Codeman spanned across all displays)">
+                <span class="settings-item-label">Multi-monitor Button</span>
+                <label class="switch switch-sm">
+                  <input type="checkbox" id="appSettingsShowMultiMonitorButton">
+                  <span class="slider"></span>
+                </label>
+              </div>
+
+              <!-- Input Section -->
+              <div id="appSettingsInputSection">
+                <div class="settings-section-header">Input</div>
+                <div class="settings-item" title="Enable the camera hand-tracking gesture overlay (applied on reload). The instance must run with CODEMAN_GESTURE=1.">
+                  <span class="settings-item-label">Gesture Control</span>
+                  <label class="switch switch-sm">
+                    <input type="checkbox" id="appSettingsGestureControl">
+                    <span class="slider"></span>
+                  </label>
+                </div>
               </div>
 
               <!-- Tab Bar Section -->

@@ -312,6 +312,13 @@ Object.assign(CodemanApp.prototype, {
     document.getElementById('appSettingsShowProjectInsights').checked = settings.showProjectInsights ?? defaults.showProjectInsights ?? false;
     document.getElementById('appSettingsShowFileBrowser').checked = settings.showFileBrowser ?? defaults.showFileBrowser ?? false;
     document.getElementById('appSettingsShowSubagents').checked = settings.showSubagents ?? defaults.showSubagents ?? false;
+    document.getElementById('appSettingsShowMultiMonitorButton').checked = settings.showMultiMonitorButton ?? defaults.showMultiMonitorButton ?? false;
+    // Input section: gesture control is only available when the instance runs with
+    // CODEMAN_GESTURE=1 (server sets window.__codemanGestureAvailable). Hide the
+    // whole section otherwise so the toggle can't promise something that won't work.
+    const inputSection = document.getElementById('appSettingsInputSection');
+    if (inputSection) inputSection.style.display = window.__codemanGestureAvailable ? '' : 'none';
+    document.getElementById('appSettingsGestureControl').checked = settings.gestureControlEnabled ?? defaults.gestureControlEnabled ?? false;
     document.getElementById('appSettingsSubagentTracking').checked = settings.subagentTrackingEnabled ?? defaults.subagentTrackingEnabled ?? true;
     document.getElementById('appSettingsSubagentActiveTabOnly').checked = settings.subagentActiveTabOnly ?? defaults.subagentActiveTabOnly ?? true;
     document.getElementById('appSettingsImageWatcherEnabled').checked = settings.imageWatcherEnabled ?? defaults.imageWatcherEnabled ?? false;
@@ -1107,6 +1114,9 @@ Object.assign(CodemanApp.prototype, {
   },
 
   async saveAppSettings() {
+    // Gesture overlay is injected at page render (server-side), so a change to it
+    // only takes effect on reload — remember the prior value to decide below.
+    const _prevGestureEnabled = (this.loadAppSettingsFromStorage().gestureControlEnabled ?? false) === true;
     const settings = {
       defaultClaudeMdPath: document.getElementById('appSettingsClaudeMdPath').value.trim(),
       defaultWorkingDir: document.getElementById('appSettingsDefaultDir').value.trim(),
@@ -1121,6 +1131,8 @@ Object.assign(CodemanApp.prototype, {
       showProjectInsights: document.getElementById('appSettingsShowProjectInsights').checked,
       showFileBrowser: document.getElementById('appSettingsShowFileBrowser').checked,
       showSubagents: document.getElementById('appSettingsShowSubagents').checked,
+      showMultiMonitorButton: document.getElementById('appSettingsShowMultiMonitorButton').checked,
+      gestureControlEnabled: document.getElementById('appSettingsGestureControl').checked,
       subagentTrackingEnabled: document.getElementById('appSettingsSubagentTracking').checked,
       subagentActiveTabOnly: document.getElementById('appSettingsSubagentActiveTabOnly').checked,
       imageWatcherEnabled: document.getElementById('appSettingsImageWatcherEnabled').checked,
@@ -1273,6 +1285,18 @@ Object.assign(CodemanApp.prototype, {
     }
 
     this.closeAppSettings();
+
+    // The gesture overlay is injected at page render (server reads
+    // gestureControlEnabled from settings.json), so a change only takes effect on
+    // reload. Reload when it actually changed — the server PUT above already
+    // persisted the new value.
+    if (settings.gestureControlEnabled !== _prevGestureEnabled) {
+      this.showToast(
+        settings.gestureControlEnabled ? 'Enabling gesture control — reloading…' : 'Disabling gesture control — reloading…',
+        'info'
+      );
+      setTimeout(() => location.reload(), 400);
+    }
   },
 
   // Load model configuration from server for the settings modal
@@ -1374,6 +1398,9 @@ Object.assign(CodemanApp.prototype, {
         showProjectInsights: false,
         showFileBrowser: false,
         showSubagents: false,
+        showMultiMonitorButton: false,
+        // Input
+        gestureControlEnabled: false,
         // Feature toggles - keep tracking on even on mobile
         subagentTrackingEnabled: true,
         subagentActiveTabOnly: true, // Only show subagents for active tab
@@ -1445,13 +1472,23 @@ Object.assign(CodemanApp.prototype, {
       lifecycleBtn.style.display = showLifecycleLog ? '' : 'none';
     }
 
-    // Hide notification bell when notifications are disabled
-    const notifEnabled = this.notificationManager?.preferences?.enabled ?? true;
+    // Multi-monitor button — hidden by default (App Settings → Display → "Header
+    // Displays"). The server renders the correct initial state on every reload;
+    // this handles a live toggle from a settings save (no reload).
+    const showMultiMonitorButton = settings.showMultiMonitorButton ?? defaults.showMultiMonitorButton ?? false;
+    const multiMonitorBtn = document.querySelector('.btn-multimonitor');
+    if (multiMonitorBtn) {
+      multiMonitorBtn.style.display = showMultiMonitorButton ? '' : 'none';
+    }
+
+    // Notification bell is retired (notifications live in Settings → Notifications
+    // + the drawer); keep it hidden regardless of the notification-enabled state.
     const notifBtn = document.querySelector('.btn-notifications');
     if (notifBtn) {
-      notifBtn.style.display = notifEnabled ? '' : 'none';
+      notifBtn.style.display = 'none';
     }
     // Close the drawer if notifications got disabled while it's open
+    const notifEnabled = this.notificationManager?.preferences?.enabled ?? true;
     if (!notifEnabled) {
       const drawer = document.getElementById('notifDrawer');
       if (drawer) drawer.classList.remove('open');
