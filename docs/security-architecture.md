@@ -19,6 +19,43 @@ an explicit, guided opt‑in.
 
 ---
 
+## Contents
+
+1. [Network binding model](#1-network-binding-model)
+2. [Authentication](#2-authentication)
+3. [Request‑origin trust & the tunnel caveat](#3-requestorigin-trust--the-tunnel-caveat)
+4. [Recommended remote‑access setups](#4-recommended-remoteaccess-setups)
+5. [File‑serving hardening](#5-fileserving-hardening)
+6. [tmux launch hardening](#6-tmux-launch-hardening-cod31)
+7. [Supply‑chain & build‑asset hardening](#7-supplychain--buildasset-hardening-cod28)
+8. [Multi‑instance isolation](#8-multiinstance-isolation)
+9. [Transport security headers](#9-transport-security-headers)
+10. [Quick reference](#10-quick-reference)
+
+---
+
+## Trust model
+
+**The security boundary is the network bind plus authentication — not the code Codeman
+runs.** Because sessions launch with `--dangerously-skip-permissions`, the web UI is by
+design a remote‑code‑execution surface for whoever is allowed to reach it. Everything
+below exists to control *who* that is.
+
+| Actor | Reaches the UI when… | Is granted |
+|-------|----------------------|------------|
+| Same‑machine user | Always (default loopback bind) | Full session control — the intended local‑use case. |
+| Authenticated remote client | Tunnel/LAN reachability **and** a valid password or session cookie | Full session control. |
+| Unauthenticated remote client | Only if you bind a non‑loopback host with no password | Full session control — the exact case every default and warning works to prevent. |
+| Clients behind a loopback‑connecting tunnel | A reverse tunnel terminates on `127.0.0.1` | Inherit `req.ip = 127.0.0.1`, so they hit the localhost‑only exemptions (§3) unless a password is set. |
+
+**Explicitly out of scope.** Codeman is access control for the operator console, not a
+sandbox for the code that console runs. It does **not** defend against: a compromised
+local user account (loopback is trusted), malicious contents in a workspace you
+deliberately open, or the breadth of filesystem a session's `workingDir` is pointed at
+(§5).
+
+---
+
 ## 1. Network binding model
 
 | Setting | Default | Source |
@@ -210,10 +247,13 @@ TOCTOU window.
 A workspace `.svg` served inline as `image/svg+xml` is a stored‑XSS vector (SVG
 can carry `<script>`, same‑origin = full session control). `file-raw` therefore
 serves `.svg` as `application/octet-stream` + `Content-Disposition: attachment` +
-`nosniff`. With global `nosniff` + CSP `default-src 'self'`, other text types
-(`.html`, `.xml`, …) that fall through to `octet-stream` are not rendered as HTML
-either. Trusted QR/welcome SVGs are injected from API JSON (`innerHTML`), not via
-`file-raw`, so they are unaffected.
+`nosniff`. The control here is the **`octet-stream` + `attachment` + `nosniff`
+combination**, which forces a download instead of a render — not the CSP: the
+policy's `script-src` allows `'unsafe-inline'` (§9), so a same‑origin HTML
+document *would* be able to run inline scripts if the browser ever rendered it.
+By the same combination, other text types (`.html`, `.xml`, …) that fall through
+to `octet-stream` are downloaded, not executed. Trusted QR/welcome SVGs are
+injected from API JSON (`innerHTML`), not via `file-raw`, so they are unaffected.
 
 ### Download sensitive‑path blocklist
 
@@ -293,14 +333,31 @@ production layout (`~/.codeman`, `-L codeman`, port 3000).
 
 ## 9. Transport security headers
 
-`registerSecurityHeaders` applies on every response:
+`registerSecurityHeaders` (`src/web/middleware/auth.ts`) applies on every response:
 
-- `Content-Security-Policy: default-src 'self'` (widened only for `/gesture/`
-  assets when `CODEMAN_GESTURE=1`, to load self‑hosted MediaPipe)
-- `X-Content-Type-Options: nosniff`
-- `X-Frame-Options`
-- `Strict-Transport-Security` when served over HTTPS
-- CORS restricted to localhost origins
+- **`Content-Security-Policy`** — baseline `default-src 'self'`, with these
+  deliberate widenings (so the policy is tighter than "self only" but every
+  exception is enumerated and same‑origin‑first):
+  - `script-src` / `style-src` / `font-src` also allow `https://cdn.jsdelivr.net`
+    (CDN fallback for a few libraries). `script-src` and `style-src` additionally
+    allow `'unsafe-inline'` — relevant to the SVG/HTML handling in §5, where the
+    `octet-stream` + `nosniff` download (not the CSP) is what blocks execution.
+  - `connect-src` allows `wss://api.deepgram.com` (streaming voice input).
+  - `img-src` allows `data:` and `blob:` (inline / generated images, QR codes).
+  - `frame-ancestors 'self'`.
+  - **Gesture opt‑in (`CODEMAN_GESTURE=1`):** `script-src` gains
+    `'wasm-unsafe-eval'` and a `worker-src 'self' blob:` directive is added, for
+    self‑hosted MediaPipe. Its wasm runtime + model are same‑origin under
+    `/gesture/`, so no extra `connect-src` entry is needed. OFF by default, so the
+    production CSP is byte‑for‑byte unchanged.
+- **`X-Content-Type-Options: nosniff`** — blocks MIME sniffing (pairs with §5).
+- **`X-Frame-Options: SAMEORIGIN`** — clickjacking defense (mirrors
+  `frame-ancestors 'self'`).
+- **`Strict-Transport-Security: max-age=31536000; includeSubDomains`** — only when
+  served over HTTPS (`--https`).
+- **CORS** — `Access-Control-Allow-Origin` is reflected **only** for origins whose
+  hostname is `localhost` / `127.0.0.1` / `::1`; any other origin gets no CORS
+  headers. `OPTIONS` preflights are answered `204`.
 
 ---
 
@@ -317,3 +374,21 @@ production layout (`~/.codeman`, `-L codeman`, port 3000).
 
 **Audit log:** session lifecycle and server start are recorded in
 `~/.codeman/session-lifecycle.jsonl`.
+
+### Key source files
+
+| Concern | File |
+|---------|------|
+| Bind‑host classification, env‑flag parsing | `src/web/network-auth-policy.ts` |
+| Start‑and‑warn policy | `src/web/server.ts` (`WebServer.start()`) |
+| Auth pipeline, rate limiting, security headers, CORS | `src/web/middleware/auth.ts` |
+| File‑path containment (realpath‑before‑check) | `src/web/route-helpers.ts` (`validateSessionFilePath`) |
+| File routes, caps, SVG handling, download blocklist | `src/web/routes/file-routes.ts` |
+| Instance/socket/data‑dir scoping | `src/config/instance.ts` |
+
+---
+
+> **Maintenance note:** the behaviours above were verified against the source on
+> 2026‑06‑09. When you change auth, the bind policy, CSP/headers, or the file
+> routes, update this document in the same change — several sections quote exact
+> values (caps, CSP directives, TTLs) that drift silently otherwise.
