@@ -35,6 +35,7 @@ import {
   SETTINGS_PATH,
 } from '../route-helpers.js';
 import { SseEvent } from '../sse-events.js';
+import { getInstallInfo, checkForUpdate, startUpdate, getUpdateStatusForApi } from '../self-update.js';
 import type { SessionPort, EventPort, ConfigPort, InfraPort, AuthPort } from '../ports/index.js';
 import { AUTH_COOKIE_NAME } from '../middleware/auth.js';
 import { QR_AUTH_FAILURE_MAX } from '../../config/tunnel-config.js';
@@ -291,6 +292,39 @@ export function registerSystemRoutes(
     } catch (err) {
       return reply.code(500).send(createErrorResponse(ApiErrorCode.INTERNAL_ERROR, getErrorMessage(err)));
     }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // Self-Update (App Settings → Updates)
+  // ═══════════════════════════════════════════════════════════════
+
+  // Install info + whether a newer release exists. Manual, user-triggered.
+  app.get('/api/system/update/check', async () => {
+    const check = await checkForUpdate();
+    const info = getInstallInfo();
+    return { ...info, ...check };
+  });
+
+  // Poll target for update progress — survives the restart the update triggers.
+  app.get('/api/system/update/status', async () => getUpdateStatusForApi());
+
+  // Kick off a detached update to the latest release. Returns immediately; the
+  // browser then polls /api/system/update/status across the service restart.
+  app.post('/api/system/update', async (_req, reply) => {
+    const result = await startUpdate();
+    if (result.ok) {
+      return { success: true, updateId: result.updateId, toTag: result.toTag, toVersion: result.toVersion };
+    }
+    const map = {
+      'in-flight': { http: 409, api: ApiErrorCode.ALREADY_EXISTS },
+      'up-to-date': { http: 409, api: ApiErrorCode.ALREADY_EXISTS },
+      'not-git': { http: 400, api: ApiErrorCode.INVALID_INPUT },
+      disabled: { http: 403, api: ApiErrorCode.INVALID_INPUT },
+      'bad-tag': { http: 400, api: ApiErrorCode.INVALID_INPUT },
+      error: { http: 500, api: ApiErrorCode.INTERNAL_ERROR },
+    } as const;
+    const m = map[result.code];
+    return reply.code(m.http).send(createErrorResponse(m.api, result.message));
   });
 
   // ═══════════════════════════════════════════════════════════════

@@ -430,6 +430,9 @@ Object.assign(CodemanApp.prototype, {
     providerEl.textContent = providerName;
     providerEl.className = 'voice-provider-status' + (providerName.startsWith('Deepgram') ? ' active' : '');
 
+    // Updates section — show current version, reset transient result/progress UI.
+    this._initUpdatesSection();
+
     // Reset to first tab and wire up tab switching
     this.switchSettingsTab('settings-display');
     const modal = document.getElementById('appSettingsModal');
@@ -463,6 +466,177 @@ Object.assign(CodemanApp.prototype, {
       this.activeFocusTrap.deactivate();
       this.activeFocusTrap = null;
     }
+  },
+
+  // ───────────────────────────────────────────────────────────────
+  // Self-Update (App Settings → Updates). Backend: src/web/self-update.ts.
+  // ───────────────────────────────────────────────────────────────
+
+  /** Friendly label for an in-flight update phase. */
+  _updatePhaseText(phase) {
+    return {
+      queued: 'Queued…',
+      preparing: 'Preparing…',
+      stashing: 'Stashing local changes…',
+      fetching: 'Fetching release…',
+      checkout: 'Checking out release…',
+      installing: 'Installing dependencies…',
+      building: 'Building…',
+      restarting: 'Restarting Codeman…',
+    }[phase] || phase;
+  },
+
+  /** Populate the version row and clear transient UI when the modal opens. */
+  _initUpdatesSection() {
+    const verEl = this.$('updateCurrentVersion');
+    if (verEl) verEl.textContent = (this.$('versionDisplay')?.textContent || '').trim() || '—';
+    for (const id of ['updateResult', 'updateActionRow', 'updateNotes', 'updateProgress']) {
+      const el = this.$(id);
+      if (el) el.style.display = 'none';
+    }
+    this._updateCheck = null;
+  },
+
+  _setUpdateResult(html) {
+    const el = this.$('updateResult');
+    if (el) { el.style.display = 'block'; el.innerHTML = html; }
+  },
+
+  _setUpdateProgress(html) {
+    const el = this.$('updateProgress');
+    if (el) { el.style.display = 'block'; el.innerHTML = html; }
+  },
+
+  /** Manual "Check for updates" — asks the server to query GitHub. */
+  async checkForUpdate() {
+    const btn = this.$('updateCheckBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+    const data = await this._apiJson('/api/system/update/check');
+    if (btn) { btn.disabled = false; btn.textContent = 'Check now'; }
+
+    const actionRow = this.$('updateActionRow');
+    const notes = this.$('updateNotes');
+    if (actionRow) actionRow.style.display = 'none';
+    if (notes) notes.style.display = 'none';
+
+    if (!data) {
+      this._setUpdateResult('Could not check for updates. Try again later.');
+      return;
+    }
+    this._updateCheck = data;
+    const verEl = this.$('updateCurrentVersion');
+    if (verEl && data.currentVersion) verEl.textContent = `v${data.currentVersion}`;
+
+    if (data.installKind && data.installKind !== 'git') {
+      this._setUpdateResult(
+        `This install can't update itself (${escapeHtml(data.installKind)}). Update with <code>npm i -g aicodeman@latest</code>.`
+      );
+      return;
+    }
+    if (data.selfUpdateEnabled === false) {
+      this._setUpdateResult('In-app updates are disabled on this server (CODEMAN_DISABLE_SELF_UPDATE=1).');
+      return;
+    }
+    if (data.error && !data.updateAvailable) {
+      this._setUpdateResult(escapeHtml(data.error));
+      return;
+    }
+    if (data.updateAvailable && data.latestVersion) {
+      this._setUpdateResult(
+        `Update available: <strong>v${escapeHtml(data.latestVersion)}</strong> &nbsp;(current v${escapeHtml(data.currentVersion || '')})`
+      );
+      const label = this.$('updateActionLabel');
+      if (label) label.textContent = `Update to v${data.latestVersion}`;
+      if (actionRow) actionRow.style.display = 'flex';
+      const nowBtn = this.$('updateNowBtn');
+      if (nowBtn) { nowBtn.disabled = false; nowBtn.textContent = 'Update now'; }
+      if (notes && data.notes) {
+        notes.style.display = 'block';
+        notes.textContent = data.notes;
+      }
+    } else {
+      this._setUpdateResult(`You're up to date (v${escapeHtml(data.currentVersion || '')}).`);
+    }
+  },
+
+  /** Start the update, then poll status across the service restart. */
+  async startSelfUpdate() {
+    const target = this._updateCheck?.latestVersion ? `v${this._updateCheck.latestVersion}` : 'the latest release';
+    if (!confirm(`Update Codeman to ${target}? The server will restart and this page will reload.`)) return;
+
+    const btn = this.$('updateNowBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+    const res = await this._apiPost('/api/system/update', {});
+    if (!res || !res.ok) {
+      let msg = 'Failed to start the update.';
+      try { const j = await res.json(); if (j?.error?.message) msg = j.error.message; } catch {}
+      this._setUpdateProgress(`<span style="color:var(--danger,#e5534b)">${escapeHtml(msg)}</span>`);
+      if (btn) { btn.disabled = false; btn.textContent = 'Update now'; }
+      return;
+    }
+    const actionRow = this.$('updateActionRow');
+    if (actionRow) actionRow.style.display = 'none';
+    const notes = this.$('updateNotes');
+    if (notes) notes.style.display = 'none';
+    this._setUpdateProgress('Starting update…');
+    this._pollUpdateStatus();
+  },
+
+  _stopUpdatePolling() {
+    if (this._updatePollTimer) { clearInterval(this._updatePollTimer); this._updatePollTimer = null; }
+  },
+
+  /**
+   * Poll the status file every 1.5s. Survives the connection drop while the
+   * server restarts (fetch throws → "restarting"), then reads the reconciled
+   * terminal state from the freshly-booted server.
+   */
+  _pollUpdateStatus() {
+    this._stopUpdatePolling();
+    const terminal = new Set(['completed', 'completed-needs-manual-restart', 'failed', 'idle']);
+    const poll = async () => {
+      let data = null;
+      try {
+        const res = await fetch('/api/system/update/status');
+        if (res.ok) data = await res.json();
+      } catch { /* server restarting — keep polling */ }
+
+      if (!data) {
+        this._setUpdateProgress('↻ Restarting Codeman…');
+        return;
+      }
+      if (!terminal.has(data.phase)) {
+        this._setUpdateProgress(`↻ ${escapeHtml(this._updatePhaseText(data.phase))}`);
+        return;
+      }
+      this._stopUpdatePolling();
+      if (data.phase === 'completed') {
+        let html = `<span style="color:var(--success,#3fb950)">✓ Updated to v${escapeHtml(data.toVersion || '')}. Reloading…</span>`;
+        if (data.stashRef) {
+          html += `<br><span style="color:var(--text-secondary)">Local changes stashed as <code>${escapeHtml(data.stashRef)}</code> — run <code>git stash pop</code> to restore.</span>`;
+        }
+        this._setUpdateProgress(html);
+        setTimeout(() => location.reload(), 2500);
+      } else if (data.phase === 'completed-needs-manual-restart') {
+        this._setUpdateProgress(
+          `Update staged. Restart Codeman to apply:<br><code>${escapeHtml(data.manualRestartCommand || 'restart codeman web')}</code>`
+        );
+      } else if (data.phase === 'failed') {
+        let html = `<span style="color:var(--danger,#e5534b)">✗ ${escapeHtml(data.message || 'Update failed')}.</span>`;
+        if (data.error) html += `<br><span style="color:var(--text-secondary)">${escapeHtml(data.error)}</span>`;
+        html += `<br><span style="color:var(--text-secondary)">The previous version is still running.</span>`;
+        if (data.stashRef) {
+          html += `<br><span style="color:var(--text-secondary)">Local changes stashed as <code>${escapeHtml(data.stashRef)}</code>.</span>`;
+        }
+        this._setUpdateProgress(html);
+        const nowBtn = this.$('updateNowBtn');
+        const actionRow = this.$('updateActionRow');
+        if (nowBtn) { nowBtn.disabled = false; nowBtn.textContent = 'Try again'; }
+        if (actionRow) actionRow.style.display = 'flex';
+      }
+    };
+    poll();
+    this._updatePollTimer = setInterval(poll, 1500);
   },
 
   async loadTunnelStatus() {

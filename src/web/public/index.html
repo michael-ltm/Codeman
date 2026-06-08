@@ -1078,6 +1078,24 @@
                 <span id="tunnelUploadUrlDisplay" class="settings-item-value" style="cursor:pointer; text-decoration:underline; font-family:monospace; font-size:12px" title="Click to copy"></span>
               </div>
 
+              <!-- Updates Section -->
+              <div class="settings-section-header">Updates</div>
+              <div class="settings-item" title="Codeman version currently running">
+                <span class="settings-item-label">Current Version</span>
+                <span class="settings-item-value" id="updateCurrentVersion" style="font-family:monospace">&mdash;</span>
+              </div>
+              <div class="settings-item" id="updateCheckRow" title="Check GitHub for a newer Codeman release">
+                <span class="settings-item-label">Check for Updates</span>
+                <button class="btn-toolbar btn-sm" id="updateCheckBtn" onclick="app.checkForUpdate()">Check now</button>
+              </div>
+              <div id="updateResult" style="display:none; padding:4px 2px 8px; font-size:13px; color:var(--text-secondary)"></div>
+              <div class="settings-item" id="updateActionRow" style="display:none">
+                <span class="settings-item-label" id="updateActionLabel">Update available</span>
+                <button class="btn-toolbar btn-sm btn-primary" id="updateNowBtn" onclick="app.startSelfUpdate()">Update now</button>
+              </div>
+              <div id="updateNotes" style="display:none; max-height:160px; overflow:auto; padding:8px 10px; margin:4px 0 8px; font-size:12px; line-height:1.45; white-space:pre-wrap; word-break:break-word; background:rgba(127,127,127,0.08); border:1px solid var(--border); border-radius:6px"></div>
+              <div id="updateProgress" style="display:none; padding:8px 10px; margin:4px 0 8px; font-size:13px; border:1px solid var(--border); border-radius:6px"></div>
+
             </div>
           </div>
           <!-- Tab-Switch Tab -->

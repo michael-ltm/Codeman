@@ -85,6 +85,8 @@ import {
   type RespawnWiringDeps,
 } from './respawn-event-wiring.js';
 
+import { reconcileUpdateOnBoot } from './self-update.js';
+
 // Load version from package.json
 const require = createRequire(import.meta.url);
 const { version: APP_VERSION } = require('../../package.json');
@@ -1664,6 +1666,13 @@ export class WebServer extends EventEmitter {
     const lifecycleLog = getLifecycleLog();
     lifecycleLog.log({ event: 'server_started', sessionId: '*' });
     await lifecycleLog.trimIfNeeded();
+
+    // If a self-update restarted us into this process, finalize its status file
+    // (flip the persisted "restarting" marker → completed/failed based on the
+    // version we actually booted). No-op on a normal boot. See web/self-update.ts.
+    if (!this.testMode) {
+      reconcileUpdateOnBoot();
+    }
 
     // Restore mux sessions BEFORE accepting connections
     // This prevents race conditions where clients connect before state is ready
