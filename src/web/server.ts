@@ -558,10 +558,16 @@ export class WebServer extends EventEmitter {
     // Security headers + CORS
     registerSecurityHeaders(this.app, this.https);
     this.app.get('/', async (_req, reply) => {
-      return reply.header('Cache-Control', 'no-cache').type('text/html; charset=utf-8').send(this.renderIndexHtml());
+      return reply
+        .header('Cache-Control', 'no-cache')
+        .type('text/html; charset=utf-8')
+        .send(await this.renderIndexHtml());
     });
     this.app.get('/index.html', async (_req, reply) => {
-      return reply.header('Cache-Control', 'no-cache').type('text/html; charset=utf-8').send(this.renderIndexHtml());
+      return reply
+        .header('Cache-Control', 'no-cache')
+        .type('text/html; charset=utf-8')
+        .send(await this.renderIndexHtml());
     });
     // Detached single-session window (undock). Serves the same SPA shell but
     // flags the client into "solo mode" for one session. Auth applies normally
@@ -572,7 +578,10 @@ export class WebServer extends EventEmitter {
     // explicit route wins over the '/' static prefix.
     this.app.get('/session/:id', async (req, reply) => {
       const { id } = req.params as { id: string };
-      return reply.header('Cache-Control', 'no-cache').type('text/html; charset=utf-8').send(this.renderIndexHtml(id));
+      return reply
+        .header('Cache-Control', 'no-cache')
+        .type('text/html; charset=utf-8')
+        .send(await this.renderIndexHtml(id));
     });
     // Service worker must never be cached — browsers check for SW updates on navigation
     this.app.get('/sw.js', async (_req, reply) => {
@@ -992,7 +1001,7 @@ export class WebServer extends EventEmitter {
     this.broadcast(SseEvent.SessionDeleted, { id: sessionId });
   }
 
-  private renderIndexHtml(soloSessionId?: string): string {
+  private async renderIndexHtml(soloSessionId?: string): Promise<string> {
     let html = this.indexHtmlTemplate.replace(
       '<title>Codeman</title>',
       `<title>${escapeHtmlText(this.windowTitle)}</title>`
@@ -1000,6 +1009,20 @@ export class WebServer extends EventEmitter {
     // Cache-bust same-origin module scripts + stylesheets so a normal reload
     // always serves the latest (static assets carry a 1-year immutable cache).
     html = this.cacheBustAssets(html);
+    // Per-user App-Settings flags, read server-side so the page renders in the
+    // right initial state on every normal reload (the client apply* functions
+    // only run on save). Read FRESH (bypass the 2s cache): a setting toggled
+    // moments ago triggers a reload here, and the cached value would render the
+    // pre-toggle state (e.g. the gesture bundle wouldn't inject until a 2nd
+    // reload). Skipped for solo popups (their header differs).
+    const settings: Record<string, unknown> = soloSessionId ? {} : await this.readSettings(true);
+    // Multi-monitor header button: carries the `btn-multimonitor--hidden` class
+    // in the template by default (App Settings → Display → "Header Displays");
+    // reveal by stripping that class when the user enabled it. Matching a unique
+    // class token (not user-facing copy) keeps this robust against template edits.
+    if (settings.showMultiMonitorButton === true) {
+      html = html.replace(' btn-multimonitor--hidden', '');
+    }
     // Detached single-session ("solo") window: inject the target session id so
     // the client can enter solo mode even if a (network-first) service worker
     // later serves a cached shell. The client primarily detects solo mode from
@@ -1011,12 +1034,21 @@ export class WebServer extends EventEmitter {
       html = html.replace('</head>', `<script>window.__CODEMAN_SOLO__=${safeId};</script>\n</head>`);
     }
     // Gesture-control overlay (Phase 5): dashboard only (not solo popups, which
-    // have no tab strip), opt-in via CODEMAN_GESTURE=1. The bundle is served
-    // same-origin from /gesture/ so 'self' covers it; CSP is widened to match in
-    // registerSecurityHeaders under the same flag.
+    // have no tab strip). `CODEMAN_GESTURE=1` makes the feature *available* on
+    // this instance (it also widens CSP + serves the assets); the per-user
+    // `gestureControlEnabled` setting (App Settings → Input, default OFF) is the
+    // actual on/off. We expose `__codemanGestureAvailable` so the settings UI can
+    // show the toggle only when the feature is available, and inject the bundle
+    // (served same-origin from /gesture/, so 'self' covers it) only when enabled.
     if (!soloSessionId && process.env.CODEMAN_GESTURE === '1') {
-      const v = this.gestureBundleVersion();
-      html = html.replace('</head>', `<script type="module" src="/gesture/gesture-codeman.js${v}"></script>\n</head>`);
+      html = html.replace('</head>', `<script>window.__codemanGestureAvailable=true;</script>\n</head>`);
+      if (settings.gestureControlEnabled === true) {
+        const v = this.gestureBundleVersion();
+        html = html.replace(
+          '</head>',
+          `<script type="module" src="/gesture/gesture-codeman.js${v}"></script>\n</head>`
+        );
+      }
     }
     return html;
   }
@@ -1184,10 +1216,13 @@ export class WebServer extends EventEmitter {
 
   // Read ~/.codeman/settings.json once and return the parsed object.
   // Cached for 2s to avoid redundant reads during session creation bursts.
+  // The settings PUT route writes the file without invalidating this cache, so
+  // callers that must observe a just-saved value (e.g. renderIndexHtml on a
+  // post-save reload) pass forceFresh=true to bypass the cache.
   private _settingsCache: { data: Record<string, unknown>; ts: number } | null = null;
-  private async readSettings(): Promise<Record<string, unknown>> {
+  private async readSettings(forceFresh = false): Promise<Record<string, unknown>> {
     const now = Date.now();
-    if (this._settingsCache && now - this._settingsCache.ts < 2000) {
+    if (!forceFresh && this._settingsCache && now - this._settingsCache.ts < 2000) {
       return this._settingsCache.data;
     }
     const settingsPath = dataPath('settings.json');
