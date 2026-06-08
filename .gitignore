@@ -53,7 +53,17 @@ scripts/remotion/out/
 # Artifacts that should not be tracked
 test-results/
 tmp/
-public
+# Root `public` (a symlink to scripts/remotion/public — local artifact). ANCHORED
+# with a leading slash so it does NOT also match src/web/public (a bare `public`
+# would swallow the whole web UI source dir and silently un-stage any new asset
+# added there). No trailing slash so it still matches the symlink, not just dirs.
+/public
+
+# Opt-in gesture overlay runtime assets: large MediaPipe wasm + model (~27 MB)
+# fetched at build/install by scripts/fetch-gesture-assets.mjs, kept out of git.
+# (The gesture bundle itself, gesture-codeman.js, IS tracked.)
+src/web/public/gesture/wasm/
+src/web/public/gesture/*.task
 
 # Claude Code plan tracking
 plan.json

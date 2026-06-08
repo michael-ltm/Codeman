@@ -59,7 +59,9 @@
     <div class="skeleton-toolbar"></div>
   </div>
   <!-- Skip link for keyboard users -->
-  <a href="#terminalContainer" class="skip-link">Skip to terminal</a>
+  <!-- onclick scrolls/focuses directly: with <base href="/"> a bare href="#..." would
+       navigate to /#... (the dashboard) from a /session/:id solo window. -->
+  <a href="#terminalContainer" class="skip-link" onclick="event.preventDefault(); var t=document.getElementById('terminalContainer'); if(t){t.scrollIntoView(); var f=t.querySelector('textarea,[tabindex]'); (f||t).focus&&(f||t).focus();}">Skip to terminal</a>
   <div class="app">
     <!-- Compact Header with Session Tabs -->
     <header class="header">

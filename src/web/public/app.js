@@ -309,6 +309,7 @@ class CodemanApp {
     this._redockGrace = new Map();       // id -> timer: deferred redock (debounces popup reloads)
     this._detachPingPending = null;      // Set of ids awaiting a liveness answer
     this._detachLivenessTimer = null;    // periodic reconcile of channel-only detached windows
+    this._detachOrphanStrikes = new Map(); // id -> consecutive unanswered roll-calls (redock at 2)
 
     this._initGeneration = 0;     // dedup concurrent handleInit calls
     this._initFallbackTimer = null; // fallback timer if SSE init doesn't arrive
@@ -879,6 +880,7 @@ class CodemanApp {
     const t = this._detachWatchTimers.get(id);
     if (t) { clearInterval(t); this._detachWatchTimers.delete(id); }
     this._cancelPendingRedock(id);
+    this._detachOrphanStrikes.delete(id);
     this.detachedWindows.delete(id);
     this._markDetached(id, false);
   }
@@ -965,6 +967,7 @@ class CodemanApp {
     if (msg.type === 'detached' && msg.id) {
       this._cancelPendingRedock(msg.id);    // a re-announce (e.g. popup reload) cancels a deferred redock
       this._detachPingPending?.delete(msg.id);  // and proves liveness for this tick
+      this._detachOrphanStrikes.delete(msg.id); // any answer clears accumulated misses
       this._markDetached(msg.id, true);
     } else if (msg.type === 'redocked' && msg.id) {
       this._scheduleRedock(msg.id);         // defer: a popup reload fires redocked→detached; grace avoids a badge blip
@@ -993,10 +996,18 @@ class CodemanApp {
     if (!orphans.length) return;
     this._detachPingPending = new Set(orphans);
     this._postWindowMessage({ type: 'roll-call' });
-    // Live popups answer 'detached' (clearing themselves above); survivors are gone.
+    // Live popups answer 'detached' (clearing themselves above); survivors stay in
+    // the pending set. Redock only after TWO consecutive unanswered roll-calls — a
+    // backgrounded popup is timer-throttled and may miss a single 1.2s window, and
+    // we don't want to wrongly un-mark a still-open tab. A later answer resets the
+    // strike count (see _onWindowMessage).
     setTimeout(() => {
       if (!this._detachPingPending) return;
-      for (const id of this._detachPingPending) this._redock(id);
+      for (const id of this._detachPingPending) {
+        const strikes = (this._detachOrphanStrikes.get(id) || 0) + 1;
+        if (strikes >= 2) { this._detachOrphanStrikes.delete(id); this._redock(id); }
+        else this._detachOrphanStrikes.set(id, strikes);
+      }
       this._detachPingPending = null;
     }, 1200);
   }

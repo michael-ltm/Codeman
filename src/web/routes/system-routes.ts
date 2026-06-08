@@ -94,6 +94,18 @@ function getSystemStats(): {
   }
 }
 
+/**
+ * Build the URL the spanning browser window should open, pinned to localhost.
+ * Takes only a digits-only port from the (untrusted) Host header so nothing
+ * attacker-controllable reaches the launched browser; falls back to the default
+ * port when the header is absent/odd. Exported for unit testing.
+ */
+export function resolveSpanUrl(hostHeader: string | undefined, fallbackPort = '3000'): string {
+  const hostPort = String(hostHeader ?? '').split(':')[1] ?? '';
+  const port = /^\d+$/.test(hostPort) ? hostPort : fallbackPort;
+  return `http://localhost:${port}`;
+}
+
 export function registerSystemRoutes(
   app: FastifyInstance,
   ctx: SessionPort & EventPort & ConfigPort & InfraPort & AuthPort
@@ -250,17 +262,21 @@ export function registerSystemRoutes(
   // panels can be dragged across the physical monitor seam. macOS only; needs
   // the one-time "Displays have separate Spaces" OFF prerequisite (see script).
   app.post('/api/system/span-displays', async (req, reply) => {
+    // macOS only: the launcher uses osascript + Finder desktop bounds and Chrome
+    // --app geometry flags. Fail clearly elsewhere instead of spawning a bash
+    // that errors out invisibly (the toast would otherwise lie "Opening…").
+    if (process.platform !== 'darwin') {
+      return reply
+        .code(400)
+        .send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Multi-monitor spanning is only supported on macOS.'));
+    }
     // Resolve the bundled launcher relative to this module (works from src/ and dist/).
     const scriptPath = join(dirname(fileURLToPath(import.meta.url)), '../../../scripts/span-codeman.sh');
     if (!existsSync(scriptPath)) {
       return reply.code(500).send(createErrorResponse(ApiErrorCode.INTERNAL_ERROR, 'span-codeman.sh not found'));
     }
-    // Point the spanning window at THIS server. Pin the host to localhost (same
-    // machine) and take only a digits-only port from the Host header so nothing
-    // attacker-controllable reaches the launched browser.
-    const hostPort = String(req.headers.host ?? '').split(':')[1] ?? '';
-    const port = /^\d+$/.test(hostPort) ? hostPort : '5000';
-    const url = `http://localhost:${port}`;
+    // Point the spanning window at THIS server (localhost + sanitized port).
+    const url = resolveSpanUrl(req.headers.host);
     try {
       const child = spawn('bash', [scriptPath, url], { detached: true, stdio: 'ignore' });
       child.on('error', (err) => app.log.error({ err }, 'span-displays launch failed'));

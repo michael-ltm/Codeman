@@ -1021,37 +1021,47 @@ export class WebServer extends EventEmitter {
     return html;
   }
 
-  /** Cache-busting query for the gesture bundle: its mtime, re-read per render.
-   *  The bundle is served from /gesture/ with a 1-year cache, so without a
-   *  version that changes on redeploy the browser would keep running a stale
-   *  bundle forever. Re-stat'ing each render means a freshly copied-in bundle is
-   *  picked up with no server restart. Empty string if the file is missing. */
-  private gestureBundleVersion(): string {
+  /** mtime memo for asset cache-busting (keyed by absolute path). A full index
+   *  render does one stat per script/link tag (~25-30); without this each `/`,
+   *  `/index.html` and `/session/:id` hit would re-stat them all. A 1s TTL keeps
+   *  a burst of renders cheap while still picking up an edited/redeployed file
+   *  within a second (no server restart needed). */
+  private _assetVersionMemo = new Map<string, { v: number; ts: number }>();
+  private assetVersion(absPath: string): number | null {
+    const now = Date.now();
+    const hit = this._assetVersionMemo.get(absPath);
+    if (hit && now - hit.ts < 1000) return hit.v;
     try {
-      const p = join(__dirname, 'public', 'gesture', 'gesture-codeman.js');
-      return `?v=${Math.floor(statSync(p).mtimeMs)}`;
+      const v = Math.floor(statSync(absPath).mtimeMs);
+      this._assetVersionMemo.set(absPath, { v, ts: now });
+      return v;
     } catch {
-      return '';
+      return null;
     }
+  }
+
+  /** Cache-busting query for the gesture bundle: its mtime (memoized, see
+   *  assetVersion). The bundle is served from /gesture/ with a 1-year cache, so
+   *  without a version that changes on redeploy the browser would keep running a
+   *  stale bundle forever. Empty string if the file is missing. */
+  private gestureBundleVersion(): string {
+    const v = this.assetVersion(join(__dirname, 'public', 'gesture', 'gesture-codeman.js'));
+    return v === null ? '' : `?v=${v}`;
   }
 
   /** Append ?v=<mtime> to every same-origin .js/.css reference in the page so a
    *  normal reload always serves the latest. Codeman's static assets are sent
    *  with `Cache-Control: max-age=1y, immutable` and the script/link tags carry
    *  no version, so without this an edited module (panels-ui.js, styles.css, …)
-   *  stays cached until a manual hard refresh. mtime is re-stat'd per render, so
-   *  a changed file is picked up with no server restart. External URLs (have a
+   *  stays cached until a manual hard refresh. mtime is memoized (1s TTL) so a
+   *  changed file is picked up with no server restart. External URLs (have a
    *  `:` scheme), already-versioned refs (have a `?`), and refs with no matching
    *  file on disk are left untouched. */
   private cacheBustAssets(html: string): string {
     const publicDir = join(__dirname, 'public');
     return html.replace(/(\s(?:src|href)=")([^"?:]+\.(?:js|css))(")/g, (full, pre, ref, post) => {
-      try {
-        const v = Math.floor(statSync(join(publicDir, ref)).mtimeMs);
-        return `${pre}${ref}?v=${v}${post}`;
-      } catch {
-        return full;
-      }
+      const v = this.assetVersion(join(publicDir, ref));
+      return v === null ? full : `${pre}${ref}?v=${v}${post}`;
     });
   }
 

@@ -963,6 +963,7 @@ body.solo-mode .session-tabs,
 body.solo-mode .header-system-stats,
 body.solo-mode .header-tokens,
 body.solo-mode .btn-notifications,
+body.solo-mode .btn-multimonitor,
 body.solo-mode .btn-lifecycle-log {
   display: none !important;
 }

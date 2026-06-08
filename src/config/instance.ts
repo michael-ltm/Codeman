@@ -9,9 +9,15 @@
  *
  * To let a beta build coexist with a production one, this module derives both
  * the data dir and the tmux socket from a single "instance" name:
- *   - default (this branch): `beta` → `~/.codeman-beta` + `tmux -L codeman-beta`
- *   - `CODEMAN_INSTANCE=`     (empty) → `~/.codeman`     + `tmux -L codeman`   (prod layout)
- *   - `CODEMAN_INSTANCE=foo`          → `~/.codeman-foo`  + `tmux -L codeman-foo`
+ *   - default (unset/empty) → `~/.codeman`      + `tmux -L codeman`        (prod layout)
+ *   - `CODEMAN_INSTANCE=beta` → `~/.codeman-beta` + `tmux -L codeman-beta`
+ *   - `CODEMAN_INSTANCE=foo`  → `~/.codeman-foo`  + `tmux -L codeman-foo`
+ *
+ * The DEFAULT is the production layout so this is safe to ship to master: an
+ * existing install keeps reading `~/.codeman`. To run a beta ALONGSIDE prod,
+ * launch it with `CODEMAN_INSTANCE=beta` (and a distinct port, see below) —
+ * `scripts/run-beta.sh` does both. The port is unrelated to the instance and is
+ * set separately via `--port` / `CODEMAN_PORT` (see `src/cli.ts`).
  *
  * Individual overrides still win: `CODEMAN_DATA_DIR` (absolute data dir) and
  * `CODEMAN_TMUX_SOCKET` (socket name, validated in tmux-manager).
@@ -22,12 +28,12 @@ import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 
 /**
- * Instance name. Empty string = production layout (`~/.codeman`, `-L codeman`).
- * Defaults to `beta` on the beta/session-detach branch so it never collides
- * with a production Codeman. Set `CODEMAN_INSTANCE=` (empty) to opt back into
- * the production layout.
+ * Instance name. Empty string (the default) = production layout (`~/.codeman`,
+ * `-L codeman`), so this is safe on master and existing installs are untouched.
+ * Set `CODEMAN_INSTANCE=beta` (e.g. via `scripts/run-beta.sh`) to run an
+ * isolated beta alongside prod.
  */
-export const CODEMAN_INSTANCE = process.env.CODEMAN_INSTANCE ?? 'beta';
+export const CODEMAN_INSTANCE = process.env.CODEMAN_INSTANCE ?? '';
 
 const INSTANCE_SUFFIX = CODEMAN_INSTANCE ? `-${CODEMAN_INSTANCE}` : '';
 
