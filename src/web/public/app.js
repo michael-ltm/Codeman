@@ -1366,7 +1366,7 @@ class CodemanApp {
     const placeholders = [];
     const masked = text.replace(fenceRe, (m) => {
       placeholders.push(m);
-      return ` FENCE${placeholders.length - 1} `;
+      return `__CODEMAN_FENCE_${placeholders.length - 1}__`;
     });
 
     // Split on blank-line paragraph boundaries; wrap any paragraph containing
@@ -1376,13 +1376,13 @@ class CodemanApp {
       .map((chunk) => {
         if (/^\n{2,}$/.test(chunk)) return chunk; // keep separators
         if (!chunk.trim()) return chunk;
-        if (chunk.includes(' FENCE')) return chunk;
+        if (chunk.includes('__CODEMAN_FENCE_')) return chunk;
         if (BOX_PATTERN.test(chunk)) return '\n```\n' + chunk + '\n```\n';
         return chunk;
       })
       .join('');
 
-    return processed.replace(/ FENCE(\d+) /g, (_m, i) => placeholders[Number(i)]);
+    return processed.replace(/__CODEMAN_FENCE_(\d+)__/g, (_m, i) => placeholders[Number(i)]);
   }
 
   /** Render markdown to sanitized HTML, falling back to plain text if marked.js unavailable */
