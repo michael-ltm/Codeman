@@ -99,6 +99,20 @@ die() {
     exit 1
 }
 
+# Security notice — printed at the very end of install/update so it is the last
+# thing the user sees (the default loopback bind + how to expose it safely).
+print_security_notice() {
+    echo ""
+    echo -e "  ${YELLOW}${BOLD}Security:${NC}"
+    echo -e "    Codeman binds ${BOLD}127.0.0.1${NC} (this machine only) — no password needed by default."
+    echo -e "    To reach it from another device, do ONE of:"
+    echo -e "      ${CYAN}•${NC} tailscale serve / cloudflared tunnel   ${DIM}(recommended)${NC}, or"
+    echo -e "      ${CYAN}•${NC} ${CYAN}codeman web --host 0.0.0.0${NC}  AND set ${CYAN}CODEMAN_PASSWORD${NC}"
+    echo -e "    A non-loopback bind without a password still starts, but warns loudly."
+    echo -e "    ${DIM}Details: docs/security-architecture.md${NC}"
+    echo ""
+}
+
 # ============================================================================
 # Cleanup on Failure
 # ============================================================================
@@ -1363,6 +1377,10 @@ main() {
         echo ""
     fi
 
+    # Security notice — last informational block so it stays visible (when not
+    # auto-launching below; if we exec, the server prints the same notice anyway).
+    print_security_notice
+
     # Run now in foreground (must be last — exec replaces the shell)
     if [[ "$launch_choice" == "1" ]]; then
         local profile
@@ -1410,6 +1428,8 @@ update() {
         echo -e "    ${CYAN}pkill -f 'codeman.*web'; codeman web &${NC}"
     fi
     echo ""
+
+    print_security_notice
 }
 
 uninstall() {
