@@ -8,7 +8,7 @@
  * - CORS (localhost only)
  */
 
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { StaleExpirationMap } from '../../utils/index.js';
 import type { AuthSessionRecord } from '../ports/auth-port.js';
@@ -69,6 +69,13 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
   const authSessions = state.authSessions;
   const authFailures = state.authFailures;
 
+  function sendAuthRateLimit(reply: FastifyReply, clientIp: string): void {
+    const remainingMs = authFailures.getRemainingTtl(clientIp) ?? AUTH_FAILURE_WINDOW_MS;
+    const retryAfterSeconds = Math.max(1, Math.ceil(remainingMs / 1000));
+    reply.header('Retry-After', String(retryAfterSeconds));
+    reply.code(429).send('Too Many Requests — try again later');
+  }
+
   app.addHook('onRequest', (req, reply, done) => {
     // Hook events come from local Claude Code hooks (curl from localhost) — no auth headers available.
     // Safe: validated by HookEventSchema, only triggers broadcasts.
@@ -89,13 +96,6 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
     }
 
     const clientIp = req.ip;
-
-    // Rate limit: reject if too many failed attempts from this IP
-    const failures = authFailures.get(clientIp) ?? 0;
-    if (failures >= AUTH_FAILURE_MAX) {
-      reply.code(429).send('Too Many Requests — try again later');
-      return;
-    }
 
     // Check session cookie first (avoids re-sending credentials on every request)
     // Use get() instead of has() so refreshOnGet extends the TTL on active sessions
@@ -137,6 +137,13 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
         path: '/',
       });
       done();
+      return;
+    }
+
+    // Rate limit only requests that failed to authenticate on this attempt.
+    const failures = authFailures.get(clientIp) ?? 0;
+    if (failures >= AUTH_FAILURE_MAX) {
+      sendAuthRateLimit(reply, clientIp);
       return;
     }
 
