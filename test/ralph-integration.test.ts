@@ -106,7 +106,7 @@ describe('Ralph Integration Tests', () => {
       const res = await fetch(`${baseUrl}/api/sessions/non-existent-id`);
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
       expect(data.success).toBe(false);
       expect(data.errorCode).toBe('NOT_FOUND');
     });
@@ -136,7 +136,8 @@ describe('Ralph Integration Tests', () => {
       // Verify session is gone
       const getRes = await fetch(`${baseUrl}/api/sessions/${sessionId}`);
       const getData = await getRes.json();
-      expect(getData.error).toBe('Session not found');
+      expect(getRes.status).toBe(404);
+      expect(getData.error).toContain('not found');
     });
 
     it('should create shell session', async () => {
@@ -191,7 +192,7 @@ describe('Ralph Integration Tests', () => {
       const res = await fetch(`${baseUrl}/api/sessions/fake-session/ralph-state`);
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
       expect(data.success).toBe(false);
       expect(data.error).toContain('not found');
     });
@@ -359,7 +360,7 @@ describe('Ralph Integration Tests', () => {
       });
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(400);
       expect(data.success).toBe(false);
       expect(data.errorCode).toBe('INVALID_INPUT');
     });
@@ -372,7 +373,7 @@ describe('Ralph Integration Tests', () => {
       });
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
       expect(data.success).toBe(false);
       expect(data.errorCode).toBe('NOT_FOUND');
     });
@@ -395,7 +396,7 @@ describe('Ralph Integration Tests', () => {
       createdSessions.push(createData.sessionId);
 
       // Wait for session to be ready
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 200));
 
       const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/resize`, {
         method: 'POST',
@@ -422,7 +423,7 @@ describe('Ralph Integration Tests', () => {
       createdSessions.push(createData.sessionId);
 
       // Wait for session to be ready
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 200));
 
       const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/resize`, {
         method: 'POST',
@@ -431,7 +432,7 @@ describe('Ralph Integration Tests', () => {
       });
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(400);
       expect(data.success).toBe(false);
       expect(data.errorCode).toBe('INVALID_INPUT');
     });
@@ -472,7 +473,7 @@ describe('Ralph Integration Tests', () => {
       });
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
       expect(data.success).toBe(false);
       expect(data.errorCode).toBe('NOT_FOUND');
     });
@@ -497,7 +498,7 @@ describe('Ralph Integration Tests', () => {
       });
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(400);
       expect(data.success).toBe(false);
       expect(data.errorCode).toBe('INVALID_INPUT');
     });
@@ -536,7 +537,7 @@ describe('Ralph Integration Tests', () => {
       });
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
       expect(data.success).toBe(false);
       expect(data.errorCode).toBe('NOT_FOUND');
     });
@@ -561,7 +562,7 @@ describe('Ralph Integration Tests', () => {
       });
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(400);
       expect(data.success).toBe(false);
       expect(data.errorCode).toBe('INVALID_INPUT');
     });
@@ -626,7 +627,7 @@ describe('Ralph Integration Tests', () => {
       });
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
       expect(data.success).toBe(false);
       expect(data.errorCode).toBe('NOT_FOUND');
     });
@@ -907,7 +908,7 @@ describe('Ralph Integration Tests', () => {
       });
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
       expect(data.success).toBe(false);
       expect(data.errorCode).toBe('NOT_FOUND');
     });
@@ -991,7 +992,7 @@ describe('Ralph Integration Tests', () => {
       const res = await fetch(`${baseUrl}/api/sessions/fake-session/output`);
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
       expect(data.success).toBe(false);
       expect(data.errorCode).toBe('NOT_FOUND');
     });
@@ -1021,7 +1022,7 @@ describe('Ralph Integration Tests', () => {
       const res = await fetch(`${baseUrl}/api/sessions/fake-session/terminal`);
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
       expect(data.success).toBe(false);
       expect(data.errorCode).toBe('NOT_FOUND');
     });

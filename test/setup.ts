@@ -6,10 +6,14 @@
  * This means tests CANNOT kill, create, or interact with real tmux
  * sessions regardless of what the test code does.
  *
- * This setup file only handles mock/timer cleanup between tests.
+ * This setup file strips shell-level auth configuration that can leak from a
+ * running Codeman instance, then handles mock/timer cleanup between tests.
  */
 
 import { afterEach, vi } from 'vitest';
+
+delete process.env.CODEMAN_PASSWORD;
+delete process.env.CODEMAN_USERNAME;
 
 afterEach(() => {
   vi.clearAllMocks();

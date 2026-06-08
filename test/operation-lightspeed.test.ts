@@ -1256,7 +1256,7 @@ describe('Operation Lightspeed', () => {
       await Promise.all(ids.map((id) => deleteSession(baseUrl, id)));
     });
 
-    it('should correctly filter SSE under concurrent session lifecycle', async () => {
+    it('should broadcast lifecycle events while filtering concurrent session terminal streams', async () => {
       // Create 2 sessions
       const target = await createSession(baseUrl);
       const other = await createSession(baseUrl);
@@ -1309,15 +1309,21 @@ describe('Operation Lightspeed', () => {
 
       const events = parseSSEEvents(receivedData);
 
-      // Should see target's rename but not other's events
-      const targetUpdated = events.find((e) => e.event === 'session:updated' && (e.data as any).id === target);
+      // session:updated is a lifecycle event broadcast to all clients; the
+      // subscription filter applies only to high-volume terminal streams.
+      const updatedEvents = events.filter((e) => e.event === 'session:updated');
+      const targetUpdated = updatedEvents.find((e) => (e.data as any).id === target);
       expect(targetUpdated).toBeDefined();
 
-      // Should NOT see other's events
-      const otherEvents = events.filter(
-        (e) => ((e.data as any)?.id === other || (e.data as any)?.sessionId === other) && e.event !== 'init'
+      const otherLifecycleEvents = events.filter(
+        (e) => e.event !== 'init' && e.event !== 'session:terminal' && (e.data as any)?.id === other
       );
-      expect(otherEvents.length).toBe(0);
+      expect(otherLifecycleEvents.length).toBeGreaterThan(0);
+
+      const otherTerminalEvents = events.filter(
+        (e) => e.event === 'session:terminal' && (e.data as any)?.sessionId === other
+      );
+      expect(otherTerminalEvents.length).toBe(0);
 
       await deleteSession(baseUrl, target);
     });
