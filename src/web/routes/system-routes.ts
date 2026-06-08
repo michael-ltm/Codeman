@@ -6,10 +6,11 @@
 
 import { FastifyInstance } from 'fastify';
 import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { totalmem, freemem, loadavg, cpus } from 'node:os';
-import { execSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { dataPath } from '../../config/instance.js';
 import { ApiErrorCode, createErrorResponse, getErrorMessage, type NiceConfig } from '../../types.js';
@@ -238,6 +239,36 @@ export function registerSystemRoutes(
       ctx.authSessions?.clear();
     }
     return { success: true };
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // Multi-monitor: span Codeman across all displays
+  // ═══════════════════════════════════════════════════════════════
+
+  // Spawn scripts/span-codeman.sh, which opens a fresh, maximized browser --app
+  // window sized to the union of all displays — so in-page floating session
+  // panels can be dragged across the physical monitor seam. macOS only; needs
+  // the one-time "Displays have separate Spaces" OFF prerequisite (see script).
+  app.post('/api/system/span-displays', async (req, reply) => {
+    // Resolve the bundled launcher relative to this module (works from src/ and dist/).
+    const scriptPath = join(dirname(fileURLToPath(import.meta.url)), '../../../scripts/span-codeman.sh');
+    if (!existsSync(scriptPath)) {
+      return reply.code(500).send(createErrorResponse(ApiErrorCode.INTERNAL_ERROR, 'span-codeman.sh not found'));
+    }
+    // Point the spanning window at THIS server. Pin the host to localhost (same
+    // machine) and take only a digits-only port from the Host header so nothing
+    // attacker-controllable reaches the launched browser.
+    const hostPort = String(req.headers.host ?? '').split(':')[1] ?? '';
+    const port = /^\d+$/.test(hostPort) ? hostPort : '5000';
+    const url = `http://localhost:${port}`;
+    try {
+      const child = spawn('bash', [scriptPath, url], { detached: true, stdio: 'ignore' });
+      child.on('error', (err) => app.log.error({ err }, 'span-displays launch failed'));
+      child.unref();
+      return { success: true, url };
+    } catch (err) {
+      return reply.code(500).send(createErrorResponse(ApiErrorCode.INTERNAL_ERROR, getErrorMessage(err)));
+    }
   });
 
   // ═══════════════════════════════════════════════════════════════
