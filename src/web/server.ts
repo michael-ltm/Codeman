@@ -997,6 +997,9 @@ export class WebServer extends EventEmitter {
       '<title>Codeman</title>',
       `<title>${escapeHtmlText(this.windowTitle)}</title>`
     );
+    // Cache-bust same-origin module scripts + stylesheets so a normal reload
+    // always serves the latest (static assets carry a 1-year immutable cache).
+    html = this.cacheBustAssets(html);
     // Detached single-session ("solo") window: inject the target session id so
     // the client can enter solo mode even if a (network-first) service worker
     // later serves a cached shell. The client primarily detects solo mode from
@@ -1030,6 +1033,26 @@ export class WebServer extends EventEmitter {
     } catch {
       return '';
     }
+  }
+
+  /** Append ?v=<mtime> to every same-origin .js/.css reference in the page so a
+   *  normal reload always serves the latest. Codeman's static assets are sent
+   *  with `Cache-Control: max-age=1y, immutable` and the script/link tags carry
+   *  no version, so without this an edited module (panels-ui.js, styles.css, …)
+   *  stays cached until a manual hard refresh. mtime is re-stat'd per render, so
+   *  a changed file is picked up with no server restart. External URLs (have a
+   *  `:` scheme), already-versioned refs (have a `?`), and refs with no matching
+   *  file on disk are left untouched. */
+  private cacheBustAssets(html: string): string {
+    const publicDir = join(__dirname, 'public');
+    return html.replace(/(\s(?:src|href)=")([^"?:]+\.(?:js|css))(")/g, (full, pre, ref, post) => {
+      try {
+        const v = Math.floor(statSync(join(publicDir, ref)).mtimeMs);
+        return `${pre}${ref}?v=${v}${post}`;
+      } catch {
+        return full;
+      }
+    });
   }
 
   private async setupSessionListeners(session: Session): Promise<void> {
