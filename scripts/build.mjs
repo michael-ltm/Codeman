@@ -32,6 +32,9 @@ run('chmod dist/index.js', 'chmod +x dist/index.js');
 // 2. Copy static assets (clean first to remove stale hashed files from previous builds)
 run('clean public', 'rm -rf dist/web/public');
 run('prepare dirs', 'mkdir -p dist/web dist/templates dist/web/public/vendor');
+// Fetch the opt-in gesture overlay's MediaPipe wasm + model into src/ (idempotent,
+// non-fatal, kept out of git) so the copy below carries them into dist/.
+run('gesture assets', 'node scripts/fetch-gesture-assets.mjs');
 run('copy web assets', 'cp -r src/web/public dist/web/');
 run('copy template', 'cp src/templates/case-template.md dist/templates/');
 

@@ -28,8 +28,8 @@ import { promisify } from 'node:util';
 const execAsync = promisify(exec);
 import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { writeFile, rename } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { homedir } from 'node:os';
+import { dirname } from 'node:path';
+import { dataPath, DEFAULT_TMUX_SOCKET } from './config/instance.js';
 import {
   ProcessStats,
   PersistedRespawnConfig,
@@ -92,7 +92,7 @@ export const CLAUDE_CODE_NOFILE_LIMIT = 2147483646;
 const IS_TEST_MODE = !!process.env.VITEST;
 
 /** Path to persisted mux session metadata */
-const MUX_SESSIONS_FILE = join(homedir(), '.codeman', 'mux-sessions.json');
+const MUX_SESSIONS_FILE = dataPath('mux-sessions.json');
 
 /** Regex to validate tmux session names (only allow safe characters) */
 const SAFE_MUX_NAME_PATTERN = /^codeman-[a-f0-9-]+$/;
@@ -103,8 +103,9 @@ const LEGACY_MUX_NAME_PATTERN = /^claudeman-[a-f0-9-]+$/;
 /** Regex to validate tmux pane targets (e.g., "%0", "%1", "0", "1") */
 const SAFE_PANE_TARGET_PATTERN = /^(%\d+|\d+)$/;
 
-/** Dedicated tmux socket for new Codeman-owned sessions. */
-const DEFAULT_CODEMAN_TMUX_SOCKET = 'codeman';
+/** Dedicated tmux socket for new Codeman-owned sessions (instance-scoped:
+ *  `codeman` for prod, `codeman-beta` on the beta branch). */
+const DEFAULT_CODEMAN_TMUX_SOCKET = DEFAULT_TMUX_SOCKET;
 
 /** Regex to validate tmux socket names passed to `tmux -L`. */
 const SAFE_TMUX_SOCKET_PATTERN = /^[a-zA-Z0-9_.-]+$/;

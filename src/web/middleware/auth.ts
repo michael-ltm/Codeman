@@ -154,13 +154,24 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
  * Register security headers and CORS middleware on every response.
  */
 export function registerSecurityHeaders(app: FastifyInstance, https: boolean): void {
+  // Gesture-control overlay (opt-in via CODEMAN_GESTURE=1) runs MediaPipe, which
+  // needs WebAssembly eval (script-src) and blob workers (worker-src). Its wasm
+  // runtime + model are self-hosted under /gesture/ (same-origin, covered by
+  // 'self'), so no CDN connect-src entries are needed. OFF by default so the
+  // production CSP is byte-for-byte unchanged.
+  const gesture = process.env.CODEMAN_GESTURE === '1';
+  const scriptSrc =
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net" + (gesture ? " 'wasm-unsafe-eval'" : '');
+  const connectSrc = "connect-src 'self' wss://api.deepgram.com";
+  const workerSrc = gesture ? "; worker-src 'self' blob:" : '';
+  const csp =
+    `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; ` +
+    `img-src 'self' data: blob:; ${connectSrc}; font-src 'self' https://cdn.jsdelivr.net; frame-ancestors 'self'${workerSrc}`;
+
   app.addHook('onRequest', (req, reply, done) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'SAMEORIGIN');
-    reply.header(
-      'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' wss://api.deepgram.com; font-src 'self' https://cdn.jsdelivr.net; frame-ancestors 'self'"
-    );
+    reply.header('Content-Security-Policy', csp);
     if (https) {
       reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     }

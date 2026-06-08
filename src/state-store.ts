@@ -39,6 +39,7 @@ import {
   TokenUsageEntry,
 } from './types.js';
 import { Debouncer, MAX_SESSION_TOKENS } from './utils/index.js';
+import { dataPath, CODEMAN_INSTANCE } from './config/instance.js';
 
 /** Debounce delay for batching state writes (ms) */
 const SAVE_DEBOUNCE_MS = 500;
@@ -89,8 +90,10 @@ export class StateStore {
   private _saveInFlight: Promise<void> | null = null;
 
   constructor(filePath?: string) {
-    // Migrate legacy data directory (~/.claudeman → ~/.codeman)
-    if (!filePath) {
+    // Migrate legacy data directory (~/.claudeman → ~/.codeman). Default (prod)
+    // instance only — a named instance (e.g. beta) must never touch the shared
+    // ~/.codeman / ~/codeman-cases layout, preserving instance isolation.
+    if (!filePath && !CODEMAN_INSTANCE) {
       const legacyDir = join(homedir(), '.claudeman');
       const newDir = join(homedir(), '.codeman');
       if (existsSync(legacyDir) && !existsSync(newDir)) {
@@ -105,7 +108,7 @@ export class StateStore {
       }
     }
 
-    this.filePath = filePath || join(homedir(), '.codeman', 'state.json');
+    this.filePath = filePath || dataPath('state.json');
     this.ralphStatePath = this.filePath.replace('.json', '-inner.json');
     this.state = this.load();
     this.state.config.stateFilePath = this.filePath;

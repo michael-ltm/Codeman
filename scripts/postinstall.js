@@ -313,6 +313,20 @@ if (isGlobalInstall) {
 }
 
 // ----------------------------------------------------------------------------
+// 4b. Fetch gesture-overlay runtime assets (MediaPipe wasm + model) for dev mode
+//     (src/web/public/gesture/). Opt-in feature (CODEMAN_GESTURE=1); non-fatal.
+//     Large binaries kept out of git; the build copies them into dist/.
+// ----------------------------------------------------------------------------
+
+if (!isGlobalInstall) {
+    try {
+        execSync(`node "${join(import.meta.dirname, 'fetch-gesture-assets.mjs')}"`, { stdio: 'inherit' });
+    } catch {
+        // Non-fatal — the gesture overlay is opt-in.
+    }
+}
+
+// ----------------------------------------------------------------------------
 // 5. Install git pre-commit hook (format check)
 // ----------------------------------------------------------------------------
 

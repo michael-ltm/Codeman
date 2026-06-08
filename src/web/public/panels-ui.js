@@ -3129,6 +3129,23 @@ Object.assign(CodemanApp.prototype, {
     this.notificationManager?.toggleDrawer();
   },
 
+  // Open a Codeman window stretched across all displays (multi-monitor mode).
+  // The server spawns scripts/span-codeman.sh, which launches a fresh, spanning
+  // browser --app window so in-page floating panels can cross the monitor seam.
+  async launchMultiMonitor() {
+    try {
+      const res = await fetch('/api/system/span-displays', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        this.showToast('Opening Codeman across all displays…', 'success');
+      } else {
+        this.showToast(data.error || 'Could not open spanning window', 'error');
+      }
+    } catch (err) {
+      this.showToast('Could not open spanning window: ' + (err?.message || err), 'error');
+    }
+  },
+
   // Alias for showToast
   toast(message, type = 'info') {
     return this.showToast(message, type);

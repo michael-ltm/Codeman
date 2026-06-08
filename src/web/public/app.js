@@ -295,6 +295,22 @@ class CodemanApp {
     this.terminal = null;
     this.fitAddon = null;
     this.activeSessionId = null;
+
+    // ── Session detach / undock (beta) ───────────────────────────────────
+    // A "solo window" is a popped-out browser window showing exactly one
+    // session. Detected from the /session/:id URL path (robust even if a cached
+    // service-worker shell loads), with the server-injected global as a fallback.
+    this.soloSessionId = this._detectSoloSessionId();
+    this.isSoloWindow = !!this.soloSessionId;
+    this.detachedSessions = new Set();   // dashboard-side: ids currently popped out
+    this.detachedWindows = new Map();    // dashboard-side: id -> WindowProxy
+    this._detachWatchTimers = new Map(); // dashboard-side: id -> setInterval handle
+    this.windowChannel = null;           // BroadcastChannel for cross-window sync
+    this._redockGrace = new Map();       // id -> timer: deferred redock (debounces popup reloads)
+    this._detachPingPending = null;      // Set of ids awaiting a liveness answer
+    this._detachLivenessTimer = null;    // periodic reconcile of channel-only detached windows
+    this._detachOrphanStrikes = new Map(); // id -> consecutive unanswered roll-calls (redock at 2)
+
     this._initGeneration = 0;     // dedup concurrent handleInit calls
     this._initFallbackTimer = null; // fallback timer if SSE init doesn't arrive
     this._selectGeneration = 0;   // cancel stale selectSession loads
@@ -544,6 +560,11 @@ class CodemanApp {
   init() {
     // Initialize mobile detection first (adds device classes to body)
     MobileDetection.init();
+    // Detach/undock: open the cross-window sync channel; if this is a solo
+    // (popped-out) window, apply its minimal chrome immediately so the tab
+    // strip never flashes before handleInit selects the target session.
+    this._initWindowChannel();
+    if (this.isSoloWindow) document.body.classList.add('solo-mode');
     // Initialize mobile handlers
     KeyboardHandler.init();
     SwipeHandler.init();
@@ -776,6 +797,256 @@ class CodemanApp {
     } catch { /* non-fatal */ }
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // Session detach / undock (beta/session-detach)
+  //
+  // Each detached window is just another normal client of the same session:
+  // the server already fans one PTY's output out to N SSE/WS clients and merges
+  // input from all of them, so a popped-out window is live with no extra server
+  // plumbing. The dashboard tracks which sessions are out, marks their tabs, and
+  // re-docks when the window closes. A BroadcastChannel keeps state in sync
+  // across windows (and survives a dashboard reload via roll-call).
+  // ══════════════════════════════════════════════════════════════════════
+
+  /** Resolve the solo session id from the URL path (preferred) or the
+   *  server-injected global (fallback). Returns null for the normal dashboard. */
+  _detectSoloSessionId() {
+    try {
+      if (typeof window !== 'undefined' && typeof window.__CODEMAN_SOLO__ === 'string' && window.__CODEMAN_SOLO__) {
+        return window.__CODEMAN_SOLO__;
+      }
+      const m = location.pathname.match(/^\/session\/([^/]+)\/?$/);
+      return m ? decodeURIComponent(m[1]) : null;
+    } catch { return null; }
+  }
+
+  /**
+   * Pop a session out into its own browser window. SINGLE, idempotent entry
+   * point: the tab's pop-out icon calls this, and a future gesture layer
+   * ("pinch to drop") calls the exact same method — so keep it cheap and
+   * side-effect-light. Calling it again for an already-open window just raises
+   * that window.
+   * @param {string} id session id
+   */
+  detachSession(id) {
+    if (this.isSoloWindow) return;            // a solo window can't spawn more
+    if (!this.sessions.has(id)) return;
+    // Already detached → raise the existing popup instead of opening (or
+    // reloading) another. Mirrors the tab-click path: after a dashboard reload
+    // we hold no WindowProxy ref, so this raises via the channel rather than
+    // re-running window.open (which would reload the popup's terminal). Returns
+    // false only when we owned a now-closed window (re-dock + fall through to
+    // genuinely re-open below).
+    if (this.detachedSessions.has(id) && this._raiseDetached(id)) return;
+    const features = 'width=960,height=680,menubar=no,toolbar=no,location=no,status=no';
+    let win = null;
+    try { win = window.open('/session/' + encodeURIComponent(id), 'codeman-session-' + id, features); } catch {}
+    if (!win) {
+      this.showToast?.('Pop-out blocked — allow popups for this site to detach a session', 'error');
+      return;
+    }
+    this.detachedWindows.set(id, win);
+    this._markDetached(id, true);
+    this._watchDetachedWindow(id, win);
+    this._postWindowMessage({ type: 'detached', id });
+    try { win.focus(); } catch {}
+  }
+
+  /** Raise the popup for an already-detached session. Returns true if the raise
+   *  was handled (caller should stop); false if we owned a now-closed window and
+   *  re-docked it (caller should fall through to inline / re-open). Unifies the
+   *  pop-out icon and tab-click paths so neither reloads a live popup. */
+  _raiseDetached(id) {
+    const win = this.detachedWindows.get(id);
+    if (win && !win.closed) { try { win.focus(); } catch {} return true; }
+    if (win && win.closed) { this._redock(id); return false; }   // owned ref dead → redock + fall through
+    // No local ref (dashboard reloaded): assume alive and raise via the channel.
+    // A liveness ping (or the popup's own unload) heals the badge if it's gone.
+    this._postWindowMessage({ type: 'focus-request', id });
+    return true;
+  }
+
+  /** Re-dock a session: close its window (which re-docks via its unload
+   *  announcement) and clear dashboard state now. */
+  redockSession(id) {
+    const win = this.detachedWindows.get(id);
+    if (win && !win.closed) { try { win.close(); } catch {} }
+    this._postWindowMessage({ type: 'close-request', id });
+    this._redock(id);
+  }
+
+  /** Clear all dashboard-side detached state/timers for a session. */
+  _redock(id) {
+    const t = this._detachWatchTimers.get(id);
+    if (t) { clearInterval(t); this._detachWatchTimers.delete(id); }
+    this._cancelPendingRedock(id);
+    this._detachOrphanStrikes.delete(id);
+    this.detachedWindows.delete(id);
+    this._markDetached(id, false);
+  }
+
+  /** Defer a channel-driven redock briefly. A popup *reload* emits 'redocked'
+   *  then re-announces 'detached'; the grace window lets that re-announce cancel
+   *  the redock, so a reload doesn't blip the dashboard badge. A real close
+   *  leaves the redock unanswered and it fires. */
+  _scheduleRedock(id) {
+    if (this._redockGrace.has(id)) return;
+    const timer = setTimeout(() => { this._redockGrace.delete(id); this._redock(id); }, 1500);
+    this._redockGrace.set(id, timer);
+  }
+
+  _cancelPendingRedock(id) {
+    const t = this._redockGrace.get(id);
+    if (t) { clearTimeout(t); this._redockGrace.delete(id); }
+  }
+
+  /** Toggle the "detached" marker on a tab (immediate DOM update + state set).
+   *  Full re-renders re-apply the class from this.detachedSessions. */
+  _markDetached(id, on) {
+    if (on) this.detachedSessions.add(id); else this.detachedSessions.delete(id);
+    const container = this.$('sessionTabs');
+    const tab = container && container.querySelector(`.session-tab[data-id="${id}"]`);
+    if (tab) tab.classList.toggle('detached', on);
+  }
+
+  /** Poll a window we opened; when it closes, re-dock its tab. This is the
+   *  primary (reliable) close-detection path for windows this tab opened. */
+  _watchDetachedWindow(id, win) {
+    const prev = this._detachWatchTimers.get(id);
+    if (prev) clearInterval(prev);
+    const timer = setInterval(() => {
+      if (!win || win.closed) {
+        clearInterval(timer);
+        this._detachWatchTimers.delete(id);
+        this._redock(id);
+      }
+    }, 800);
+    this._detachWatchTimers.set(id, timer);
+  }
+
+  /** Open the cross-window BroadcastChannel and wire role-specific handlers. */
+  _initWindowChannel() {
+    if (typeof BroadcastChannel === 'undefined') return;
+    try { this.windowChannel = new BroadcastChannel('codeman-windows'); }
+    catch { this.windowChannel = null; return; }
+    this.windowChannel.onmessage = (e) => this._onWindowMessage(e.data);
+    if (this.isSoloWindow) {
+      // Announce presence so the dashboard marks this session's tab detached —
+      // even if this window was opened directly by URL rather than window.open.
+      this._postWindowMessage({ type: 'detached', id: this.soloSessionId });
+      // On close, tell the dashboard to re-dock. pagehide is the reliable signal
+      // on modern browsers; beforeunload is a belt-and-suspenders fallback.
+      const announceClose = () => this._postWindowMessage({ type: 'redocked', id: this.soloSessionId });
+      window.addEventListener('pagehide', announceClose);
+      window.addEventListener('beforeunload', announceClose);
+    } else {
+      // Dashboard: ask any already-open solo windows to re-announce themselves
+      // (covers a dashboard reload while popups remain open), then keep
+      // reconciling so a popup that died WITHOUT a 'redocked' (hard kill / crash)
+      // eventually un-marks its tab.
+      this._postWindowMessage({ type: 'roll-call' });
+      this._startDetachLiveness();
+    }
+  }
+
+  _postWindowMessage(msg) {
+    try { if (this.windowChannel) this.windowChannel.postMessage(msg); } catch {}
+  }
+
+  _onWindowMessage(msg) {
+    if (!msg || typeof msg !== 'object') return;
+    if (this.isSoloWindow) {
+      // Roll-call has no id (broadcast to all) — answer before the id filter.
+      if (msg.type === 'roll-call') { this._postWindowMessage({ type: 'detached', id: this.soloSessionId }); return; }
+      if (msg.id !== this.soloSessionId) return;
+      if (msg.type === 'close-request') { try { window.close(); } catch {} }
+      else if (msg.type === 'focus-request') { try { window.focus(); } catch {} }
+      return;
+    }
+    // Dashboard side.
+    if (msg.type === 'detached' && msg.id) {
+      this._cancelPendingRedock(msg.id);    // a re-announce (e.g. popup reload) cancels a deferred redock
+      this._detachPingPending?.delete(msg.id);  // and proves liveness for this tick
+      this._detachOrphanStrikes.delete(msg.id); // any answer clears accumulated misses
+      this._markDetached(msg.id, true);
+    } else if (msg.type === 'redocked' && msg.id) {
+      this._scheduleRedock(msg.id);         // defer: a popup reload fires redocked→detached; grace avoids a badge blip
+    } else if (msg.type === 'detach-request' && msg.id) {
+      // Future gesture hook: another window asks the dashboard to detach a tab.
+      this.detachSession(msg.id);
+    }
+  }
+
+  /** Dashboard: periodically reconcile detached tabs we hold no window ref for
+   *  (e.g. after a dashboard reload). Owned windows are covered by the
+   *  win.closed poll; channel-only ones can only be checked by asking them to
+   *  re-announce and re-docking any that stay silent. */
+  _startDetachLiveness() {
+    if (this._detachLivenessTimer) return;
+    this._detachLivenessTimer = setInterval(() => this._pingDetached(), 5000);
+  }
+
+  _pingDetached() {
+    const orphans = [];
+    for (const id of this.detachedSessions) {
+      const win = this.detachedWindows.get(id);
+      if (!win) orphans.push(id);            // channel-only — must verify via re-announce
+      else if (win.closed) this._redock(id); // owned & closed — heal now
+    }
+    if (!orphans.length) return;
+    this._detachPingPending = new Set(orphans);
+    this._postWindowMessage({ type: 'roll-call' });
+    // Live popups answer 'detached' (clearing themselves above); survivors stay in
+    // the pending set. Redock only after TWO consecutive unanswered roll-calls — a
+    // backgrounded popup is timer-throttled and may miss a single 1.2s window, and
+    // we don't want to wrongly un-mark a still-open tab. A later answer resets the
+    // strike count (see _onWindowMessage).
+    setTimeout(() => {
+      if (!this._detachPingPending) return;
+      for (const id of this._detachPingPending) {
+        const strikes = (this._detachOrphanStrikes.get(id) || 0) + 1;
+        if (strikes >= 2) { this._detachOrphanStrikes.delete(id); this._redock(id); }
+        else this._detachOrphanStrikes.set(id, strikes);
+      }
+      this._detachPingPending = null;
+    }, 1200);
+  }
+
+  /** Solo window: select the target session and apply minimal single-session
+   *  chrome. Called from handleInit once the session list has loaded. */
+  _applySoloMode() {
+    document.body.classList.add('solo-mode');
+    const session = this.sessions.get(this.soloSessionId);
+    if (!session) { this._showSoloSessionGone(); return; }
+    // Force re-select (handleInit cleared terminal state above).
+    this.activeSessionId = null;
+    this.selectSession(this.soloSessionId);
+    const name = this.getSessionName(session) || 'Session';
+    const titleEl = document.getElementById('soloSessionTitle');
+    if (titleEl) { titleEl.textContent = name; titleEl.style.display = ''; }
+    const redock = document.getElementById('soloRedockBtn');
+    if (redock) redock.style.display = '';
+    document.title = name + ' — Codeman';
+    if (this.notificationManager) this.notificationManager.originalTitle = document.title;
+    // Neutralize the dashboard-only brand click in a solo window.
+    const logo = document.querySelector('.header-brand .logo');
+    if (logo) logo.onclick = (e) => { e.preventDefault(); };
+  }
+
+  /** Solo window: the target session is gone (never existed, or ended while
+   *  this window was open). Show a friendly terminal state. */
+  _showSoloSessionGone() {
+    document.body.classList.add('solo-mode');
+    if (document.querySelector('.solo-gone-overlay')) return;
+    const el = document.createElement('div');
+    el.className = 'solo-gone-overlay';
+    el.innerHTML = '<h2>Session unavailable</h2>'
+      + '<p>This session has ended or is no longer available.</p>'
+      + '<button class="btn-primary" onclick="window.close()">Close window</button>';
+    document.body.appendChild(el);
+    document.title = 'Session ended — Codeman';
+  }
+
   connectSSE() {
     // Check if browser is offline
     if (!navigator.onLine) {
@@ -929,6 +1200,12 @@ class CodemanApp {
 
   _onSessionDeleted(data) {
     if (this._wsSessionId === data.id) this._disconnectWs();
+    // Solo window whose session just ended → show the "unavailable" state.
+    if (this.isSoloWindow && data.id === this.soloSessionId) {
+      this._showSoloSessionGone();
+    }
+    // Dashboard: a detached session ended → clear its detached state/timers.
+    if (this.detachedSessions.has(data.id)) this._redock(data.id);
     this._cleanupSessionData(data.id);
     if (this.activeSessionId === data.id) {
       this.activeSessionId = null;
@@ -1949,6 +2226,14 @@ class CodemanApp {
     // Reset activeSessionId so selectSession doesn't early-return.
     // Guard: skip if a newer handleInit has already started (race between loadState + SSE init).
     if (gen !== this._initGeneration) return;
+
+    // Solo (detached) window: always show exactly the target session, ignoring
+    // the dashboard's "restore last active" logic.
+    if (this.isSoloWindow) {
+      this._applySoloMode();
+      return;
+    }
+
     const previousActiveId = this.activeSessionId;
     this.activeSessionId = null;
     if (this.sessionOrder.length > 0) {
@@ -2182,19 +2467,21 @@ class CodemanApp {
       const tallTabsEnabled = this._tallTabsEnabled ?? false;
       const showFolder = tallTabsEnabled && session.name && folderName && folderName !== name;
 
-      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}" data-id="${id}" data-color="${color}" onclick="app.selectSession('${escapeHtml(id)}')" oncontextmenu="event.preventDefault(); app.startInlineRename('${escapeHtml(id)}')" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-label="${escapeHtml(name)} session" ${session.workingDir ? `title="${escapeHtml(session.workingDir)}"` : ''}>
+      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${this.detachedSessions.has(id) ? ' detached' : ''}" data-id="${id}" data-color="${color}" onclick="app.selectSession('${escapeHtml(id)}')" oncontextmenu="event.preventDefault(); app.startInlineRename('${escapeHtml(id)}')" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-label="${escapeHtml(name)} session" ${session.workingDir ? `title="${escapeHtml(session.workingDir)}"` : ''}>
           ${_tabIdx < 9 ? '<span class="tab-number">' + (_tabIdx + 1) + '</span>' : ''}
           <span class="tab-status ${status}" aria-hidden="true"></span>
           <span class="tab-info">
             <span class="tab-name-row">
               ${mode === 'shell' ? '<span class="tab-mode shell" aria-hidden="true">sh</span>' : mode === 'opencode' ? '<span class="tab-mode opencode" aria-hidden="true">oc</span>' : ''}
               <span class="tab-name" data-session-id="${id}">${(() => { const p = parseSessionPrefix(name); return p && p.suffix ? '<span class="tab-prefix">' + escapeHtml(p.prefix) + '</span><span class="tab-suffix">: ' + escapeHtml(p.suffix) + '</span>' : escapeHtml(name); })()}</span>
+              <span class="tab-detached-badge" aria-hidden="true">detached</span>
             </span>
             ${showFolder ? `<span class="tab-folder">\u{1F4C1} ${escapeHtml(folderName)}</span>` : ''}
           </span>
           ${hasRunningTasks ? `<span class="tab-badge" onclick="event.stopPropagation(); app.toggleTaskPanel()" aria-label="${taskStats.running} running tasks">${taskStats.running}</span>` : ''}
           ${subagentBadge}
           <span class="tab-gear" onclick="event.stopPropagation(); app.openSessionOptions('${escapeHtml(id)}')" title="Session options" aria-label="Session options" tabindex="0">&#x2699;</span>
+          <span class="tab-detach" onclick="event.stopPropagation(); app.detachSession('${escapeHtml(id)}')" title="Open in a new window" aria-label="Open session in a new window" tabindex="0">&#x29C9;</span>
           <span class="tab-close" onclick="event.stopPropagation(); app.requestCloseSession('${escapeHtml(id)}')" title="Close session" aria-label="Close session" tabindex="0">&times;</span>
         </div>`);
       _tabIdx++;
@@ -2525,6 +2812,13 @@ class CodemanApp {
   }
 
   async selectSession(sessionId) {
+    // If this session is popped out into its own window, raise that window
+    // instead of showing it inline (focus-on-click for detached tabs).
+    if (!this.isSoloWindow && this.detachedSessions.has(sessionId)) {
+      // Raise the popup instead of showing inline. If we owned a now-closed
+      // window, _raiseDetached re-docks and returns false so we fall through.
+      if (this._raiseDetached(sessionId)) return;
+    }
     if (this.activeSessionId === sessionId) return;
     // Focus terminal SYNCHRONOUSLY before any await — iOS Safari only honors
     // programmatic focus() within the user-gesture call stack (e.g. tab click).

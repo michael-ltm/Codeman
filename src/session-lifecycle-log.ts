@@ -10,9 +10,9 @@
 
 import { appendFile, readFile, writeFile } from 'node:fs/promises';
 import { existsSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { homedir } from 'node:os';
+import { dirname } from 'node:path';
 import type { LifecycleEventType, LifecycleEntry } from './types.js';
+import { dataPath } from './config/instance.js';
 
 const MAX_LINES = 10_000;
 const TRIM_TO = 8_000;
@@ -22,7 +22,7 @@ export class SessionLifecycleLog {
   private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(filePath?: string) {
-    this.filePath = filePath || join(homedir(), '.codeman', 'session-lifecycle.jsonl');
+    this.filePath = filePath || dataPath('session-lifecycle.jsonl');
     const dir = dirname(this.filePath);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
