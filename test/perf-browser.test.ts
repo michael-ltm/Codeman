@@ -19,24 +19,24 @@ const BASE_URL = `http://localhost:${PORT}`;
 
 // Thresholds (ms)
 const THRESHOLDS = {
-  PAGE_LOAD: 3000,           // Full page load including JS init
-  DOMContentLoaded: 1500,    // HTML parsed
-  SSE_CONNECT: 2000,         // SSE EventSource open
-  TAB_CREATE_API: 200,       // POST /api/sessions response
-  TAB_RENDER: 300,           // Tab element appears in DOM
-  TAB_SWITCH: 400,           // Tab click to active class applied (includes tmux session creation)
-  TERMINAL_INIT: 500,        // xterm.js instance created for tab
-  INPUT_ROUNDTRIP: 500,      // Keystroke sent via API → acknowledged
-  SETTINGS_OPEN: 300,        // Settings modal visible
-  SETTINGS_CLOSE: 200,       // Settings modal hidden
+  PAGE_LOAD: 3000, // Full page load including JS init
+  DOMContentLoaded: 1500, // Browser nav timing through deferred script execution
+  SSE_CONNECT: 2000, // SSE EventSource open
+  TAB_CREATE_API: 200, // POST /api/sessions response
+  TAB_RENDER: 300, // Tab element appears in DOM
+  TAB_SWITCH: 400, // Tab click to active class applied (includes tmux session creation)
+  TERMINAL_INIT: 500, // xterm.js instance created for tab
+  INPUT_ROUNDTRIP: 500, // Keystroke sent via API → acknowledged
+  SETTINGS_OPEN: 300, // Settings modal visible
+  SETTINGS_CLOSE: 200, // Settings modal hidden
   SESSION_OPTIONS_OPEN: 300, // Session options modal visible
-  SESSION_OPTIONS_TAB: 200,  // Modal tab switch
+  SESSION_OPTIONS_TAB: 200, // Modal tab switch
   SUBAGENT_WINDOW_OPEN: 400, // Subagent window rendered
   SUBAGENT_WINDOW_CLOSE: 200,
-  BULK_TAB_CREATE: 3000,     // Create 10 sessions
-  BULK_TAB_SWITCH_AVG: 300,  // Average per-tab switch across 10 tabs (includes buffer loads)
-  MEMORY_HEAP_MB: 200,       // Max JS heap after heavy load
-  BUFFER_LOAD_16KB: 500,     // Load a 16KB terminal buffer
+  BULK_TAB_CREATE: 3000, // Create 10 sessions
+  BULK_TAB_SWITCH_AVG: 300, // Average per-tab switch across 10 tabs (includes buffer loads)
+  MEMORY_HEAP_MB: 200, // Max JS heap after heavy load
+  BUFFER_LOAD_16KB: 500, // Load a 16KB terminal buffer
 };
 
 let server: WebServer;
@@ -88,6 +88,25 @@ async function measure(fn: () => Promise<void>): Promise<number> {
   return performance.now() - start;
 }
 
+type BrowserNavigationTiming = {
+  domInteractive: number;
+  domContentLoadedEventEnd: number;
+  loadEventEnd: number;
+};
+
+/** Get the browser's own navigation timing, excluding Playwright harness overhead. */
+async function getBrowserNavigationTiming(page: Page): Promise<BrowserNavigationTiming> {
+  return page.evaluate(() => {
+    const entry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    if (!entry) throw new Error('Navigation timing entry not available');
+    return {
+      domInteractive: entry.domInteractive,
+      domContentLoadedEventEnd: entry.domContentLoadedEventEnd,
+      loadEventEnd: entry.loadEventEnd,
+    };
+  });
+}
+
 /** Get JS heap size in MB (Chromium only) */
 async function getHeapMB(page: Page): Promise<number> {
   const metrics = await page.evaluate(() => {
@@ -123,12 +142,15 @@ describe('Page load performance', () => {
   it('DOMContentLoaded fires within threshold', async () => {
     ({ context, page } = await freshPage());
 
-    const timing = await measure(async () => {
+    const wallTiming = await measure(async () => {
       await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
     });
+    const navigationTiming = await getBrowserNavigationTiming(page);
 
-    console.log(`[page load] DOMContentLoaded: ${timing.toFixed(0)}ms`);
-    expect(timing).toBeLessThan(THRESHOLDS.DOMContentLoaded);
+    console.log(
+      `[page load] DOMContentLoaded: ${navigationTiming.domContentLoadedEventEnd.toFixed(0)}ms (wall ${wallTiming.toFixed(0)}ms)`
+    );
+    expect(navigationTiming.domContentLoadedEventEnd).toBeLessThan(THRESHOLDS.DOMContentLoaded);
   });
 
   it('full app initialization completes within threshold', async () => {
@@ -157,7 +179,7 @@ describe('Page load performance', () => {
           const dot = document.getElementById('connectionDot');
           return dot?.classList.contains('connected') || indicator.style.display === 'none';
         },
-        { timeout: 5000 },
+        { timeout: 5000 }
       );
     });
 
@@ -225,7 +247,7 @@ describe('Session tab creation', () => {
       await page.waitForFunction(
         (expected: number) => document.querySelectorAll('.session-tab').length > expected,
         tabCountBefore,
-        { timeout: 3000 },
+        { timeout: 3000 }
       );
     });
 
@@ -250,7 +272,7 @@ describe('Session tab creation', () => {
           if (!container) return false;
           return container.querySelector('.xterm-screen') !== null;
         },
-        { timeout: 3000 },
+        { timeout: 3000 }
       );
     });
 
@@ -277,7 +299,7 @@ describe('Tab switching performance', () => {
     await page.waitForFunction(
       (count: number) => document.querySelectorAll('.session-tab').length >= count,
       sessionIds.length,
-      { timeout: 5000 },
+      { timeout: 5000 }
     );
     // Select first tab
     await page.locator(`.session-tab[data-id="${sessionIds[0]}"]`).click();
@@ -303,7 +325,7 @@ describe('Tab switching performance', () => {
         await page.waitForFunction(
           (id: string) => document.querySelector(`.session-tab[data-id="${id}"]`)?.classList.contains('active'),
           targetId,
-          { timeout: 2000 },
+          { timeout: 2000 }
         );
       });
       timings.push(timing);
@@ -325,7 +347,7 @@ describe('Tab switching performance', () => {
         await page.waitForFunction(
           (id: string) => document.querySelector(`.session-tab[data-id="${id}"]`)?.classList.contains('active'),
           targetId,
-          { timeout: 2000 },
+          { timeout: 2000 }
         );
       });
       timings.push(timing);
@@ -362,11 +384,9 @@ describe('Bulk tab operations', () => {
         sessionIds.push(id);
       }
       // Wait for all tabs to render
-      await page.waitForFunction(
-        (count: number) => document.querySelectorAll('.session-tab').length >= count,
-        10,
-        { timeout: 5000 },
-      );
+      await page.waitForFunction((count: number) => document.querySelectorAll('.session-tab').length >= count, 10, {
+        timeout: 5000,
+      });
     });
 
     console.log(`[bulk create] 10 sessions: ${timing.toFixed(0)}ms`);
@@ -383,7 +403,7 @@ describe('Bulk tab operations', () => {
         await page.waitForFunction(
           (id: string) => document.querySelector(`.session-tab[data-id="${id}"]`)?.classList.contains('active'),
           targetId,
-          { timeout: 2000 },
+          { timeout: 2000 }
         );
       });
       timings.push(timing);
@@ -497,7 +517,10 @@ describe('Settings modal performance', () => {
 
   it('closes within threshold', async () => {
     // Make sure it's open
-    const isOpen = await page.locator('#appSettingsModal.active').isVisible().catch(() => false);
+    const isOpen = await page
+      .locator('#appSettingsModal.active')
+      .isVisible()
+      .catch(() => false);
     if (!isOpen) {
       await page.locator('.btn-settings').click();
       await page.waitForSelector('#appSettingsModal.active', { timeout: 2000 });
@@ -506,10 +529,9 @@ describe('Settings modal performance', () => {
     const timing = await measure(async () => {
       // Press Escape to close
       await page.keyboard.press('Escape');
-      await page.waitForFunction(
-        () => !document.querySelector('#appSettingsModal')?.classList.contains('active'),
-        { timeout: 2000 },
-      );
+      await page.waitForFunction(() => !document.querySelector('#appSettingsModal')?.classList.contains('active'), {
+        timeout: 2000,
+      });
     });
 
     console.log(`[settings] close: ${timing.toFixed(0)}ms`);
@@ -528,10 +550,9 @@ describe('Settings modal performance', () => {
       // Close
       const closeTime = await measure(async () => {
         await page.keyboard.press('Escape');
-        await page.waitForFunction(
-          () => !document.querySelector('#appSettingsModal')?.classList.contains('active'),
-          { timeout: 2000 },
-        );
+        await page.waitForFunction(() => !document.querySelector('#appSettingsModal')?.classList.contains('active'), {
+          timeout: 2000,
+        });
       });
       timings.push(openTime + closeTime);
     }
@@ -575,7 +596,10 @@ describe('Session options modal performance', () => {
 
   it('tab switching within modal is instant', async () => {
     // Ensure modal is open
-    const isOpen = await page.locator('#sessionOptionsModal.active').isVisible().catch(() => false);
+    const isOpen = await page
+      .locator('#sessionOptionsModal.active')
+      .isVisible()
+      .catch(() => false);
     if (!isOpen) {
       await page.locator(`.session-tab[data-id="${sessionId}"] .tab-gear`).click();
       await page.waitForSelector('#sessionOptionsModal.active', { timeout: 2000 });
@@ -590,7 +614,7 @@ describe('Session options modal performance', () => {
         await page.waitForFunction(
           (t: string) => document.querySelector(`[data-tab="${t}"]`)?.classList.contains('active'),
           tab,
-          { timeout: 1000 },
+          { timeout: 1000 }
         );
       });
       timings.push(timing);
@@ -634,27 +658,32 @@ describe('Subagent window simulation', () => {
     }, sessionId);
 
     const timing = await measure(async () => {
-      await page.evaluate(({ agentId, cSessionId }: { agentId: string; cSessionId: string }) => {
-        const app = (window as unknown as {
-          app: {
-            subagents: Map<string, Record<string, unknown>>;
-            openSubagentWindow: (id: string) => void;
-          }
-        }).app;
-        // Inject fake agent data
-        app.subagents.set(agentId, {
-          agentId,
-          sessionId: cSessionId,
-          status: 'active',
-          description: 'Performance test agent',
-          startedAt: Date.now(),
-          lastActivityAt: Date.now(),
-          toolCallCount: 0,
-          entryCount: 0,
-          fileSize: 0,
-        });
-        app.openSubagentWindow(agentId);
-      }, { agentId: 'perf-agent-1', cSessionId: claudeSessionId });
+      await page.evaluate(
+        ({ agentId, cSessionId }: { agentId: string; cSessionId: string }) => {
+          const app = (
+            window as unknown as {
+              app: {
+                subagents: Map<string, Record<string, unknown>>;
+                openSubagentWindow: (id: string) => void;
+              };
+            }
+          ).app;
+          // Inject fake agent data
+          app.subagents.set(agentId, {
+            agentId,
+            sessionId: cSessionId,
+            status: 'active',
+            description: 'Performance test agent',
+            startedAt: Date.now(),
+            lastActivityAt: Date.now(),
+            toolCallCount: 0,
+            entryCount: 0,
+            fileSize: 0,
+          });
+          app.openSubagentWindow(agentId);
+        },
+        { agentId: 'perf-agent-1', cSessionId: claudeSessionId }
+      );
       await page.waitForSelector('.subagent-window', { timeout: 3000 });
     });
 
@@ -679,7 +708,7 @@ describe('Subagent window simulation', () => {
           const el = document.getElementById('subagent-window-perf-agent-1');
           return el && el.style.display === 'none';
         },
-        { timeout: 2000 },
+        { timeout: 2000 }
       );
     });
 
@@ -698,33 +727,35 @@ describe('Subagent window simulation', () => {
 
     const timing = await measure(async () => {
       for (let i = 0; i < 5; i++) {
-        await page.evaluate(({ idx, cSessionId }: { idx: number; cSessionId: string }) => {
-          const agentId = `perf-multi-agent-${idx}`;
-          const app = (window as unknown as {
-            app: {
-              subagents: Map<string, Record<string, unknown>>;
-              openSubagentWindow: (id: string) => void;
-            }
-          }).app;
-          app.subagents.set(agentId, {
-            agentId,
-            sessionId: cSessionId,
-            status: 'active',
-            description: `Perf agent ${idx}`,
-            startedAt: Date.now(),
-            lastActivityAt: Date.now(),
-            toolCallCount: 0,
-            entryCount: 0,
-            fileSize: 0,
-          });
-          app.openSubagentWindow(agentId);
-        }, { idx: i, cSessionId: claudeSessionId });
+        await page.evaluate(
+          ({ idx, cSessionId }: { idx: number; cSessionId: string }) => {
+            const agentId = `perf-multi-agent-${idx}`;
+            const app = (
+              window as unknown as {
+                app: {
+                  subagents: Map<string, Record<string, unknown>>;
+                  openSubagentWindow: (id: string) => void;
+                };
+              }
+            ).app;
+            app.subagents.set(agentId, {
+              agentId,
+              sessionId: cSessionId,
+              status: 'active',
+              description: `Perf agent ${idx}`,
+              startedAt: Date.now(),
+              lastActivityAt: Date.now(),
+              toolCallCount: 0,
+              entryCount: 0,
+              fileSize: 0,
+            });
+            app.openSubagentWindow(agentId);
+          },
+          { idx: i, cSessionId: claudeSessionId }
+        );
       }
       // Wait for all 5
-      await page.waitForFunction(
-        () => document.querySelectorAll('.subagent-window').length >= 5,
-        { timeout: 5000 },
-      );
+      await page.waitForFunction(() => document.querySelectorAll('.subagent-window').length >= 5, { timeout: 5000 });
     });
 
     const windowCount = await page.locator('.subagent-window').count();
@@ -772,7 +803,7 @@ describe('SSE event throughput', () => {
     await page.waitForFunction(
       (count: number) => document.querySelectorAll('.session-tab').length >= count,
       sessionIds.length,
-      { timeout: 5000 },
+      { timeout: 5000 }
     );
     const elapsed = performance.now() - start;
 
@@ -797,7 +828,7 @@ describe('SSE event throughput', () => {
     await page.waitForFunction(
       (count: number) => document.querySelectorAll('.session-tab').length >= count,
       sessionIds.length,
-      { timeout: 5000 },
+      { timeout: 5000 }
     );
 
     const start = performance.now();
@@ -813,7 +844,7 @@ describe('SSE event throughput', () => {
         }
         return true;
       },
-      { timeout: 5000 },
+      { timeout: 5000 }
     );
     const elapsed = performance.now() - start;
 
@@ -880,11 +911,9 @@ describe('Memory usage under load', () => {
       const id = await createSession(page, `perf-mem-${i}`);
       sessionIds.push(id);
     }
-    await page.waitForFunction(
-      (count: number) => document.querySelectorAll('.session-tab').length >= count,
-      10,
-      { timeout: 5000 },
-    );
+    await page.waitForFunction((count: number) => document.querySelectorAll('.session-tab').length >= count, 10, {
+      timeout: 5000,
+    });
 
     // Switch through all tabs
     for (const id of sessionIds) {
@@ -895,10 +924,13 @@ describe('Memory usage under load', () => {
     const heapAfter = await getHeapMB(page);
     const heapGrowth = heapAfter - heapBefore;
 
-    console.log(`[memory] before: ${heapBefore.toFixed(1)}MB, after: ${heapAfter.toFixed(1)}MB, growth: ${heapGrowth.toFixed(1)}MB`);
+    console.log(
+      `[memory] before: ${heapBefore.toFixed(1)}MB, after: ${heapAfter.toFixed(1)}MB, growth: ${heapGrowth.toFixed(1)}MB`
+    );
 
     // Heap should stay under absolute limit
-    if (heapAfter > 0) { // memory API may not be available
+    if (heapAfter > 0) {
+      // memory API may not be available
       expect(heapAfter).toBeLessThan(THRESHOLDS.MEMORY_HEAP_MB);
     }
   });
