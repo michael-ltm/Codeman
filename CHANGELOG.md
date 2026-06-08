@@ -1,5 +1,23 @@
 # aicodeman
 
+## 0.9.4
+
+### Patch Changes
+
+- In-app self-updater, plus the SSE-registry and security-doc changes since 0.9.3.
+
+  **New: update Codeman from the web UI (App Settings → Updates).** A "Check for updates" button asks the server to query GitHub for the latest tagged release (falling back to `git ls-remote`) and shows its release notes; "Update now" then runs the full `git checkout <tag>` → `npm install` → `npm run build` → restart cycle and streams live progress that survives the service restart (the browser polls a status file across the connection drop).
+  - **Channel:** latest tagged release (e.g. `codeman@0.9.4`), not bleeding-edge master.
+  - **Dirty working trees are auto-stashed** (`git stash`, left for you to `git stash pop`) instead of discarded.
+  - **Cross-platform restart**, detected from the running process: systemd (`systemctl --user restart codeman-web`) on Linux, launchd (`launchctl kickstart`) on macOS, or a printed manual command otherwise.
+  - **Survives its own restart:** the updater runs detached in a transient `systemd-run --user --scope` (Linux) or `setsid` session (macOS), so the restart it triggers cannot kill the build mid-flight.
+  - **Safety:** build failure rolls back to the pre-update commit (never restarts into a half-built `dist/`); the pre-restart status marker is reconciled on boot with an update-id + freshness guard so a normal reboot is not misreported as a completed update; concurrent updates are rejected (409); the runner script is staged outside the repo so `git checkout` cannot corrupt it mid-run; release tags are strictly validated before reaching the shell; `CODEMAN_DISABLE_SELF_UPDATE=1` disables the feature; non-git (npm-global) installs are detected and pointed at `npm i -g aicodeman@latest`.
+  - New endpoints: `GET /api/system/update/check`, `POST /api/system/update`, `GET /api/system/update/status`.
+
+  **Also in this release:**
+  - Sync the frontend `SSE_EVENTS` registry (`constants.js`) with the backend `sse-events.ts` so every broadcast event has a matching frontend entry.
+  - Expand `docs/security-architecture.md` with the trust model, CSP detail, and a source-file map.
+
 ## 0.9.3
 
 ### Patch Changes
