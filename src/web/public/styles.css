@@ -233,6 +233,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  position: relative;
   padding: 0.35rem 0.6rem;
   background: transparent;
   border: 1px solid transparent;
@@ -264,6 +265,40 @@ body {
   box-shadow: none !important;
   outline: none !important;
 }
+
+.session-tab.tab-loading::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -2px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.95), transparent);
+  animation: tab-load-sweep 0.9s linear infinite;
+  pointer-events: none;
+}
+
+.tab-load-spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(96, 165, 250, 0.3);
+  border-top-color: rgba(96, 165, 250, 0.95);
+  border-radius: 50%;
+  flex: 0 0 10px;
+  animation: tab-load-spin 0.7s linear infinite;
+}
+
+@keyframes tab-load-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes tab-load-sweep {
+  0% { transform: translateX(-45%); opacity: 0.35; }
+  50% { opacity: 1; }
+  100% { transform: translateX(45%); opacity: 0.35; }
+}
+
 
 /* Tab switch feedback: bright green glow on the newly-active tab */
 .session-tab.tab-glow {
@@ -2070,6 +2105,8 @@ body.solo-mode .btn-lifecycle-log {
   will-change: contents;
 }
 .terminal-container .xterm {
+  width: 100%;
+  min-width: 0;
   height: 100%;
   padding: 0;
 }

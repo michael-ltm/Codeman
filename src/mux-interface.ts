@@ -192,6 +192,12 @@ export interface TerminalMultiplexer extends EventEmitter {
    */
   getAttachArgs(muxName: string): string[];
 
+  /** Pin a mux window so client attaches do not automatically dictate its size. */
+  setManualWindowSize?(muxName: string): boolean;
+
+  /** Explicitly resize a mux window after Codeman accepts a terminal resize. */
+  resizeWindow?(muxName: string, cols: number, rows: number): boolean;
+
   // ========== Availability ==========
 
   /** Check if the multiplexer binary is available on the system */
@@ -205,4 +211,10 @@ export interface TerminalMultiplexer extends EventEmitter {
 
   /** Respawn a dead pane with a fresh command. Returns the new PID or null on failure. */
   respawnPane(options: RespawnPaneOptions): Promise<number | null>;
+
+  /** Capture a pane's current tmux buffer with ANSI escape codes preserved. */
+  capturePaneBuffer?(muxName: string, paneTarget: string): string | null;
+
+  /** Capture the active pane's current tmux buffer with ANSI escape codes preserved. */
+  captureActivePaneBuffer?(muxName: string): string | null;
 }

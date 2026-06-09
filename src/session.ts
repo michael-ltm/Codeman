@@ -1004,7 +1004,12 @@ export class Session extends EventEmitter {
     }
 
     // Attach to the mux session via PTY
-    // Query existing tmux window size so re-attach matches (avoids flicker from 120x40 default)
+    // Prevent tmux from letting the newest browser attach dictate global window
+    // size; accepted Codeman resize events update it explicitly below.
+    mux.setManualWindowSize?.(this._muxSession!.muxName);
+    // Query existing tmux window size so re-attach matches (avoids flicker from 120x40 default).
+    // MUST go through the dedicated socket (mux.muxSocket); a bare `tmux display` hits the
+    // default server, always fails for our socketed sessions, and silently falls back to 120x40.
     const { cols: ptyCols, rows: ptyRows } = queryTmuxWindowSize(this._muxSession!.muxName, mux.muxSocket);
     try {
       this.ptyProcess = pty.spawn(mux.getAttachCommand(), mux.getAttachArgs(this._muxSession!.muxName), {
@@ -2057,6 +2062,9 @@ export class Session extends EventEmitter {
     if (this.ptyProcess && (cols !== this._ptyCols || rows !== this._ptyRows)) {
       this._ptyCols = cols;
       this._ptyRows = rows;
+      if (this._mux && this._muxSession) {
+        this._mux.resizeWindow?.(this._muxSession.muxName, cols, rows);
+      }
       this.ptyProcess.resize(cols, rows);
     }
   }

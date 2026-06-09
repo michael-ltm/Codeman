@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TmuxManager, parsePaneList } from '../src/tmux-manager.js';
+import { TmuxManager, formatPaneSnapshot, parsePaneList, resolveActivePaneTarget } from '../src/tmux-manager.js';
 import { execSync } from 'node:child_process';
 
 // ============================================================================
@@ -115,6 +115,107 @@ describe('TmuxManager (unit)', () => {
 
       const args = manager.getAttachArgs('codeman-abc12345');
       expect(args).toEqual(['-L', 'codeman', 'attach-session', '-t', 'codeman-abc12345']);
+    });
+  });
+
+  describe('window sizing', () => {
+    it('pins a tmux window to manual sizing before browser attach', () => {
+      expect(manager.setManualWindowSize('codeman-abc12345')).toBe(true);
+
+      expect(mockedExecSync).toHaveBeenCalledWith(
+        "tmux -L 'codeman' set-window-option -t 'codeman-abc12345' window-size manual",
+        expect.objectContaining({ stdio: 'ignore' })
+      );
+    });
+
+    it('resizes the tmux window when Codeman accepts a desktop resize', () => {
+      expect(manager.resizeWindow('codeman-abc12345', 140, 42)).toBe(true);
+
+      expect(mockedExecSync).toHaveBeenCalledWith(
+        "tmux -L 'codeman' resize-window -t 'codeman-abc12345' -x 140 -y 42",
+        expect.objectContaining({ stdio: 'ignore' })
+      );
+    });
+  });
+
+  describe('environment exports', () => {
+    it('keeps COLORTERM unset for OpenCode sessions', () => {
+      const exports = (
+        manager as unknown as {
+          buildEnvExports(sessionId: string, muxName: string, mode: string): string[];
+        }
+      ).buildEnvExports('session-1', 'codeman-abc12345', 'opencode');
+
+      expect(exports).toContain('unset COLORTERM');
+    });
+  });
+
+  describe('formatPaneSnapshot', () => {
+    it('paints captured rows with absolute cursor positions to avoid newline autowrap scroll', () => {
+      const fullWidthLine = 'x'.repeat(10);
+
+      const snapshot = formatPaneSnapshot([fullWidthLine, 'next line'], {
+        cols: 10,
+        rows: 4,
+        cursorX: 2,
+        cursorY: 1,
+      });
+
+      expect(snapshot).toBe(`\x1b[1;1H${'x'.repeat(9)}\x1b[2;1Hnext line\x1b[2;3H`);
+      expect(snapshot).not.toContain('\n');
+    });
+
+    it('preserves SGR color while stripping non-style pane controls', () => {
+      const snapshot = formatPaneSnapshot(['\x1b[32mgreen\x1b[0m\x1b[2K\x1b[10;20Htail'], {
+        cols: 40,
+        rows: 2,
+        cursorX: 0,
+        cursorY: 0,
+      });
+
+      expect(snapshot).toContain('\x1b[32mgreen\x1b[0m');
+      expect(snapshot).toContain('tail');
+      expect(snapshot).not.toContain('\x1b[2K');
+      expect(snapshot).not.toContain('\x1b[10;20H');
+    });
+
+    it('truncates styled rows by visible columns without cutting SGR escapes', () => {
+      const snapshot = formatPaneSnapshot(['\x1b[31mabcdef\x1b[0m'], {
+        cols: 4,
+        rows: 1,
+        cursorX: 0,
+        cursorY: 0,
+      });
+
+      expect(snapshot).toBe('\x1b[1;1H\x1b[31mabc\x1b[0m\x1b[1;1H');
+    });
+
+    it('does not let full-width glyphs cross the paint boundary', () => {
+      const snapshot = formatPaneSnapshot(['abc\u754cdef'], {
+        cols: 5,
+        rows: 1,
+        cursorX: 0,
+        cursorY: 0,
+      });
+
+      expect(snapshot).toBe('\x1b[1;1Habc\x1b[1;1H');
+    });
+
+    it('keeps combining marks attached without consuming a terminal column', () => {
+      const snapshot = formatPaneSnapshot(['a\u0301bc'], {
+        cols: 4,
+        rows: 1,
+        cursorX: 0,
+        cursorY: 0,
+      });
+
+      expect(snapshot).toBe('\x1b[1;1Ha\u0301bc\x1b[1;1H');
+    });
+  });
+
+  describe('resolveActivePaneTarget', () => {
+    it('selects the active pane instead of assuming pane zero', () => {
+      expect(resolveActivePaneTarget('%1:0\n%18:1\n')).toBe('%18');
     });
   });
 
