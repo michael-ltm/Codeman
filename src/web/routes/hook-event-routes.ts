@@ -66,6 +66,6 @@ export function registerHookEventRoutes(
       summaryTracker.recordHookEvent(event, safeData);
     }
 
-    return { success: true };
+    return {};
   });
 }

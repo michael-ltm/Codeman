@@ -190,7 +190,7 @@ describe('Edge Cases and Error Handling', () => {
 
       // Should succeed with valid characters, even if long
       if (data.success) {
-        createdCases.push(longName);
+        createdCases.push(data.data.caseName);
       }
       // Either succeeds or fails gracefully
       expect(data).toHaveProperty('success');
@@ -202,8 +202,8 @@ describe('Edge Cases and Error Handling', () => {
       const response = await fetch(`${baseUrl}/api/sessions/non-existent/respawn`);
       const data = await response.json();
 
-      expect(data.enabled).toBe(false);
-      expect(data.status).toBeNull();
+      expect(data.data.enabled).toBe(false);
+      expect(data.data.status).toBeNull();
     });
 
     it('should handle starting respawn on non-existent session', async () => {
@@ -287,17 +287,17 @@ describe('Concurrent Session Handling', () => {
     // All should succeed
     for (const result of results) {
       expect(result.success).toBe(true);
-      expect(result.session.id).toBeDefined();
+      expect(result.data.session.id).toBeDefined();
     }
 
     // Verify sessions are listed
     const listRes = await fetch(`${baseUrl}/api/sessions`);
     const sessions = await listRes.json();
-    expect(sessions.length).toBeGreaterThanOrEqual(5);
+    expect(sessions.data.length).toBeGreaterThanOrEqual(5);
 
     // Clean up - delete all created sessions
     for (const result of results) {
-      await fetch(`${baseUrl}/api/sessions/${result.session.id}`, {
+      await fetch(`${baseUrl}/api/sessions/${result.data.session.id}`, {
         method: 'DELETE',
       });
     }
@@ -317,7 +317,7 @@ describe('Concurrent Session Handling', () => {
       expect(createData.success).toBe(true);
 
       // Delete immediately
-      const deleteRes = await fetch(`${baseUrl}/api/sessions/${createData.session.id}`, {
+      const deleteRes = await fetch(`${baseUrl}/api/sessions/${createData.data.session.id}`, {
         method: 'DELETE',
       });
       const deleteData = await deleteRes.json();
@@ -341,8 +341,8 @@ describe('Concurrent Session Handling', () => {
 
     for (const result of results) {
       expect(result.success).toBe(true);
-      if (result.caseName) {
-        createdCases.push(result.caseName);
+      if (result.data.caseName) {
+        createdCases.push(result.data.caseName);
       }
     }
 

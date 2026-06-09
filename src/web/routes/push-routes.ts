@@ -35,7 +35,7 @@ export function registerPushRoutes(app: FastifyInstance, ctx: InfraPort): void {
     if (!updated) {
       return createErrorResponse(ApiErrorCode.NOT_FOUND, 'Subscription not found');
     }
-    return { success: true };
+    return {};
   });
 
   app.delete('/api/push/subscribe/:id', async (req) => {
@@ -44,6 +44,6 @@ export function registerPushRoutes(app: FastifyInstance, ctx: InfraPort): void {
     if (!removed) {
       return createErrorResponse(ApiErrorCode.NOT_FOUND, 'Subscription not found');
     }
-    return { success: true };
+    return {};
   });
 }

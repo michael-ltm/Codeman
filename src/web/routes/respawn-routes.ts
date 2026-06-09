@@ -62,16 +62,16 @@ export function registerRespawnRoutes(
     const controller = ctx.respawnControllers.get(id);
 
     if (controller) {
-      return { success: true, config: controller.getConfig(), active: true };
+      return { config: controller.getConfig(), active: true };
     }
 
     // Return pre-saved config from mux-sessions.json
     const preConfig = ctx.mux.getSession(id)?.respawnConfig;
     if (preConfig) {
-      return { success: true, config: preConfig, active: false };
+      return { config: preConfig, active: false };
     }
 
-    return { success: true, config: null, active: false };
+    return { config: null, active: false };
   });
 
   // ═══════════════════════════════════════════════════════════════
@@ -114,7 +114,7 @@ export function registerRespawnRoutes(
 
     ctx.broadcast(SseEvent.RespawnStarted, { sessionId: id, status: controller.getStatus() });
 
-    return { success: true, status: controller.getStatus() };
+    return { status: controller.getStatus() };
   });
 
   // ========== Stop Respawn ==========
@@ -150,7 +150,7 @@ export function registerRespawnRoutes(
 
     ctx.broadcast(SseEvent.RespawnStopped, { sessionId: id });
 
-    return { success: true };
+    return {};
   });
 
   // ========== Update Respawn Config ==========
@@ -169,7 +169,7 @@ export function registerRespawnRoutes(
       ctx.saveRespawnConfig(id, controller.getConfig());
       ctx.persistSessionState(session);
       ctx.broadcast(SseEvent.RespawnConfigUpdated, { sessionId: id, config: controller.getConfig() });
-      return { success: true, config: controller.getConfig() };
+      return { config: controller.getConfig() };
     }
 
     // No controller running - save as pre-config for when respawn starts
@@ -206,7 +206,7 @@ export function registerRespawnRoutes(
     ctx.mux.updateRespawnConfig(id, merged);
     ctx.persistSessionState(session);
     ctx.broadcast(SseEvent.RespawnConfigUpdated, { sessionId: id, config: merged });
-    return { success: true, config: merged };
+    return { config: merged };
   });
 
   // ═══════════════════════════════════════════════════════════════
@@ -332,7 +332,6 @@ export function registerRespawnRoutes(
     ctx.broadcast(SseEvent.RespawnStarted, { sessionId: id, status: controller.getStatus() });
 
     return {
-      success: true,
       message: 'Respawn enabled on existing session',
       respawnStatus: controller.getStatus(),
     };

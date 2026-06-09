@@ -368,9 +368,9 @@ describe('types utility functions', () => {
       expect(ApiErrorCode.INTERNAL_ERROR).toBe('INTERNAL_ERROR');
     });
 
-    it('should have 6 error codes', () => {
+    it('should have 9 error codes', () => {
       const codes = Object.values(ApiErrorCode);
-      expect(codes).toHaveLength(6);
+      expect(codes).toHaveLength(9);
     });
   });
 });

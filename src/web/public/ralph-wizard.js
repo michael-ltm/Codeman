@@ -151,11 +151,11 @@ Object.assign(CodemanApp.prototype, {
       const res = await fetch(`/api/cases/${encodeURIComponent(caseName)}/fix-plan`);
       const data = await res.json();
 
-      if (data.success && data.exists && data.todos?.length > 0) {
+      if (data.success && data.data.exists && data.data.todos?.length > 0) {
         this.ralphWizardConfig.existingPlan = {
-          todos: data.todos,
-          stats: data.stats,
-          content: data.content,
+          todos: data.data.todos,
+          stats: data.data.stats,
+          content: data.data.content,
         };
         this.updateExistingPlanUI();
       } else {
@@ -1054,8 +1054,8 @@ Object.assign(CodemanApp.prototype, {
         this.showToast(data.error || 'Failed to start', 'error');
         return;
       }
-      this.ralphClosedSessions.delete(data.sessionId);
-      await this.selectSession(data.sessionId);
+      this.ralphClosedSessions.delete(data.data.sessionId);
+      await this.selectSession(data.data.sessionId);
       this.showToast(`Ralph Loop started in ${config.caseName}`, 'success');
     } catch (err) {
       console.error('Failed to start Ralph loop:', err);

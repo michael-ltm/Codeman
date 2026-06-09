@@ -8,9 +8,9 @@ surfaces are covered by SemVer and which are explicitly not. It exists because
 "1.0" is a commitment to stability, and an undocumented public surface invites
 incompatible client assumptions we would then be pressured to keep.
 
-> **Status:** draft for the 1.0 cut. The central decision below — that the HTTP/SSE
-> API is *not* SemVer-covered — should be confirmed by the maintainer before 1.0,
-> since it determines whether a number of in-flight cleanups are "breaking."
+> **Status:** finalized for the 1.0 cut. The HTTP/SSE API **is** part of the stable
+> surface — served under `/api/v1` with a uniform response envelope and
+> conventional HTTP status codes. See [`api-reference.md`](api-reference.md).
 
 ## What SemVer covers (the public, stable surface)
 
@@ -19,9 +19,10 @@ A **MAJOR** bump is required to break any of these after 1.0:
 1. **The CLI.** Command names, documented flags, and their behavior for
    `codeman <command>` (published to npm as `aicodeman`; invoked as `codeman`).
    This is the package's actual public entry point (`bin`).
-   - *Note:* the npm package name vs. invoked command name (`aicodeman` vs
-     `codeman`) is a known inconsistency to resolve **before** 1.0 — renaming
-     either after 1.0 is itself a breaking change.
+   - The package is published to npm as `aicodeman` and installs **both** the
+     `aicodeman` and `codeman` commands (`bin` aliases); `codeman` is the
+     canonical command used throughout the docs. Renaming either after 1.0 is a
+     breaking change.
 2. **The published `xterm-zerolag-input` library**, but on **its own version
    line** — it is versioned and released independently of the Codeman app. Its
    1.0 status is a separate decision; the Codeman app reaching 1.0 does *not*
@@ -31,26 +32,26 @@ A **MAJOR** bump is required to break any of these after 1.0:
    `CODEMAN_INSTANCE`, `CODEMAN_ALLOWED_HOSTS`, `CODEMAN_DATA_DIR`,
    `CODEMAN_TMUX_SOCKET`, and the `--host` / `--port` / `--https` CLI flags.
    Removing or changing the meaning of one of these is breaking.
+4. **The HTTP API and SSE event channel**, served under **`/api/v1`** with the
+   uniform `{success:true,data}` / `{success:false,error,errorCode}` envelope and
+   conventional HTTP status codes. Endpoint paths, the response envelope, error
+   `errorCode` values, and SSE event names are stable — see
+   [`api-reference.md`](api-reference.md). *Additive* changes (new endpoints, new
+   optional fields, new error codes, new SSE events) are non-breaking; breaking
+   changes ship under a new prefix (`/api/v2`). The unversioned `/api/...` alias
+   is kept working for the bundled UI.
 
 ## What SemVer does NOT cover (internal surfaces — may change in any release)
 
 These may change in a **MINOR** (or even PATCH) release without a MAJOR bump:
 
-1. **The HTTP API and SSE event registry** (`/api/...`, the ~120 SSE event
-   types). This is an **internal protocol between the server and its own bundled
-   web frontend**, not a published client API. There is no OpenAPI spec, no
-   published client, and no versioned `/api/v1` namespace. If you script against
-   these endpoints, **pin to an exact Codeman version** — they can change between
-   minors (response shapes, status codes, event names). Standardizing the error
-   envelope and HTTP status codes is explicitly reserved as a non-breaking
-   internal change under this policy.
-2. **The `~/.codeman/` state file formats** (`state.json`, `settings.json`,
+1. **The `~/.codeman/` state file formats** (`state.json`, `settings.json`,
    `mux-sessions.json`, etc.). We make a **best-effort** to migrate existing data
    forward (and have done so across renames), but the on-disk schema is not a
    stable contract — do not write tooling that depends on its exact shape.
-3. **Internal TypeScript modules.** The npm package is CLI-only; `import`ing it
+2. **Internal TypeScript modules.** The npm package is CLI-only; `import`ing it
    programmatically is not supported (there is no stable library entry point).
-4. **Experimental / opt-in features**, regardless of the app's version:
+3. **Experimental / opt-in features**, regardless of the app's version:
    Gesture Control (beta), Agent Teams
    (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`), and anything labeled experimental
    in the UI or docs. These may change or be removed at any time.

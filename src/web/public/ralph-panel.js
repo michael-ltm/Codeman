@@ -996,14 +996,14 @@ Object.assign(CodemanApp.prototype, {
         return;
       }
 
-      const history = data.history || [];
+      const history = data.data.history || [];
       if (history.length === 0) {
         this.showToast('No plan history available', 'info');
         return;
       }
 
       // Show history dropdown modal
-      this.showPlanHistoryModal(history, data.currentVersion);
+      this.showPlanHistoryModal(history, data.data.currentVersion);
     } catch (err) {
       this.showToast('Failed to load plan history: ' + err.message, 'error');
     }

@@ -19,6 +19,6 @@ export function registerClipboardRoutes(app: FastifyInstance, ctx: EventPort): v
       sessionId: body.sessionId ?? null,
       timestamp: Date.now(),
     });
-    return { success: true };
+    return {};
   });
 }

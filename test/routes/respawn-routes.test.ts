@@ -69,7 +69,9 @@ describe('respawn-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      // Handler now returns a bare payload; the uniform envelope wraps it to
+      // { success:true, data:{ config, active } } in production. At the route-handler
+      // layer the harness sees the bare return, so config/active stay top-level.
       expect(body.config).toBeNull();
       expect(body.active).toBe(false);
     });
@@ -88,7 +90,8 @@ describe('respawn-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      // Handler returns a bare { config, active } payload (wrapped under data by the
+      // uniform envelope in production); the harness sees the bare return.
       expect(body.active).toBe(true);
       expect(body.config.idleTimeoutMs).toBe(5000);
     });
@@ -121,7 +124,11 @@ describe('respawn-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      // Handler returns a bare {} on success; the uniform envelope wraps it to
+      // { success:true, data:{} } in production. At the route-handler layer the
+      // harness sees the bare return, so success is signalled by the 200 + empty
+      // body plus the side effects asserted below.
+      expect(body).toEqual({});
       expect(mockController.stop).toHaveBeenCalled();
       expect(harness.ctx.respawnControllers.has(harness.ctx._sessionId)).toBe(false);
       expect(harness.ctx.broadcast).toHaveBeenCalledWith('respawn:stopped', {
@@ -192,7 +199,9 @@ describe('respawn-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      // Handler returns a bare { config } payload (wrapped under data by the uniform
+      // envelope in production); the harness sees the bare return.
+      expect(body.config).toBeDefined();
       expect(mockController.updateConfig).toHaveBeenCalled();
       expect(harness.ctx.broadcast).toHaveBeenCalledWith(
         'respawn:configUpdated',
@@ -208,7 +217,9 @@ describe('respawn-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      // Handler returns a bare { config } payload (wrapped under data by the uniform
+      // envelope in production); the harness sees the bare return.
+      expect(body.config).toBeDefined();
       expect(harness.ctx.mux.updateRespawnConfig).toHaveBeenCalled();
     });
   });

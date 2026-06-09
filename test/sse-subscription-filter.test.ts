@@ -159,7 +159,7 @@ describe('SSE Subscription Filtering', () => {
       body: JSON.stringify({ workingDir: '/tmp' }),
     });
     const createData = await createRes.json();
-    const sessionId = createData.session.id;
+    const sessionId = createData.data.session.id;
 
     // Wait for events to arrive
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -210,7 +210,7 @@ describe('SSE Subscription Filtering', () => {
       body: JSON.stringify({ workingDir: '/tmp' }),
     });
     const createData = await createRes.json();
-    const sessionId = createData.session.id;
+    const sessionId = createData.data.session.id;
 
     // Now connect SSE with the session filter
     const controller = new AbortController();
@@ -264,14 +264,14 @@ describe('SSE Subscription Filtering', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ workingDir: '/tmp' }),
     });
-    const session1 = (await createRes1.json()).session;
+    const session1 = (await createRes1.json()).data.session;
 
     const createRes2 = await fetch(`${baseUrl}/api/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ workingDir: '/tmp' }),
     });
-    const session2 = (await createRes2.json()).session;
+    const session2 = (await createRes2.json()).data.session;
 
     // Connect SSE subscribed ONLY to session1
     const controller = new AbortController();
@@ -331,14 +331,14 @@ describe('SSE Subscription Filtering', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ workingDir: '/tmp' }),
     });
-    const session1 = (await createRes1.json()).session;
+    const session1 = (await createRes1.json()).data.session;
 
     const createRes2 = await fetch(`${baseUrl}/api/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ workingDir: '/tmp' }),
     });
-    const session2 = (await createRes2.json()).session;
+    const session2 = (await createRes2.json()).data.session;
 
     // Connect SSE subscribed to both sessions
     const controller = new AbortController();

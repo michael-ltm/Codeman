@@ -25,12 +25,18 @@ export enum ApiErrorCode {
   NOT_FOUND = 'NOT_FOUND',
   /** Invalid input provided */
   INVALID_INPUT = 'INVALID_INPUT',
+  /** Authentication required or failed */
+  UNAUTHORIZED = 'UNAUTHORIZED',
   /** Session is currently busy */
   SESSION_BUSY = 'SESSION_BUSY',
-  /** Operation failed */
-  OPERATION_FAILED = 'OPERATION_FAILED',
+  /** Request conflicts with current state (e.g. already running) */
+  CONFLICT = 'CONFLICT',
   /** Resource already exists */
   ALREADY_EXISTS = 'ALREADY_EXISTS',
+  /** Too many requests / rate limited */
+  RATE_LIMITED = 'RATE_LIMITED',
+  /** Operation could not be completed (well-formed but unprocessable) */
+  OPERATION_FAILED = 'OPERATION_FAILED',
   /** Internal server error */
   INTERNAL_ERROR = 'INTERNAL_ERROR',
 }
@@ -41,11 +47,36 @@ export enum ApiErrorCode {
 const ErrorMessages: Record<ApiErrorCode, string> = {
   [ApiErrorCode.NOT_FOUND]: 'The requested resource was not found',
   [ApiErrorCode.INVALID_INPUT]: 'Invalid input provided',
+  [ApiErrorCode.UNAUTHORIZED]: 'Authentication required',
   [ApiErrorCode.SESSION_BUSY]: 'Session is currently busy',
-  [ApiErrorCode.OPERATION_FAILED]: 'The operation failed',
+  [ApiErrorCode.CONFLICT]: 'Request conflicts with the current state',
   [ApiErrorCode.ALREADY_EXISTS]: 'Resource already exists',
+  [ApiErrorCode.RATE_LIMITED]: 'Too many requests',
+  [ApiErrorCode.OPERATION_FAILED]: 'The operation failed',
   [ApiErrorCode.INTERNAL_ERROR]: 'An internal error occurred',
 };
+
+/**
+ * Maps each API error code to its HTTP status. Single source of truth for the
+ * stable HTTP contract (see docs/api-reference.md). Applied centrally so every
+ * error response carries a conventional 4xx/5xx status, not 200.
+ */
+const ErrorStatus: Record<ApiErrorCode, number> = {
+  [ApiErrorCode.INVALID_INPUT]: 400,
+  [ApiErrorCode.UNAUTHORIZED]: 401,
+  [ApiErrorCode.NOT_FOUND]: 404,
+  [ApiErrorCode.SESSION_BUSY]: 409,
+  [ApiErrorCode.CONFLICT]: 409,
+  [ApiErrorCode.ALREADY_EXISTS]: 409,
+  [ApiErrorCode.OPERATION_FAILED]: 422,
+  [ApiErrorCode.RATE_LIMITED]: 429,
+  [ApiErrorCode.INTERNAL_ERROR]: 500,
+};
+
+/** HTTP status for an API error code (defaults to 400 for unknown codes). */
+export function httpStatusForErrorCode(code: ApiErrorCode): number {
+  return ErrorStatus[code] ?? 400;
+}
 
 /**
  * Hook event types triggered by Claude Code's hooks system

@@ -140,7 +140,6 @@ describe('system-routes', () => {
       const res = await harness.app.inject({ method: 'GET', url: '/api/config' });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
       expect(body.config).toBeDefined();
     });
   });
@@ -156,7 +155,7 @@ describe('system-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      expect(body.config).toBeDefined();
       expect(harness.ctx.store.setConfig).toHaveBeenCalled();
     });
 
@@ -179,7 +178,6 @@ describe('system-routes', () => {
       const res = await harness.app.inject({ method: 'GET', url: '/api/stats' });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
       expect(body.stats).toBeDefined();
     });
   });
@@ -191,7 +189,6 @@ describe('system-routes', () => {
       const res = await harness.app.inject({ method: 'GET', url: '/api/token-stats' });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
       expect(body.daily).toBeDefined();
       expect(body.totals).toBeDefined();
     });
@@ -230,7 +227,6 @@ describe('system-routes', () => {
       const res = await harness.app.inject({ method: 'POST', url: '/api/cleanup-state' });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
       expect(body.cleanedSessions).toBe(0);
       expect(harness.ctx.store.cleanupStaleSessions).toHaveBeenCalled();
     });
@@ -266,7 +262,7 @@ describe('system-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      expect(body).toEqual({});
     });
 
     it('revokes a specific session token', async () => {
@@ -280,7 +276,6 @@ describe('system-routes', () => {
         payload: { sessionToken: 'tok-123' },
       });
       expect(res.statusCode).toBe(200);
-      expect(JSON.parse(res.body).success).toBe(true);
       expect(authSessions.has('tok-123')).toBe(false);
     });
 
@@ -333,8 +328,6 @@ describe('system-routes', () => {
         payload: { showSystemStats: true, subagentTrackingEnabled: false },
       });
       expect(res.statusCode).toBe(200);
-      const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
       expect(mockedWriteFile).toHaveBeenCalled();
     });
 
@@ -347,7 +340,7 @@ describe('system-routes', () => {
         payload: { showTokenCount: false },
       });
       expect(res.statusCode).toBe(200);
-      expect(JSON.parse(res.body).success).toBe(true);
+      expect(JSON.parse(res.body)).toEqual({});
 
       // Verify writeFile was called with merged content
       const writtenContent = JSON.parse(mockedWriteFile.mock.calls[0][1] as string);
@@ -377,7 +370,7 @@ describe('system-routes', () => {
         payload: { lastUsedCase: 'my-test-case' },
       });
       expect(res.statusCode).toBe(200);
-      expect(JSON.parse(res.body).success).toBe(true);
+      expect(JSON.parse(res.body)).toEqual({});
 
       const writtenContent = JSON.parse(mockedWriteFile.mock.calls[0][1] as string);
       expect(writtenContent.lastUsedCase).toBe('my-test-case');
@@ -439,7 +432,7 @@ describe('system-routes', () => {
         payload: { minimized: { 'agent-1': true }, open: ['agent-2'] },
       });
       expect(res.statusCode).toBe(200);
-      expect(JSON.parse(res.body).success).toBe(true);
+      expect(JSON.parse(res.body)).toEqual({});
       expect(mockedWriteFile).toHaveBeenCalled();
     });
 
@@ -450,7 +443,7 @@ describe('system-routes', () => {
         payload: { minimized: {}, open: [] },
       });
       expect(res.statusCode).toBe(200);
-      expect(JSON.parse(res.body).success).toBe(true);
+      expect(JSON.parse(res.body)).toEqual({});
     });
 
     it('rejects invalid minimized values', async () => {
@@ -496,7 +489,7 @@ describe('system-routes', () => {
         payload: { 'agent-1': 'session-abc' },
       });
       expect(res.statusCode).toBe(200);
-      expect(JSON.parse(res.body).success).toBe(true);
+      expect(JSON.parse(res.body)).toEqual({});
       expect(mockedWriteFile).toHaveBeenCalled();
     });
 
@@ -507,7 +500,7 @@ describe('system-routes', () => {
         payload: {},
       });
       expect(res.statusCode).toBe(200);
-      expect(JSON.parse(res.body).success).toBe(true);
+      expect(JSON.parse(res.body)).toEqual({});
     });
 
     it('rejects non-string values in parent map', async () => {
@@ -629,7 +622,6 @@ describe('system-routes', () => {
       const res = await harness.app.inject({ method: 'GET', url: '/api/session-lifecycle' });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
       expect(body.entries).toEqual(mockEntries);
     });
 
@@ -754,7 +746,7 @@ describe('system-routes', () => {
         payload: { model: 'claude-3', temperature: 0.5 },
       });
       expect(res.statusCode).toBe(200);
-      expect(JSON.parse(res.body).success).toBe(true);
+      expect(JSON.parse(res.body)).toEqual({});
       expect(mockedWriteFile).toHaveBeenCalled();
 
       // Verify the written content contains modelConfig
@@ -771,7 +763,7 @@ describe('system-routes', () => {
         payload: { model: 'new-model' },
       });
       expect(res.statusCode).toBe(200);
-      expect(JSON.parse(res.body).success).toBe(true);
+      expect(JSON.parse(res.body)).toEqual({});
 
       const writtenContent = JSON.parse(mockedWriteFile.mock.calls[0][1] as string);
       expect(writtenContent.showCost).toBe(true);
@@ -972,7 +964,7 @@ describe('system-routes', () => {
 
       const res = await harness.app.inject({ method: 'POST', url: '/api/tunnel/qr/regenerate' });
       expect(res.statusCode).toBe(200);
-      expect(JSON.parse(res.body).success).toBe(true);
+      expect(JSON.parse(res.body)).toEqual({});
     });
   });
 });

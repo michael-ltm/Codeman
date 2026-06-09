@@ -50,15 +50,15 @@ Object.assign(CodemanApp.prototype, {
       let lastUsedCase = null;
       try {
         const settings = settingsPromise ? await settingsPromise : await fetch('/api/settings').then(r => r.ok ? r.json() : null);
-        if (settings) {
-          lastUsedCase = settings.lastUsedCase || null;
+        if (settings && settings.data) {
+          lastUsedCase = settings.data.lastUsedCase || null;
         }
       } catch {
         // Ignore settings load errors
       }
 
       const res = await fetch('/api/cases');
-      const cases = await res.json();
+      const cases = (await res.json()).data;
       this.cases = cases;
       console.log('[loadQuickStartCases] Loaded cases:', cases.map(c => c.name), 'lastUsedCase:', lastUsedCase);
 
@@ -125,7 +125,7 @@ Object.assign(CodemanApp.prototype, {
   async updateDirDisplayForCase(caseName) {
     try {
       const res = await fetch(`/api/cases/${caseName}`);
-      const data = await res.json();
+      const data = (await res.json()).data;
       if (data.path) {
         document.getElementById('dirDisplay').textContent = data.path;
         document.getElementById('dirInput').value = data.path;
@@ -304,7 +304,7 @@ Object.assign(CodemanApp.prototype, {
     try {
       // Get case path first
       const caseRes = await fetch(`/api/cases/${caseName}`);
-      let caseData = await caseRes.json();
+      let caseData = (await caseRes.json()).data;
 
       // Create the case if it doesn't exist
       if (!caseData.path) {
@@ -373,7 +373,7 @@ Object.assign(CodemanApp.prototype, {
       const sessionIds = [];
       for (const result of createResults) {
         if (!result.success) throw new Error(result.error);
-        sessionIds.push(result.session.id);
+        sessionIds.push(result.data.session.id);
       }
       firstSessionId = sessionIds[0];
 
@@ -452,7 +452,7 @@ Object.assign(CodemanApp.prototype, {
     try {
       // Get the case path
       const caseRes = await fetch(`/api/cases/${caseName}`);
-      let caseData = await caseRes.json();
+      let caseData = (await caseRes.json()).data;
 
       // Create the case if it doesn't exist
       if (!caseData.path) {
@@ -501,7 +501,7 @@ Object.assign(CodemanApp.prototype, {
       const sessionIds = [];
       for (const result of createResults) {
         if (!result.success) throw new Error(result.error);
-        sessionIds.push(result.session.id);
+        sessionIds.push(result.data.session.id);
       }
 
       // Step 2: Start all shells in parallel
@@ -545,7 +545,7 @@ Object.assign(CodemanApp.prototype, {
     try {
       // Check if OpenCode is available
       const statusRes = await fetch('/api/opencode/status');
-      const status = await statusRes.json();
+      const status = (await statusRes.json()).data;
       if (!status.available) {
         this.terminal.writeln('\x1b[1;31m OpenCode CLI not found.\x1b[0m');
         this.terminal.writeln('\x1b[90m Install with: curl -fsSL https://opencode.ai/install | bash\x1b[0m');
@@ -570,8 +570,8 @@ Object.assign(CodemanApp.prototype, {
 
       // Switch to the new session (don't pre-set activeSessionId — selectSession
       // early-returns when IDs match, skipping buffer load and sendResize)
-      if (data.sessionId) {
-        await this.selectSession(data.sessionId);
+      if (data.data.sessionId) {
+        await this.selectSession(data.data.sessionId);
       }
 
       this.terminal.focus();
@@ -789,8 +789,8 @@ Object.assign(CodemanApp.prototype, {
     try {
       const res = await fetch(`/api/sessions/${sessionId}/respawn/config`);
       const data = await res.json();
-      if (data.success && data.config) {
-        const c = data.config;
+      if (data.success && data.data && data.data.config) {
+        const c = data.data.config;
         document.getElementById('modalRespawnPrompt').value = c.updatePrompt || 'update all the docs and CLAUDE.md';
         document.getElementById('modalRespawnSendClear').checked = c.sendClear ?? true;
         document.getElementById('modalRespawnSendInit').checked = c.sendInit ?? true;

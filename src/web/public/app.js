@@ -597,7 +597,7 @@ class CodemanApp {
     // Fetch tunnel status for header indicator (desktop only)
     this.loadTunnelStatus();
     // Share a single settings fetch between both consumers
-    const settingsPromise = fetch('/api/settings').then(r => r.ok ? r.json() : null).catch(() => null);
+    const settingsPromise = fetch('/api/settings').then(r => r.ok ? r.json() : null).then(env => env?.data ?? null).catch(() => null);
     this.loadQuickStartCases(null, settingsPromise);
     this._initRunMode();
     this.setupEventListeners();
@@ -1531,13 +1531,13 @@ class CodemanApp {
     try {
       // Source 1: Transcript JSONL (best quality — clean structured text from Claude)
       const res = await fetch(`/api/sessions/${this.activeSessionId}/last-response`);
-      const data = await res.json();
+      const data = (await res.json())?.data ?? {};
       let lastResponse = data.text || '';
 
       // Source 2: Terminal buffer fallback — strip ANSI, drop Claude CLI chrome
       if (!lastResponse) {
         const termRes = await fetch(`/api/sessions/${this.activeSessionId}/terminal`);
-        const termData = await termRes.json();
+        const termData = (await termRes.json())?.data ?? {};
         if (termData.terminalBuffer) {
           lastResponse = this._cleanTerminalBuffer(termData.terminalBuffer);
         }
@@ -1567,7 +1567,7 @@ class CodemanApp {
     if (moreBtn) moreBtn.textContent = '...';
     try {
       const res = await fetch(`/api/sessions/${this.activeSessionId}/last-response?context=full`);
-      const data = await res.json();
+      const data = (await res.json())?.data ?? {};
       const messages = data.messages || [];
       const body = document.getElementById('responseViewerBody');
       const title = document.getElementById('responseViewerTitle');
@@ -1618,7 +1618,7 @@ class CodemanApp {
     if (this._isLoadingBuffer) return;
     try {
       const res = await fetch(`/api/sessions/${this.activeSessionId}/terminal?tail=${TERMINAL_TAIL_SIZE}`);
-      const data = await res.json();
+      const data = (await res.json())?.data ?? {};
       if (data.terminalBuffer) {
         this.terminal.clear();
         this.terminal.reset();
@@ -1648,7 +1648,7 @@ class CodemanApp {
       // Fetch buffer, clear terminal, write buffer, resize (no Ctrl+L needed)
       try {
         const res = await fetch(`/api/sessions/${data.id}/terminal`);
-        const termData = await res.json();
+        const termData = (await res.json())?.data ?? {};
 
         this.terminal.clear();
         this.terminal.reset();
@@ -2254,7 +2254,7 @@ class CodemanApp {
     try {
       const res = await fetch('/api/status');
       const data = await res.json();
-      this.handleInit(data);
+      this.handleInit(data?.data ?? {});
     } catch (err) {
       console.error('Failed to load state:', err);
     }
@@ -2938,7 +2938,7 @@ class CodemanApp {
       _crashDiag.log('FETCH_START');
       const res = await fetch(`/api/sessions/${sessionId}/terminal?tail=${TERMINAL_TAIL_SIZE}`);
       if (this._isStaleSelect(selectGen)) return;
-      const data = await res.json();
+      const data = (await res.json())?.data ?? {};
       _crashDiag.log(`FETCH_DONE: ${data.terminalBuffer ? (data.terminalBuffer.length/1024).toFixed(0) + 'KB' : 'empty'} truncated=${data.truncated}`);
 
       if (data.terminalBuffer) {

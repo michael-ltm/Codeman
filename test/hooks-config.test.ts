@@ -32,21 +32,21 @@ describe('generateHooksConfig', () => {
   it('should configure idle_prompt matcher', () => {
     const config = generateHooksConfig();
     const notifHooks = config.hooks.Notification as Array<{ matcher?: string }>;
-    const idleHook = notifHooks.find(h => h.matcher === 'idle_prompt');
+    const idleHook = notifHooks.find((h) => h.matcher === 'idle_prompt');
     expect(idleHook).toBeDefined();
   });
 
   it('should configure permission_prompt matcher', () => {
     const config = generateHooksConfig();
     const notifHooks = config.hooks.Notification as Array<{ matcher?: string }>;
-    const permHook = notifHooks.find(h => h.matcher === 'permission_prompt');
+    const permHook = notifHooks.find((h) => h.matcher === 'permission_prompt');
     expect(permHook).toBeDefined();
   });
 
   it('should configure elicitation_dialog matcher', () => {
     const config = generateHooksConfig();
     const notifHooks = config.hooks.Notification as Array<{ matcher?: string }>;
-    const elicitHook = notifHooks.find(h => h.matcher === 'elicitation_dialog');
+    const elicitHook = notifHooks.find((h) => h.matcher === 'elicitation_dialog');
     expect(elicitHook).toBeDefined();
   });
 
@@ -146,7 +146,7 @@ describe('writeHooksConfig', () => {
     mkdirSync(claudeDir, { recursive: true });
     writeFileSync(
       join(claudeDir, 'settings.local.json'),
-      JSON.stringify({ existingKey: 'existingValue', permissions: { allow: ['Read'] } }, null, 2),
+      JSON.stringify({ existingKey: 'existingValue', permissions: { allow: ['Read'] } }, null, 2)
     );
 
     await writeHooksConfig(testDir);
@@ -160,10 +160,7 @@ describe('writeHooksConfig', () => {
   it('should overwrite existing hooks key', async () => {
     const claudeDir = join(testDir, '.claude');
     mkdirSync(claudeDir, { recursive: true });
-    writeFileSync(
-      join(claudeDir, 'settings.local.json'),
-      JSON.stringify({ hooks: { oldHook: [] } }, null, 2),
-    );
+    writeFileSync(join(claudeDir, 'settings.local.json'), JSON.stringify({ hooks: { oldHook: [] } }, null, 2));
 
     await writeHooksConfig(testDir);
 
@@ -214,7 +211,7 @@ describe('Hook Event API', () => {
       body: JSON.stringify({}),
     });
     const createData = await createRes.json();
-    testSessionId = createData.session.id;
+    testSessionId = createData.data.session.id;
   });
 
   afterAll(async () => {
@@ -396,7 +393,7 @@ describe('Hook Data Sanitization', () => {
       body: JSON.stringify({}),
     });
     const createData = await createRes.json();
-    testSessionId = createData.session.id;
+    testSessionId = createData.data.session.id;
   });
 
   afterAll(async () => {
@@ -641,7 +638,7 @@ describe('Hook Config Generation - Extended', () => {
   it('should include all event types', () => {
     const config = generateHooksConfig();
     const notifHooks = config.hooks.Notification as Array<{ matcher?: string }>;
-    const matchers = notifHooks.map(n => n.matcher);
+    const matchers = notifHooks.map((n) => n.matcher);
     expect(matchers).toContain('idle_prompt');
     expect(matchers).toContain('permission_prompt');
     expect(matchers).toContain('elicitation_dialog');
@@ -694,7 +691,10 @@ describe('Hook Config Generation - Extended', () => {
 
   it('should have consistent structure across all notification hooks', () => {
     const config = generateHooksConfig();
-    const notifHooks = config.hooks.Notification as Array<{ matcher: string; hooks: Array<{ type: string; command: string; timeout: number }> }>;
+    const notifHooks = config.hooks.Notification as Array<{
+      matcher: string;
+      hooks: Array<{ type: string; command: string; timeout: number }>;
+    }>;
 
     for (const hook of notifHooks) {
       expect(hook.matcher).toBeDefined();

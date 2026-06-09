@@ -61,7 +61,7 @@ describe('Ralph Integration Tests', () => {
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(data)).toBe(true);
+      expect(Array.isArray(data.data)).toBe(true);
     });
 
     it('should create a new session via quick-start', async () => {
@@ -76,8 +76,8 @@ describe('Ralph Integration Tests', () => {
       const data = await res.json();
 
       expect(data.success).toBe(true);
-      expect(data.sessionId).toBeDefined();
-      createdSessions.push(data.sessionId);
+      expect(data.data.sessionId).toBeDefined();
+      createdSessions.push(data.data.sessionId);
     });
 
     it('should get session details by ID', async () => {
@@ -91,15 +91,15 @@ describe('Ralph Integration Tests', () => {
         body: JSON.stringify({ caseName }),
       });
       const createData = await createRes.json();
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
       // Get session details
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}`);
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}`);
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(data.id).toBe(createData.sessionId);
-      expect(data.workingDir).toContain(caseName);
+      expect(data.data.id).toBe(createData.data.sessionId);
+      expect(data.data.workingDir).toContain(caseName);
     });
 
     it('should return error for non-existent session', async () => {
@@ -122,7 +122,7 @@ describe('Ralph Integration Tests', () => {
         body: JSON.stringify({ caseName }),
       });
       const createData = await createRes.json();
-      const sessionId = createData.sessionId;
+      const sessionId = createData.data.sessionId;
 
       // Delete session
       const deleteRes = await fetch(`${baseUrl}/api/sessions/${sessionId}`, {
@@ -152,13 +152,13 @@ describe('Ralph Integration Tests', () => {
       const data = await res.json();
 
       expect(data.success).toBe(true);
-      expect(data.sessionId).toBeDefined();
-      createdSessions.push(data.sessionId);
+      expect(data.data.sessionId).toBeDefined();
+      createdSessions.push(data.data.sessionId);
 
       // Verify mode
-      const sessionRes = await fetch(`${baseUrl}/api/sessions/${data.sessionId}`);
+      const sessionRes = await fetch(`${baseUrl}/api/sessions/${data.data.sessionId}`);
       const sessionData = await sessionRes.json();
-      expect(sessionData.mode).toBe('shell');
+      expect(sessionData.data.mode).toBe('shell');
     });
   });
 
@@ -175,9 +175,9 @@ describe('Ralph Integration Tests', () => {
         body: JSON.stringify({ caseName }),
       });
       const createData = await createRes.json();
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-state`);
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-state`);
       const data = await res.json();
 
       expect(res.status).toBe(200);
@@ -206,7 +206,7 @@ describe('Ralph Integration Tests', () => {
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(data)).toBe(true);
+      expect(Array.isArray(data.data)).toBe(true);
     });
 
     it('should create a new case', async () => {
@@ -244,7 +244,7 @@ describe('Ralph Integration Tests', () => {
       });
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(409);
       expect(data.success).toBe(false);
       expect(data.error).toContain('already exists');
     });
@@ -265,15 +265,15 @@ describe('Ralph Integration Tests', () => {
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(data.name).toBe(caseName);
-      expect(data.path).toContain(caseName);
+      expect(data.data.name).toBe(caseName);
+      expect(data.data.path).toContain(caseName);
     });
 
     it('should return error for non-existent case', async () => {
       const res = await fetch(`${baseUrl}/api/cases/non-existent-case-12345`);
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
       expect(data.error).toBe('Case not found');
     });
   });
@@ -286,18 +286,18 @@ describe('Ralph Integration Tests', () => {
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(data.sessions).toBeDefined();
-      expect(data.scheduledRuns).toBeDefined();
-      expect(data.respawnStatus).toBeDefined();
-      expect(data.timestamp).toBeDefined();
+      expect(data.data.sessions).toBeDefined();
+      expect(data.data.scheduledRuns).toBeDefined();
+      expect(data.data.respawnStatus).toBeDefined();
+      expect(data.data.timestamp).toBeDefined();
     });
 
     it('should include sessions array in status', async () => {
       const res = await fetch(`${baseUrl}/api/status`);
       const data = await res.json();
 
-      expect(Array.isArray(data.sessions)).toBe(true);
-      expect(typeof data.timestamp).toBe('number');
+      expect(Array.isArray(data.data.sessions)).toBe(true);
+      expect(typeof data.data.timestamp).toBe('number');
     });
   });
 
@@ -309,9 +309,9 @@ describe('Ralph Integration Tests', () => {
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(data.sessions).toBeDefined();
-      expect(Array.isArray(data.sessions)).toBe(true);
-      expect(typeof data.muxAvailable).toBe('boolean');
+      expect(data.data.sessions).toBeDefined();
+      expect(Array.isArray(data.data.sessions)).toBe(true);
+      expect(typeof data.data.muxAvailable).toBe('boolean');
     });
   });
 
@@ -328,9 +328,9 @@ describe('Ralph Integration Tests', () => {
         body: JSON.stringify({ caseName }),
       });
       const createData = await createRes.json();
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/input`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/input`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input: 'test input' }),
@@ -351,9 +351,9 @@ describe('Ralph Integration Tests', () => {
         body: JSON.stringify({ caseName }),
       });
       const createData = await createRes.json();
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/input`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/input`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input: null }),
@@ -393,12 +393,12 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
       // Wait for session to be ready
       await new Promise((r) => setTimeout(r, 200));
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/resize`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/resize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cols: 120, rows: 40 }),
@@ -420,12 +420,12 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
       // Wait for session to be ready
       await new Promise((r) => setTimeout(r, 200));
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/resize`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/resize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cols: -1, rows: 40 }),
@@ -452,9 +452,9 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/auto-compact`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/auto-compact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true, threshold: 100000 }),
@@ -489,9 +489,9 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/auto-compact`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/auto-compact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true, threshold: -100 }),
@@ -516,9 +516,9 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/auto-clear`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/auto-clear`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true, threshold: 150000 }),
@@ -553,9 +553,9 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/auto-clear`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/auto-clear`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true, threshold: -50 }),
@@ -582,9 +582,9 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-config`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true }),
@@ -606,9 +606,9 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-config`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reset: true }),
@@ -643,9 +643,9 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-config`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reset: 'full' }),
@@ -667,9 +667,9 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-config`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true, completionPhrase: 'DONE' }),
@@ -680,7 +680,7 @@ describe('Ralph Integration Tests', () => {
       expect(data.success).toBe(true);
 
       // Verify the state was updated
-      const stateRes = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-state`);
+      const stateRes = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-state`);
       const stateData = await stateRes.json();
 
       expect(stateData.success).toBe(true);
@@ -698,9 +698,9 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-config`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ disableAutoEnable: true }),
@@ -726,9 +726,9 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-state`);
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-state`);
       const data = await res.json();
 
       expect(res.status).toBe(200);
@@ -750,17 +750,17 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
       // Enable ralph tracking
-      await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-config`, {
+      await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true, completionPhrase: 'TASK_DONE' }),
       });
 
       // Check state
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-state`);
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-state`);
       const data = await res.json();
 
       expect(data.success).toBe(true);
@@ -779,17 +779,17 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
       // Enable first
-      await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-config`, {
+      await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true }),
       });
 
       // Then reset
-      const resetRes = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-config`, {
+      const resetRes = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reset: true }),
@@ -799,7 +799,7 @@ describe('Ralph Integration Tests', () => {
       expect(resetData.success).toBe(true);
 
       // Check that todos are cleared
-      const stateRes = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-state`);
+      const stateRes = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-state`);
       const stateData = await stateRes.json();
 
       expect(stateData.success).toBe(true);
@@ -817,24 +817,24 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
       // Enable tracking
-      await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-config`, {
+      await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true }),
       });
 
       // Soft reset (keep enabled)
-      await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-config`, {
+      await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reset: true }),
       });
 
       // Check state
-      const stateRes = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-state`);
+      const stateRes = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-state`);
       const stateData = await stateRes.json();
 
       expect(stateData.success).toBe(true);
@@ -852,24 +852,24 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
       // Enable tracking
-      await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-config`, {
+      await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true }),
       });
 
       // Full reset
-      await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-config`, {
+      await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reset: 'full' }),
       });
 
       // Check state
-      const stateRes = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/ralph-state`);
+      const stateRes = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/ralph-state`);
       const stateData = await stateRes.json();
 
       expect(stateData.success).toBe(true);
@@ -891,13 +891,13 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/respawn`);
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/respawn`);
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(data.enabled).toBe(false);
+      expect(data.data.enabled).toBe(false);
     });
 
     it('should return error for respawn start on non-existent session', async () => {
@@ -924,14 +924,14 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/respawn/stop`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/respawn/stop`, {
         method: 'POST',
       });
       const data = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
       expect(data.success).toBe(false);
       expect(data.errorCode).toBe('NOT_FOUND');
     });
@@ -947,9 +947,9 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/respawn/config`, {
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/respawn/config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idleTimeoutMs: 10000 }),
@@ -958,7 +958,7 @@ describe('Ralph Integration Tests', () => {
 
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
-      expect(data.config.idleTimeoutMs).toBe(10000);
+      expect(data.data.config.idleTimeoutMs).toBe(10000);
     });
   });
 
@@ -976,9 +976,9 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/output`);
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/output`);
       const data = await res.json();
 
       expect(res.status).toBe(200);
@@ -1008,14 +1008,14 @@ describe('Ralph Integration Tests', () => {
       });
       const createData = await createRes.json();
       expect(createData.success).toBe(true);
-      createdSessions.push(createData.sessionId);
+      createdSessions.push(createData.data.sessionId);
 
-      const res = await fetch(`${baseUrl}/api/sessions/${createData.sessionId}/terminal`);
+      const res = await fetch(`${baseUrl}/api/sessions/${createData.data.sessionId}/terminal`);
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(data.terminalBuffer).toBeDefined();
-      expect(data.status).toBeDefined();
+      expect(data.data.terminalBuffer).toBeDefined();
+      expect(data.data.status).toBeDefined();
     });
 
     it('should return error for terminal of non-existent session', async () => {

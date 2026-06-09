@@ -19,7 +19,7 @@ export function registerMuxRoutes(app: FastifyInstance, ctx: InfraPort): void {
   app.delete('/api/mux-sessions/:sessionId', async (req) => {
     const { sessionId } = req.params as { sessionId: string };
     const success = await ctx.mux.killSession(sessionId);
-    return { success };
+    return { killed: success };
   });
 
   app.post('/api/mux-sessions/reconcile', async () => {
@@ -29,11 +29,11 @@ export function registerMuxRoutes(app: FastifyInstance, ctx: InfraPort): void {
 
   app.post('/api/mux-sessions/stats/start', async () => {
     ctx.mux.startStatsCollection(STATS_COLLECTION_INTERVAL_MS);
-    return { success: true };
+    return {};
   });
 
   app.post('/api/mux-sessions/stats/stop', async () => {
     ctx.mux.stopStatsCollection();
-    return { success: true };
+    return {};
   });
 }

@@ -868,7 +868,7 @@ Object.assign(CodemanApp.prototype, {
   async _fetchHistorySessions() {
     const res = await fetch('/api/history/sessions');
     const data = await res.json();
-    const sessions = data.sessions || [];
+    const sessions = data.data?.sessions || [];
     if (sessions.length === 0) return [];
 
     const byProject = new Map();
@@ -1046,7 +1046,7 @@ Object.assign(CodemanApp.prototype, {
       // Prefer already-loaded this.cases to avoid an extra request.
       const casesPromise = Array.isArray(this.cases) && this.cases.length > 0
         ? Promise.resolve(this.cases)
-        : fetch('/api/cases').then((r) => (r.ok ? r.json() : [])).catch(() => []);
+        : fetch('/api/cases').then((r) => (r.ok ? r.json() : null)).then((d) => d?.data || []).catch(() => []);
       const [allSessions, cases] = await Promise.all([
         this._fetchHistorySessions(30),
         casesPromise,
@@ -1173,8 +1173,8 @@ Object.assign(CodemanApp.prototype, {
       const url = `/api/history/sessions?projectKey=${encodeURIComponent(projectKey)}&offset=${offset}&limit=${limit}`;
       const res = await fetch(url);
       const data = await res.json();
-      const sessions = data.sessions || [];
-      state.total = typeof data.total === 'number' ? data.total : sessions.length + offset;
+      const sessions = data.data?.sessions || [];
+      state.total = typeof data.data?.total === 'number' ? data.data.total : sessions.length + offset;
 
       if (offset === 0 && sessions.length === 0) {
         const empty = document.createElement('div');
@@ -1261,7 +1261,7 @@ Object.assign(CodemanApp.prototype, {
       const createData = await createRes.json();
       if (!createData.success) throw new Error(createData.error);
 
-      const newSessionId = createData.session.id;
+      const newSessionId = createData.data.session.id;
 
       // Start interactive
       await fetch(`/api/sessions/${newSessionId}/interactive`, { method: 'POST' });
