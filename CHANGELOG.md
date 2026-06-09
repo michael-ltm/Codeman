@@ -1,5 +1,15 @@
 # aicodeman
 
+## 0.9.6
+
+### Patch Changes
+
+- Self-updater: show live progress during the slow steps so an update no longer looks frozen.
+  - The detached update runner (`scripts/self-update.sh`) now emits a heartbeat every few seconds during `npm install` and `npm run build`, refreshing the update status with the latest output line (full output is still written to the update log).
+  - App Settings → Updates now shows the live status message plus a ticking elapsed-time counter during non-terminal phases, instead of only a static phase label.
+
+  This takes effect when updating _from_ a build that includes it — the detached runner script and the polling UI are both the from-version's copies.
+
 ## 0.9.5
 
 ### Patch Changes
