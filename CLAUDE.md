@@ -66,7 +66,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 
 **TypeScript Strictness** (see `tsconfig.json`): `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`, `noImplicitOverride`, `noFallthroughCasesInSwitch`, `allowUnreachableCode: false`, `allowUnusedLabels: false`.
 
-**Requirements**: Node.js 18+, Claude CLI, tmux
+**Requirements**: Node.js 22+, Claude CLI, tmux
 
 **Git**: Main branch is `master`. SSH session chooser: `sc` (interactive), `sc 2` (quick attach), `sc -l` (list).
 
