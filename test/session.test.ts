@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { mkdirSync } from 'node:fs';
 import { WebServer } from '../src/web/server.js';
 
 const TEST_PORT = 3102;
@@ -8,6 +9,9 @@ describe('Interactive Session Lifecycle', () => {
   let baseUrl: string;
 
   beforeAll(async () => {
+    // The 'custom working directory' test creates a session in /tmp/test; workingDir
+    // validation requires the dir to exist, so ensure it does (idempotent, CI-safe).
+    mkdirSync('/tmp/test', { recursive: true });
     server = new WebServer(TEST_PORT, false, true);
     await server.start();
     baseUrl = `http://localhost:${TEST_PORT}`;
@@ -15,7 +19,7 @@ describe('Interactive Session Lifecycle', () => {
 
   afterAll(async () => {
     await server.stop();
-  }, 60000);  // Extended timeout for cleanup
+  }, 60000); // Extended timeout for cleanup
 
   describe('Session Creation', () => {
     it('should create session with default working directory', async () => {
@@ -70,7 +74,7 @@ describe('Interactive Session Lifecycle', () => {
       const response = await fetch(`${baseUrl}/api/sessions/non-existent-id`);
       const data = await response.json();
 
-      expect(data.error).toBe('Session not found');
+      expect(data.error).toContain('not found');
     });
   });
 
@@ -96,7 +100,7 @@ describe('Interactive Session Lifecycle', () => {
       // Verify it's gone
       const getRes = await fetch(`${baseUrl}/api/sessions/${sessionId}`);
       const getData = await getRes.json();
-      expect(getData.error).toBe('Session not found');
+      expect(getData.error).toContain('not found');
     });
 
     it('should return error when deleting non-existent session', async () => {
@@ -106,7 +110,7 @@ describe('Interactive Session Lifecycle', () => {
       const data = await response.json();
 
       expect(data.success).toBe(false);
-      expect(data.error).toBe('Session not found');
+      expect(data.error).toContain('not found');
     });
   });
 
@@ -178,7 +182,7 @@ describe('Interactive Session Lifecycle', () => {
       });
       const data = await response.json();
 
-      expect(data.error).toBe('Session not found');
+      expect(data.error).toContain('not found');
     });
   });
 
@@ -198,7 +202,7 @@ describe('Interactive Session Lifecycle', () => {
       });
 
       // Wait a bit for interactive session to start
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Send input
       const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/input`, {

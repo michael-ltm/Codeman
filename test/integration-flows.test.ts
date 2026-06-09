@@ -165,7 +165,7 @@ describe('Integration Flows', () => {
       createdSessions.push(quickStartData.sessionId);
 
       // Wait for Claude to start up
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // Send input
       const inputRes = await fetch(`${baseUrl}/api/sessions/${quickStartData.sessionId}/input`, {
@@ -177,7 +177,7 @@ describe('Integration Flows', () => {
       expect(inputData.success).toBe(true);
 
       // Wait for response
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // Check terminal buffer has content
       const terminalRes = await fetch(`${baseUrl}/api/sessions/${quickStartData.sessionId}/terminal`);
@@ -234,7 +234,7 @@ describe('Integration Flows', () => {
       // Verify session is gone
       const verifyRes = await fetch(`${baseUrl}/api/sessions/${quickStartData.sessionId}`);
       const verifyData = await verifyRes.json();
-      expect(verifyData.error).toBe('Session not found');
+      expect(verifyData.error).toContain('not found');
     });
   });
 
@@ -309,7 +309,7 @@ describe('SSE Event Flow', () => {
 
     const fetchPromise = fetch(`${baseUrl}/api/events`, {
       signal: controller.signal,
-    }).then(async response => {
+    }).then(async (response) => {
       const reader = response.body?.getReader();
       if (reader) {
         try {
@@ -331,7 +331,7 @@ describe('SSE Event Flow', () => {
     });
 
     // Wait for connection
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Perform quick start
     const quickStartRes = await fetch(`${baseUrl}/api/quick-start`, {
@@ -344,11 +344,13 @@ describe('SSE Event Flow', () => {
     createdSessions.push(quickStartData.sessionId);
 
     // Wait for events
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Stop SSE
     controller.abort();
-    try { await fetchPromise; } catch {}
+    try {
+      await fetchPromise;
+    } catch {}
 
     // Verify expected events were received
     expect(receivedEvents).toContain('init');

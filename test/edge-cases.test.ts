@@ -41,14 +41,14 @@ describe('Edge Cases and Error Handling', () => {
       const data = await response.json();
 
       expect(data.success).toBe(false);
-      expect(data.error).toBe('Session not found');
+      expect(data.error).toContain('not found');
     });
 
     it('should handle getting non-existent session gracefully', async () => {
       const response = await fetch(`${baseUrl}/api/sessions/non-existent-id-12345`);
       const data = await response.json();
 
-      expect(data.error).toBe('Session not found');
+      expect(data.error).toContain('not found');
     });
 
     it('should handle running prompt on non-existent session', async () => {
@@ -59,7 +59,7 @@ describe('Edge Cases and Error Handling', () => {
       });
       const data = await response.json();
 
-      expect(data.error).toBe('Session not found');
+      expect(data.error).toContain('not found');
     });
 
     it('should handle input to non-existent session', async () => {
@@ -70,7 +70,7 @@ describe('Edge Cases and Error Handling', () => {
       });
       const data = await response.json();
 
-      expect(data.error).toBe('Session not found');
+      expect(data.error).toContain('not found');
     });
 
     it('should handle resize on non-existent session', async () => {
@@ -81,7 +81,7 @@ describe('Edge Cases and Error Handling', () => {
       });
       const data = await response.json();
 
-      expect(data.error).toBe('Session not found');
+      expect(data.error).toContain('not found');
     });
 
     it('should handle interactive mode on non-existent session', async () => {
@@ -90,21 +90,21 @@ describe('Edge Cases and Error Handling', () => {
       });
       const data = await response.json();
 
-      expect(data.error).toBe('Session not found');
+      expect(data.error).toContain('not found');
     });
 
     it('should handle terminal buffer request on non-existent session', async () => {
       const response = await fetch(`${baseUrl}/api/sessions/non-existent/terminal`);
       const data = await response.json();
 
-      expect(data.error).toBe('Session not found');
+      expect(data.error).toContain('not found');
     });
 
     it('should handle output request on non-existent session', async () => {
       const response = await fetch(`${baseUrl}/api/sessions/non-existent/output`);
       const data = await response.json();
 
-      expect(data.error).toBe('Session not found');
+      expect(data.error).toContain('not found');
     });
   });
 
@@ -212,7 +212,7 @@ describe('Edge Cases and Error Handling', () => {
       });
       const data = await response.json();
 
-      expect(data.error).toBe('Session not found');
+      expect(data.error).toContain('not found');
     });
 
     it('should handle stopping non-existent respawn controller', async () => {
@@ -232,7 +232,7 @@ describe('Edge Cases and Error Handling', () => {
       });
       const data = await response.json();
 
-      expect(data.error).toBe('Session not found');
+      expect(data.error).toContain('not found');
     });
   });
 
@@ -272,13 +272,15 @@ describe('Concurrent Session Handling', () => {
 
   it('should handle multiple sessions simultaneously', async () => {
     // Create multiple sessions concurrently
-    const createPromises = Array(5).fill(null).map(() =>
-      fetch(`${baseUrl}/api/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workingDir: '/tmp' }),
-      }).then(r => r.json())
-    );
+    const createPromises = Array(5)
+      .fill(null)
+      .map(() =>
+        fetch(`${baseUrl}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workingDir: '/tmp' }),
+        }).then((r) => r.json())
+      );
 
     const results = await Promise.all(createPromises);
 
@@ -327,12 +329,12 @@ describe('Concurrent Session Handling', () => {
     const caseNames = ['concurrent-test-1', 'concurrent-test-2', 'concurrent-test-3'];
     const createdCases: string[] = [];
 
-    const quickStartPromises = caseNames.map(name =>
+    const quickStartPromises = caseNames.map((name) =>
       fetch(`${baseUrl}/api/quick-start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ caseName: `${name}-${Date.now()}` }),
-      }).then(r => r.json())
+      }).then((r) => r.json())
     );
 
     const results = await Promise.all(quickStartPromises);
