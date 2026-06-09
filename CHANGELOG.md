@@ -1,5 +1,13 @@
 # aicodeman
 
+## 0.9.7
+
+### Patch Changes
+
+- Fix installer failure on corrupt puppeteer cache + add Simplified Chinese README.
+  - **Installer / self-update reliability**: The universal installer (`install.sh`) and the in-app self-updater (`scripts/self-update.sh`) now set `PUPPETEER_SKIP_DOWNLOAD=1` before `npm install`. `puppeteer` is a devDependency used only by `scripts/browser-comparison.mjs`; its ~150MB `chrome-headless-shell` download is never needed to build or run Codeman. Previously, a partially-downloaded browser cache (folder present, executable missing) made puppeteer refuse to re-download and abort `npm install`, which failed the entire install/update — most visibly on macOS (`mac_arm`). The download is now skipped on both paths; callers can still opt back in with `PUPPETEER_SKIP_DOWNLOAD=0`.
+  - **Docs**: Added a Simplified Chinese translation of the README (`README.zh-CN.md`) with an English/中文 language switcher in `README.md`. Refreshed the README and documented the v0.9.5 security hardening (Host-header/DNS-rebinding guard, cross-site Origin/CSRF guard, anti-CSWSH WebSocket validation).
+
 ## 0.9.6
 
 ### Patch Changes

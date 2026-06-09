@@ -22,6 +22,12 @@
 #
 set -uo pipefail
 
+# puppeteer is a devDependency (scripts/browser-comparison.mjs only) — its chrome
+# download is never needed to build or run Codeman, and a corrupt prior download
+# (folder present, executable missing) makes `npm install` fail fatally. Skip it
+# for every npm install below (initial install + rollback). Caller can override.
+export PUPPETEER_SKIP_DOWNLOAD="${PUPPETEER_SKIP_DOWNLOAD:-1}"
+
 REPO=""
 TAG=""
 SUPERVISOR="none"

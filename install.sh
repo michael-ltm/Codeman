@@ -26,6 +26,13 @@ TARGET_NODE_VERSION="${CODEMAN_NODE_VERSION:-22}"
 NONINTERACTIVE="${CODEMAN_NONINTERACTIVE:-0}"
 SKIP_SYSTEMD="${CODEMAN_SKIP_SYSTEMD:-0}"
 
+# puppeteer is a devDependency used only by scripts/browser-comparison.mjs — its
+# ~150MB chrome-headless-shell download is never needed to build or run Codeman.
+# Skipping it avoids a slow download and a fatal install failure when a prior
+# download left a corrupt cache (folder present, executable missing). Respect an
+# explicit caller override so contributors can still fetch the browser if needed.
+export PUPPETEER_SKIP_DOWNLOAD="${PUPPETEER_SKIP_DOWNLOAD:-1}"
+
 # Claude CLI search paths (from src/utils/claude-cli-resolver.ts)
 CLAUDE_SEARCH_PATHS=(
     "$HOME/.local/bin/claude"
