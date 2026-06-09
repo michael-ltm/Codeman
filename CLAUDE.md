@@ -56,7 +56,7 @@ When user says "COM":
 
 CI runs `npm run check:lockfile` on every push/PR, so lockfile drift fails the build even if the `version-packages` script is bypassed.
 
-**Version**: 0.9.4 (must match `package.json`)
+**Version**: 0.9.5 (must match `package.json`)
 
 ## Project Overview
 
@@ -126,9 +126,9 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 | **State** | `src/state-store.ts`, `src/run-summary.ts`, `src/session-lifecycle-log.ts` | |
 | **Infra** | `src/hooks-config.ts`, `src/push-store.ts`, `src/tunnel-manager.ts`, `src/image-watcher.ts`, `src/file-stream-manager.ts` | |
 | **Plan** | `src/plan-orchestrator.ts`, `src/prompts/*.ts`, `src/templates/claude-md.ts` | |
-| **Web** | `src/web/server.ts`, `src/web/sse-events.ts`, `src/web/routes/*.ts` (15 route modules + barrel), `src/web/route-helpers.ts`, `src/web/ports/*.ts`, `src/web/middleware/auth.ts`, `src/web/schemas.ts` | |
+| **Web** | `src/web/server.ts`, `src/web/sse-events.ts`, `src/web/routes/*.ts` (15 route modules + barrel), `src/web/route-helpers.ts`, `src/web/ports/*.ts`, `src/web/middleware/auth.ts`, `src/web/schemas.ts`, `src/web/self-update.ts` | |
 | **Frontend** | `src/web/public/app.js` (~3.4K lines, core) + 5 infra modules (`constants.js`, `mobile-handlers.js`, `voice-input.js`, `notification-manager.js`, `keyboard-accessory.js`) + 7 domain modules (`terminal-ui.js`, `respawn-ui.js`, `ralph-panel.js`, `orchestrator-panel.js`, `settings-ui.js`, `panels-ui.js`, `session-ui.js`) + 5 feature modules (`ralph-wizard.js`, `api-client.js`, `subagent-windows.js`, `input-cjk.js`, `image-input.js`) + `sw.js` | |
-| **Types** | `src/types/index.ts` (barrel) → 14 domain files; also `src/types.ts` root re-export | See `@fileoverview` in index.ts |
+| **Types** | `src/types/index.ts` (barrel) → 15 domain files; also `src/types.ts` root re-export | See `@fileoverview` in index.ts |
 
 ★ = Large file (>50KB). All files have `@fileoverview` JSDoc — read that before diving in. Discovery aid: `grep -l '@fileoverview' src/web/routes/*.ts` lists all route modules; same grep works for `src/types/`, `src/web/public/*.js`.
 
@@ -158,6 +158,8 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 **Agent Teams**: `TeamWatcher` polls `~/.claude/teams/`, matches to sessions via `leadSessionId`. Teammates are in-process threads appearing as subagents. Enable: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. See `docs/agent-teams/`.
 
 **Circuit breaker**: Prevents respawn thrashing. States: `CLOSED` → `HALF_OPEN` → `OPEN`. Reset: `/api/sessions/:id/ralph-circuit-breaker/reset`.
+
+**Self-update** (App Settings → Updates): in-app updater for **git-clone installs** supervised by systemd/launchd. The update restarts the very process running it, so the real work runs in a DETACHED `scripts/self-update.sh` (`git checkout <release tag> && npm install && npm run build && restart`) that outlives the restart; it writes progress to `dataPath('update-status.json')`, which the browser polls across the connection drop. Channel = latest `codeman@X.Y.Z` release tag; dirty trees are auto-stashed. `src/web/self-update.ts` splits PURE helpers (semver/tag parsing, reconcile decision — unit-tested) from IO wrappers (`getInstallInfo`/`checkForUpdate`/`startUpdate`/`reconcileUpdateOnBoot`). Routes: `GET /api/system/update/check`, `POST /api/system/update`, `GET /api/system/update/status`. Types: `src/types/update.ts`. npm installs report as non-updatable.
 
 **Port interfaces**: Routes declare dependencies via port interfaces (`src/web/ports/`). Routes use intersection types (e.g., `SessionPort & EventPort`).
 
@@ -199,7 +201,7 @@ Frontend JS modules have `@fileoverview` with `@dependency`/`@loadorder` tags. L
 
 ### API Routes
 
-~130 handlers across 15 route files in `src/web/routes/`: system (37, incl. `POST /api/system/span-displays` → spawns `scripts/span-codeman.sh`), sessions (28), orchestrator (10), cases (9), ralph (9), plan (8), respawn (7), files (6), mux (5), push (4), scheduled (4), teams (2), hooks (1), clipboard (1), ws (1 WebSocket). Each file has `@fileoverview` with endpoint details.
+~134 handlers across 15 route files in `src/web/routes/`: system (40, incl. self-update `check`/`status`/`POST /api/system/update` + `POST /api/system/span-displays` → spawns `scripts/span-codeman.sh`), sessions (28), orchestrator (10), cases (9), ralph (9), plan (8), respawn (7), files (6), mux (5), push (4), scheduled (4), teams (2), hooks (1), clipboard (1), ws (1 WebSocket). Each file has `@fileoverview` with endpoint details.
 
 ## Adding Features
 
@@ -214,7 +216,7 @@ Frontend JS modules have `@fileoverview` with `@dependency`/`@loadorder` tags. L
 
 ## State Files
 
-All in `~/.codeman/`: `state.json` (sessions, settings, respawn), `mux-sessions.json` (tmux recovery), `settings.json` (user prefs), `push-keys.json` (VAPID), `push-subscriptions.json`, `session-lifecycle.jsonl` (audit log).
+All in `~/.codeman/`: `state.json` (sessions, settings, respawn), `mux-sessions.json` (tmux recovery), `settings.json` (user prefs), `push-keys.json` (VAPID), `push-subscriptions.json`, `session-lifecycle.jsonl` (audit log), `update-status.json` (self-updater progress, polled across the service restart).
 
 ## Testing
 

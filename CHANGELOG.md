@@ -1,5 +1,18 @@
 # aicodeman
 
+## 0.9.5
+
+### Patch Changes
+
+- Security hardening from the 2026-06-09 adversarial review — close the remote-exploit paths that affected the default (loopback + no-password) configuration. Full report: `docs/reports/security-review-2026-06-09.md`.
+  - **Anti-DNS-rebinding Host allowlist (always on).** A new request guard rejects requests whose `Host` is a custom domain rebound to a loopback/LAN address — previously a website the operator merely visited could DNS-rebind to `127.0.0.1` and drive the entire API (arbitrary command execution, since sessions run `--dangerously-skip-permissions`). The allowlist accepts `localhost`, any bare IP literal, the bind host, `*.ts.net` / `*.trycloudflare.com` / `*.cfargotunnel.com`, the active managed tunnel, and anything in the new `CODEMAN_ALLOWED_HOSTS` env var (comma-separated; `host` or leading-dot `.suffix`).
+  - **Cross-site (CSRF) Origin guard on all state-changing requests.** Forged cross-site requests are rejected; a missing `Origin` is allowed so `curl`/CLI automation and Claude Code hooks keep working. This closes the previously CSRF-triggerable self-update, session create/input, and settings/tunnel-toggle endpoints.
+  - **`text/plain` body parser no longer JSON-parses every request body** (which let a cross-site "simple request" submit JSON with no CORS preflight). The crash-diagnostics beacon now parses its own body.
+  - **WebSocket terminal upgrade now validates `Origin`/`Host`** (blocks cross-site WebSocket hijacking that could inject keystrokes into a running agent).
+  - **Stored-XSS fix:** AI-/transcript-derived fields (tool name, tool detail, tool id, hook text) in the subagent activity panel are now HTML-escaped.
+
+  Operational note: if you front Codeman with a custom reverse-proxy domain, allow it via `CODEMAN_ALLOWED_HOSTS=host,.suffix`. Setting `CODEMAN_PASSWORD` also fully mitigates these via the existing auth hook.
+
 ## 0.9.4
 
 ### Patch Changes
