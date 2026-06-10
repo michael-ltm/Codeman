@@ -107,11 +107,11 @@ textarea:focus-visible {
   caret-color: transparent !important;
 }
 .touch-device .xterm .xterm-helper-textarea {
-  left: 0 !important;
-  top: 0 !important;
+  left: var(--xterm-helper-left, 0px) !important;
+  top: var(--xterm-helper-top, 0px) !important;
   width: 1px !important;
   height: 1px !important;
-  z-index: -1 !important;
+  z-index: 0 !important;
   font-size: 16px !important; /* prevent iOS auto-zoom on focus */
 }
 
@@ -188,6 +188,12 @@ body {
   color: #93c5fd;
   text-shadow: 0 0 12px rgba(96, 165, 250, 0.5), 0 0 24px rgba(96, 165, 250, 0.2);
   filter: brightness(1.1);
+}
+
+/* Mobile-only header utility toggle — hidden by default; the mobile/tablet
+   media queries in mobile.css (max-width: 768px) re-enable it as flex. */
+.mobile-header-utility-toggle {
+  display: none;
 }
 
 /* Session Tabs */
@@ -8672,6 +8678,33 @@ kbd {
 #cjkInput::placeholder {
   color: #495057;
   font-size: 12px;
+}
+
+.touch-device #cjkInput.cjk-input-visible {
+  position: fixed;
+  left: var(--safe-area-left);
+  right: var(--safe-area-right);
+  bottom: calc(var(--safe-area-bottom) + 40px);
+  z-index: 52;
+  display: block;
+  min-height: 44px;
+  max-height: 96px;
+  border: 1px solid rgba(80, 120, 190, 0.55);
+  border-left: none;
+  border-right: none;
+  background: #101827;
+  color: #f3f4f6;
+  box-shadow: 0 -8px 20px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease-out;
+  will-change: transform;
+}
+
+.touch-device.keyboard-visible #cjkInput.cjk-input-visible {
+  bottom: calc(var(--safe-area-bottom) + 84px);
+}
+
+body.touch-device.cjk-input-visible .main {
+  padding-bottom: calc(84px + var(--safe-area-bottom));
 }
 
 /* ═══════════════════════════════════════════════════════════════

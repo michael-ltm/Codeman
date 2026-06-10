@@ -55,7 +55,9 @@ html.mobile-init .file-browser-panel {
     padding-right: calc(0.5rem + var(--safe-area-right));
     background: #0a0a0a;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    z-index: 200;
+    contain: none;
+    overflow: visible;
+    z-index: 1200;
   }
 
   /* iOS safe area adjustment for fixed header - header extends into notch area */
@@ -92,8 +94,60 @@ html.mobile-init .file-browser-panel {
     gap: 0.25rem;
   }
 
+  .mobile-header-utility-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    margin: -4px 0.2rem -4px 0;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--text-muted);
+    order: -1;
+    position: relative;
+    z-index: 2;
+    flex-shrink: 0;
+  }
+
+  .mobile-header-utility-toggle.active,
+  .mobile-header-utility-toggle:active {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+  }
+
   .header-right {
+    position: fixed;
+    top: calc(52px + var(--safe-area-top));
+    left: calc(0.5rem + var(--safe-area-left));
+    right: auto;
+    display: flex;
+    align-items: center;
     gap: 0.35rem;
+    max-width: calc(100vw - 1rem - var(--safe-area-left) - var(--safe-area-right));
+    padding: 0.35rem;
+    background: rgba(10, 10, 10, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+    overflow-x: auto;
+    scrollbar-width: none;
+    z-index: 2000;
+  }
+
+  .header-right::-webkit-scrollbar {
+    display: none;
+  }
+
+  .header-right.mobile-collapsed {
+    display: none;
+  }
+
+  .btn-icon-header:not(.btn-sm) {
+    width: 44px;
+    height: 44px;
   }
 
   /* Compact session tabs — .tabs-two-rows override needed to match
@@ -355,7 +409,8 @@ html.mobile-init .file-browser-panel {
     overflow: hidden;
     background: #0a0a0a;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    z-index: 200;
+    contain: none;
+    z-index: 1200;
   }
 
   /* iOS safe area adjustment for fixed header - header extends into notch area */
@@ -391,8 +446,49 @@ html.mobile-init .file-browser-panel {
   }
 
   .header-right {
+    position: fixed;
+    top: calc(40px + var(--safe-area-top));
+    left: calc(0.3rem + var(--safe-area-left));
+    right: auto;
+    display: flex;
+    align-items: center;
     padding-left: 0.2rem;
     gap: 0.1rem;
+    max-width: calc(100vw - 0.6rem - var(--safe-area-left) - var(--safe-area-right));
+    padding: 0.25rem;
+    background: rgba(10, 10, 10, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-left: none;
+    z-index: 2000;
+  }
+
+  .header-right::-webkit-scrollbar {
+    display: none;
+  }
+
+  .header-right.mobile-collapsed {
+    display: none;
+  }
+
+  .mobile-header-utility-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    margin: -6px 0.15rem -6px 0;
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+    color: var(--text-muted);
+    order: -1;
+    position: relative;
+    z-index: 2;
     flex-shrink: 0;
     border-left: none;
   }
@@ -445,7 +541,18 @@ html.mobile-init .file-browser-panel {
     background: rgba(239, 68, 68, 0.25);
     border-color: rgba(239, 68, 68, 0.6);
     color: #ef4444;
-    animation: voice-pulse 1.2s ease-in-out infinite;
+    animation: mobile-voice-pulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes mobile-voice-pulse {
+    0%, 100% {
+      box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.35);
+      background: rgba(239, 68, 68, 0.2);
+    }
+    50% {
+      box-shadow: inset 0 0 0 2px rgba(239, 68, 68, 0.75);
+      background: rgba(239, 68, 68, 0.35);
+    }
   }
 
   /* Mobile app settings gear in toolbar - far right */
@@ -491,7 +598,8 @@ html.mobile-init .file-browser-panel {
     top: 0;
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: auto;
+    height: var(--app-height, 100dvh);
   }
 
   /* Ultra-compact session tabs — .tabs-two-rows override needed to match
@@ -548,10 +656,10 @@ html.mobile-init .file-browser-panel {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.5rem;
+    font-size: 0.65rem;
     line-height: 1;
-    width: 12px;
-    height: 12px;
+    width: 32px;
+    height: 32px;
     margin-left: auto;
     opacity: 0.6;
   }
@@ -615,6 +723,10 @@ html.mobile-init .file-browser-panel {
   .toolbar-center {
     display: flex !important;
     align-items: center;
+  }
+
+  .toolbar-center .btn-toolbar.btn-voice {
+    display: none !important;
   }
 
   .toolbar-right {
@@ -798,9 +910,17 @@ html.mobile-init .file-browser-panel {
 
   .btn-toolbar.btn-shell {
     flex: 0 0 auto;
-    min-width: fit-content;
+    min-width: 54px;
+    width: 54px;
     white-space: nowrap;
-    padding: 0 10px !important;
+    padding: 0 8px !important;
+    overflow: hidden;
+    font-size: 0 !important;
+  }
+
+  .btn-toolbar.btn-shell::after {
+    content: "Shell";
+    font-size: 0.65rem;
   }
 
   /* Mobile case button - visible on mobile */
@@ -841,6 +961,24 @@ html.mobile-init .file-browser-panel {
   .btn-case-settings-mobile:active {
     background: rgba(255, 255, 255, 0.1);
     color: #fff;
+  }
+
+  @media (max-width: 374px) {
+    .toolbar {
+      padding: 0 2px;
+    }
+
+    .toolbar-left,
+    .toolbar-left .toolbar-group,
+    .toolbar-left .toolbar-group:first-child {
+      gap: 2px;
+    }
+  }
+
+  @media (max-width: 430px) {
+    .btn-case-settings-mobile {
+      display: none !important;
+    }
   }
 
   /* Mobile case settings popover */
@@ -1241,6 +1379,16 @@ html.mobile-init .file-browser-panel {
     min-height: 44px;
     padding: 0.75rem 1rem;
     font-size: 0.85rem;
+  }
+
+  .history-show-more {
+    display: block;
+    margin-bottom: 0.75rem;
+  }
+
+  .welcome-ralph-link {
+    display: block;
+    margin: 0.75rem auto 0;
   }
 
   .welcome-hint {

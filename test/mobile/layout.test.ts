@@ -151,6 +151,145 @@ describe('Mobile Layout', () => {
     });
   });
 
+  // ─── Toolbar Collision Regression ───────────────────────────────────────
+
+  describe('Toolbar Collision Regression', () => {
+    it('keeps phone toolbar controls inside the viewport', async () => {
+      const device = DEVICE_REGISTRY.find((d) => d.name === 'iPhone 8')!;
+      const { context, page } = await createDevicePage(device, BASE_URL, 'chromium');
+      try {
+        await page.waitForTimeout(WAIT.PAGE_SETTLE);
+        const layout = await page.evaluate(() => {
+          const buttons = [...document.querySelectorAll('.toolbar button')]
+            .filter((el): el is HTMLButtonElement => {
+              const rect = el.getBoundingClientRect();
+              const style = getComputedStyle(el);
+              return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+            })
+            .map((el) => {
+              const rect = el.getBoundingClientRect();
+              return {
+                selector: el.id ? `#${el.id}` : `.${[...el.classList].join('.')}`,
+                left: rect.left,
+                right: rect.right,
+              };
+            });
+          return {
+            overflow: buttons.filter(({ left, right }) => left < 0 || right > window.innerWidth),
+            caseWidth: document.querySelector('.btn-case-mobile')?.getBoundingClientRect().width ?? 0,
+          };
+        });
+
+        expect(layout.overflow).toEqual([]);
+        expect(layout.caseWidth).toBeGreaterThanOrEqual(36);
+      } finally {
+        await context.close();
+      }
+    });
+
+    it('does not render the desktop voice button at the 430px phone/tablet boundary', async () => {
+      const device = REPRESENTATIVE_DEVICES['large-phone'];
+      const { context, page } = await createDevicePage(device, BASE_URL, 'chromium');
+      try {
+        await page.waitForTimeout(WAIT.PAGE_SETTLE);
+        await assertHidden(page, '#voiceInputBtn');
+        await assertVisible(page, '#voiceInputBtnMobile');
+      } finally {
+        await context.close();
+      }
+    });
+
+    it('uses phone upload and voice controls without toolbar overlap', async () => {
+      const device = REPRESENTATIVE_DEVICES['small-phone'];
+      const { context, page } = await createDevicePage(device, BASE_URL, 'chromium');
+      try {
+        await page.waitForTimeout(WAIT.PAGE_SETTLE);
+        expect(await page.locator('.toolbar-center .btn-upload').isVisible()).toBe(false);
+        await assertVisible(page, '.btn-upload-mobile');
+        await assertVisible(page, '#voiceInputBtnMobile');
+
+        const violations = await page.evaluate(() => {
+          const visibleToolbarButtons = [...document.querySelectorAll('.toolbar button')]
+            .filter((el): el is HTMLButtonElement => {
+              const rect = el.getBoundingClientRect();
+              const style = getComputedStyle(el);
+              return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+            })
+            .map((el) => ({
+              selector: el.id ? `#${el.id}` : `.${[...el.classList].join('.')}`,
+              rect: el.getBoundingClientRect(),
+            }));
+
+          const overlaps: string[] = [];
+          for (let i = 0; i < visibleToolbarButtons.length; i += 1) {
+            for (let j = i + 1; j < visibleToolbarButtons.length; j += 1) {
+              const a = visibleToolbarButtons[i];
+              const b = visibleToolbarButtons[j];
+              const intersects =
+                a.rect.left < b.rect.right &&
+                a.rect.right > b.rect.left &&
+                a.rect.top < b.rect.bottom &&
+                a.rect.bottom > b.rect.top;
+              if (intersects) {
+                overlaps.push(`${a.selector} overlaps ${b.selector}`);
+              }
+            }
+          }
+          return overlaps;
+        });
+
+        expect(violations).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
+    it('keeps the mobile recording mic effect inside the button bounds', async () => {
+      const device = REPRESENTATIVE_DEVICES['small-phone'];
+      const { context, page } = await createDevicePage(device, BASE_URL, 'chromium');
+      try {
+        await page.waitForTimeout(WAIT.PAGE_SETTLE);
+        await page.evaluate(() => {
+          document.getElementById('voiceInputBtnMobile')?.classList.add('recording');
+        });
+
+        const shadow = await page.evaluate(() => {
+          const button = document.getElementById('voiceInputBtnMobile');
+          return button ? getComputedStyle(button).boxShadow : '';
+        });
+
+        expect(shadow).toContain('inset');
+        expect(shadow).not.toContain(' 6px ');
+      } finally {
+        await context.close();
+      }
+    });
+
+    it('keeps desktop upload and voice controls in one centered row', async () => {
+      const { context, page } = await createDevicePage(iPadPro, BASE_URL, 'chromium');
+      try {
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.waitForTimeout(WAIT.PAGE_SETTLE);
+        await assertVisible(page, '.toolbar-center .btn-upload');
+        await assertVisible(page, '#voiceInputBtn');
+
+        const layout = await page.evaluate(() => {
+          const upload = document.querySelector('.toolbar-center .btn-upload')!.getBoundingClientRect();
+          const voice = document.querySelector('#voiceInputBtn')!.getBoundingClientRect();
+          return {
+            centerYDifference: Math.abs(upload.top + upload.height / 2 - (voice.top + voice.height / 2)),
+            centerXDifference: Math.abs(upload.left + upload.width / 2 - (voice.left + voice.width / 2)),
+          };
+        });
+
+        expect(layout.centerYDifference).toBeLessThanOrEqual(2);
+        expect(layout.centerXDifference).toBeGreaterThan(20);
+      } finally {
+        await context.close();
+      }
+    });
+  });
+
   // ─── Device Classes ───────────────────────────────────────────────────────
 
   describe('Device Classes', () => {
@@ -164,7 +303,7 @@ describe('Mobile Layout', () => {
     });
 
     it('Android user agent does NOT add ios-device', async () => {
-      const pixel = DEVICE_REGISTRY.find(d => d.name === 'Pixel 7')!;
+      const pixel = DEVICE_REGISTRY.find((d) => d.name === 'Pixel 7')!;
       const { context, page } = await createDevicePage(pixel, BASE_URL);
       try {
         await assertNotHasClass(page, 'body', BODY_CLASSES.IOS);
@@ -273,7 +412,7 @@ describe('Mobile Layout', () => {
         if (violations.length > 0) {
           console.warn(
             `Touch target violations (${violations.length}):\n` +
-            violations.map(v => `  ${v.selector}: ${v.width}x${v.height}px`).join('\n'),
+              violations.map((v) => `  ${v.selector}: ${v.width}x${v.height}px`).join('\n')
           );
         }
         // Allow known small elements — notification action buttons (26x26px),

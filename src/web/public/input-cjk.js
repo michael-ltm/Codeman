@@ -41,6 +41,8 @@
 // eslint-disable-next-line no-unused-vars
 const CjkInput = (() => {
   let _textarea = null;
+  let _terminalContainer = null;
+  let _xtermTextarea = null;
   let _send = null;
   let _initialized = false;
   let _composing = false;
@@ -75,6 +77,23 @@ const CjkInput = (() => {
     _textarea.setSelectionRange(1, 1);
   }
 
+  function _isMobileComposer() {
+    return !!(
+      _textarea &&
+      typeof MobileDetection !== 'undefined' &&
+      MobileDetection.isTouchDevice() &&
+      _textarea.classList.contains('cjk-input-visible')
+    );
+  }
+
+  function _resetInput() {
+    if (_isMobileComposer()) {
+      _textarea.value = '';
+    } else {
+      _resetToPhantom();
+    }
+  }
+
   /** Check if textarea contains only phantom(s) or is empty — no real user text */
   function _isEffectivelyEmpty() {
     return !_strip(_textarea.value);
@@ -97,24 +116,44 @@ const CjkInput = (() => {
       _composing = false;
       _textarea = document.getElementById('cjkInput');
       if (!_textarea) return this;
+      _terminalContainer = document.getElementById('terminalContainer');
 
-      // Seed the phantom character
-      _resetToPhantom();
+      // Seed the phantom character for the hidden/immediate CJK path.
+      _resetInput();
 
       _listeners.mousedown = (e) => { e.stopPropagation(); };
       _listeners.focus = () => {
         window.cjkActive = true;
+        if (_isMobileComposer() && _textarea.value === PHANTOM) {
+          _textarea.value = '';
+          return;
+        }
         // Restore phantom if textarea was emptied while blurred
-        if (!_textarea.value) _resetToPhantom();
+        if (!_textarea.value && !_isMobileComposer()) _resetToPhantom();
       };
       _listeners.blur = () => { window.cjkActive = false; };
       _textarea.addEventListener('mousedown', _listeners.mousedown);
       _textarea.addEventListener('focus', _listeners.focus);
       _textarea.addEventListener('blur', _listeners.blur);
 
+      _listeners.xtermFocusRedirect = () => {
+        if (!_isMobileComposer()) return;
+        _textarea.focus();
+      };
+      if (_terminalContainer) {
+        _xtermTextarea = _terminalContainer.querySelector('.xterm-helper-textarea');
+        if (_xtermTextarea) {
+          _xtermTextarea.addEventListener('focus', _listeners.xtermFocusRedirect, { capture: true });
+        }
+      }
+
       // ── Composition tracking ──
       _listeners.compositionstart = () => {
         _composing = true;
+        if (_isMobileComposer()) {
+          if (_textarea.value === PHANTOM) _textarea.value = '';
+          return;
+        }
         // Clear phantom so IME sees a clean textarea — some IMEs include
         // existing text in the composition region which would corrupt input.
         if (_textarea.value === PHANTOM) {
@@ -123,6 +162,7 @@ const CjkInput = (() => {
       };
       _listeners.compositionend = () => {
         _composing = false;
+        if (_isMobileComposer()) return;
         // Defer flush: some Android IMEs haven't committed text to textarea
         // when compositionend fires. setTimeout(0) ensures we read the final value.
         setTimeout(_flush, 0);
@@ -145,7 +185,7 @@ const CjkInput = (() => {
           } else {
             _send('\r');
           }
-          _resetToPhantom();
+          _resetInput();
           return;
         }
 
@@ -153,7 +193,7 @@ const CjkInput = (() => {
         if (e.key === 'Escape') {
           e.preventDefault();
           _composing = false;
-          _resetToPhantom();
+          _resetInput();
           return;
         }
 
@@ -166,6 +206,19 @@ const CjkInput = (() => {
 
         // Below: only when NOT composing (composing keystrokes belong to IME)
         if (_composing) return;
+
+        if (_isMobileComposer()) {
+          if (e.key === 'Backspace' && _isEffectivelyEmpty()) {
+            e.preventDefault();
+            _send('\x7f');
+            return;
+          }
+          if (PASSTHROUGH_KEYS[e.key] && _isEffectivelyEmpty()) {
+            e.preventDefault();
+            _send(PASSTHROUGH_KEYS[e.key]);
+          }
+          return;
+        }
 
         // Backspace: forward to PTY when no real text in textarea
         // (Desktop path — Android uses the input event + phantom approach)
@@ -198,6 +251,13 @@ const CjkInput = (() => {
       // making keydown unreliable. input fires AFTER character insertion and
       // carries inputType which tells us whether the text is final or tentative.
       _listeners.input = (e) => {
+        if (_isMobileComposer()) {
+          if (_textarea.value.includes(PHANTOM)) {
+            _textarea.value = _strip(_textarea.value);
+          }
+          return;
+        }
+
         // ── Backspace / delete detection ──
         // Android long-press backspace generates rapid deleteContentBackward events.
         // The phantom character ensures the textarea is never truly empty, so each
@@ -245,8 +305,13 @@ const CjkInput = (() => {
           if (handler) _textarea.removeEventListener(event, handler);
         }
       }
+      if (_xtermTextarea && _listeners.xtermFocusRedirect) {
+        _xtermTextarea.removeEventListener('focus', _listeners.xtermFocusRedirect, { capture: true });
+      }
       window.cjkActive = false;
       _composing = false;
+      _terminalContainer = null;
+      _xtermTextarea = null;
       for (const key of Object.keys(_listeners)) delete _listeners[key];
       _initialized = false;
     },

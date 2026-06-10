@@ -161,6 +161,7 @@ export const RunPromptSchema = z.object({
 export const ResizeSchema = z.object({
   cols: z.number().int().min(1).max(500),
   rows: z.number().int().min(1).max(200),
+  viewportType: z.enum(['mobile', 'tablet', 'desktop']).optional(),
 });
 
 // ========== Case Routes ==========

@@ -222,16 +222,29 @@ describe('Virtual Keyboard', () => {
       await context.close();
     });
 
-    it('toolbar slides up via translateY on keyboard show', async () => {
+    it('toolbar remains below terminal when keyboard show shrinks the app viewport', async () => {
       await showKeyboard(page, KEYBOARD.TYPICAL_IOS_HEIGHT);
       await page.waitForTimeout(WAIT.KEYBOARD_ANIMATION);
 
-      const transform = await page.evaluate(() => {
+      const layout = await page.evaluate(() => {
         const toolbar = document.querySelector('.toolbar') as HTMLElement | null;
-        return toolbar?.style.transform ?? '';
+        const accessory = document.querySelector('.keyboard-accessory-bar') as HTMLElement | null;
+        const terminalWrap = document.querySelector('.terminal-wrap') as HTMLElement | null;
+        const toolbarRect = toolbar?.getBoundingClientRect();
+        const accessoryRect = accessory?.getBoundingClientRect();
+        const terminalRect = terminalWrap?.getBoundingClientRect();
+        return {
+          toolbarTransform: toolbar?.style.transform ?? '',
+          accessoryTransform: (accessory as HTMLElement | null)?.style.transform ?? '',
+          toolbarTop: toolbarRect?.top ?? 0,
+          accessoryTop: accessoryRect?.top ?? 0,
+          terminalBottom: terminalRect?.bottom ?? 0,
+        };
       });
-      expect(transform).not.toBe('');
-      expect(transform).toContain('translateY');
+      expect(layout.toolbarTransform).toBe('');
+      expect(layout.accessoryTransform).toBe('');
+      expect(layout.accessoryTop).toBeGreaterThanOrEqual(layout.terminalBottom - 4);
+      expect(layout.toolbarTop).toBeGreaterThan(layout.accessoryTop);
     });
 
     it('accessory bar gets .visible class', async () => {
@@ -261,6 +274,32 @@ describe('Virtual Keyboard', () => {
       });
       const newPx = parseFloat(newPadding) || 0;
       expect(newPx).toBeGreaterThan(initialPx);
+    });
+
+    it('does not reserve the keyboard height as visible terminal dead space', async () => {
+      await showKeyboard(page, KEYBOARD.TYPICAL_IOS_HEIGHT);
+      await page.waitForTimeout(WAIT.KEYBOARD_ANIMATION);
+
+      const layout = await page.evaluate(() => {
+        const main = document.querySelector('.main') as HTMLElement | null;
+        const appEl = document.querySelector('.app') as HTMLElement | null;
+        const terminalWrap = document.querySelector('.terminal-wrap') as HTMLElement | null;
+        const toolbar = document.querySelector('.toolbar') as HTMLElement | null;
+        const accessory = document.querySelector('.keyboard-accessory-bar') as HTMLElement | null;
+        return {
+          appHeight: appEl?.getBoundingClientRect().height ?? 0,
+          mainPaddingBottom: main ? parseFloat(main.style.paddingBottom || '0') : 0,
+          terminalHeight: terminalWrap?.getBoundingClientRect().height ?? 0,
+          toolbarHeight: toolbar?.getBoundingClientRect().height ?? 0,
+          accessoryHeight: accessory?.getBoundingClientRect().height ?? 0,
+          visualViewportHeight: window.visualViewport?.height ?? window.innerHeight,
+        };
+      });
+
+      expect(layout.appHeight).toBeLessThanOrEqual(layout.visualViewportHeight + 2);
+      expect(layout.mainPaddingBottom).toBeLessThan(KEYBOARD.TYPICAL_IOS_HEIGHT);
+      expect(layout.mainPaddingBottom).toBeGreaterThanOrEqual(layout.toolbarHeight + layout.accessoryHeight - 4);
+      expect(layout.terminalHeight).toBeGreaterThan(160);
     });
 
     it('resetLayout clears transforms on hide', async () => {
@@ -399,6 +438,332 @@ describe('Virtual Keyboard', () => {
       const callCount = await page.evaluate(() => (window as any).__fitCallCount ?? 0);
       // Soft assertion — fitAddon may not be initialized without real terminal
       expect(callCount).toBeGreaterThanOrEqual(0);
+    });
+
+    it('keeps xterm helper textarea focusable near the terminal cursor on touch devices', async () => {
+      const styles = await page.evaluate(async () => {
+        await new Promise<void>((resolve) => app.terminal.write('prompt', resolve));
+        app.terminal.focus();
+        app._syncMobileHelperTextareaToCursor?.();
+        const textarea = document.querySelector('.xterm-helper-textarea');
+        const cursor = document.querySelector('.xterm-cursor');
+        const screen = document.querySelector('.xterm-screen');
+        if (!(textarea instanceof HTMLElement) || !(cursor instanceof HTMLElement) || !(screen instanceof HTMLElement))
+          return null;
+        const cs = getComputedStyle(textarea);
+        const cursorRect = cursor.getBoundingClientRect();
+        const screenRect = screen.getBoundingClientRect();
+        return {
+          left: cs.left,
+          top: cs.top,
+          width: cs.width,
+          height: cs.height,
+          zIndex: cs.zIndex,
+          opacity: cs.opacity,
+          cursorLeft: `${Math.max(0, Math.round(cursorRect.left - screenRect.left))}px`,
+          cursorTop: `${Math.max(0, Math.round(cursorRect.top - screenRect.top))}px`,
+        };
+      });
+
+      expect(styles).not.toBeNull();
+      expect(styles?.left).toBe(styles?.cursorLeft);
+      expect(styles?.top).toBe(styles?.cursorTop);
+      expect(styles?.cursorLeft).not.toBe('0px');
+      expect(styles?.width).toBe('1px');
+      expect(styles?.height).toBe('1px');
+      expect(styles?.opacity).toBe('0');
+      expect(Number(styles?.zIndex)).toBeGreaterThanOrEqual(0);
+    });
+
+    it('routes CJK textarea typing through local echo on Enter', async () => {
+      await page.evaluate(() => {
+        window.__sentInputs = [];
+        const sessionId = 'mobile-cjk-local-echo-test';
+        app.activeSessionId = sessionId;
+        app.sessions.set(sessionId, { id: sessionId, mode: 'codex' });
+        app._localEchoEnabled = true;
+        app._localEchoOverlay = {
+          pendingText: '',
+          appendText(text: string) {
+            this.pendingText += text;
+          },
+          removeChar() {
+            this.pendingText = this.pendingText.slice(0, -1);
+            return 'pending';
+          },
+          clear() {
+            this.pendingText = '';
+          },
+          suppressBufferDetection() {},
+        };
+        app._sendInputAsync = (_sessionId: string, input: string) => {
+          window.__sentInputs.push(input);
+        };
+        const settings = app.loadAppSettingsFromStorage();
+        settings.cjkInputEnabled = true;
+        app.saveAppSettingsToStorage(settings);
+        app._serverCjkOverride = true;
+        app._updateCjkInputState?.();
+      });
+
+      await page.locator('#cjkInput').focus();
+      await page.keyboard.type('hello');
+
+      const beforeEnter = await page.evaluate(() => ({
+        visibleText: (document.getElementById('cjkInput') as HTMLTextAreaElement).value.replace(/\u200B/g, ''),
+        pendingText: app._localEchoOverlay.pendingText,
+        sentInputs: window.__sentInputs,
+      }));
+      expect(beforeEnter.visibleText).toBe('hello');
+      expect(beforeEnter.pendingText).toBe('');
+      expect(beforeEnter.sentInputs).toEqual([]);
+
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() => window.__sentInputs?.length === 2);
+      const afterEnter = await page.evaluate(() => ({
+        pendingText: app._localEchoOverlay.pendingText,
+        sentInputs: window.__sentInputs,
+      }));
+      expect(afterEnter.pendingText).toBe('');
+      expect(afterEnter.sentInputs).toEqual(['hello', '\r']);
+    });
+
+    it('shows the CJK textarea on mobile only for server override', async () => {
+      const state = await page.evaluate(() => {
+        app._serverCjkOverride = true;
+        app._updateCjkInputState();
+
+        const input = document.getElementById('cjkInput');
+        if (!(input instanceof HTMLElement)) return null;
+        const cs = getComputedStyle(input);
+        return {
+          display: cs.display,
+          position: cs.position,
+          bottom: cs.bottom,
+          zIndex: cs.zIndex,
+          ariaHidden: input.getAttribute('aria-hidden'),
+        };
+      });
+
+      expect(state).not.toBeNull();
+      expect(state?.display).not.toBe('none');
+      expect(state?.position).toBe('fixed');
+      expect(Number(state?.zIndex)).toBeGreaterThan(50);
+      expect(state?.ariaHidden).toBe('false');
+    });
+
+    it('hides the CJK textarea by default on phones', async () => {
+      const state = await page.evaluate(() => {
+        localStorage.removeItem(app.getSettingsStorageKey());
+        app._cachedAppSettings = null;
+        app._updateCjkInputState();
+
+        const input = document.getElementById('cjkInput');
+        if (!(input instanceof HTMLElement)) return null;
+        const cs = getComputedStyle(input);
+        return {
+          display: cs.display,
+          position: cs.position,
+          bodyClass: document.body.classList.contains('cjk-input-visible'),
+        };
+      });
+
+      expect(state).not.toBeNull();
+      expect(state?.display).toBe('none');
+      expect(state?.bodyClass).toBe(false);
+    });
+
+    it('keeps the CJK textarea hidden even when old phone settings enabled it', async () => {
+      const state = await page.evaluate(() => {
+        const settings = app.loadAppSettingsFromStorage();
+        settings.cjkInputEnabled = true;
+        app.saveAppSettingsToStorage(settings);
+        app._updateCjkInputState();
+
+        const input = document.getElementById('cjkInput');
+        if (!(input instanceof HTMLElement)) return null;
+        const cs = getComputedStyle(input);
+        return {
+          display: cs.display,
+          position: cs.position,
+          bodyClass: document.body.classList.contains('cjk-input-visible'),
+        };
+      });
+
+      expect(state).not.toBeNull();
+      expect(state?.display).toBe('none');
+      expect(state?.bodyClass).toBe(false);
+    });
+
+    it('focuses the terminal helper textarea when the terminal is tapped', async () => {
+      await page.evaluate(() => {
+        app.activeSessionId = 'mobile-focus-visible-input-test';
+        app.sessions.set('mobile-focus-visible-input-test', {
+          id: 'mobile-focus-visible-input-test',
+          mode: 'codex',
+          status: 'running',
+        });
+        app.hideWelcome();
+        const settings = app.loadAppSettingsFromStorage();
+        settings.cjkInputEnabled = false;
+        app.saveAppSettingsToStorage(settings);
+        app._updateCjkInputState();
+      });
+
+      await page.locator('#terminalContainer').tap({ position: { x: 40, y: 40 } });
+
+      const activeClass = await page.evaluate(() => document.activeElement?.className);
+      expect(activeClass).toContain('xterm-helper-textarea');
+    });
+
+    it('keeps terminal touch drag available for scrollback with the visible textarea enabled', async () => {
+      const calls = await page.evaluate(async () => {
+        app.activeSessionId = 'mobile-touch-scroll-test';
+        app.sessions.set('mobile-touch-scroll-test', {
+          id: 'mobile-touch-scroll-test',
+          mode: 'codex',
+          status: 'running',
+        });
+        app.hideWelcome();
+        app._updateCjkInputState();
+
+        const originalScrollLines = app.terminal.scrollLines.bind(app.terminal);
+        const scrollCalls: number[] = [];
+        app.terminal.scrollLines = (lines: number) => {
+          scrollCalls.push(lines);
+          return originalScrollLines(lines);
+        };
+
+        const target =
+          document.querySelector('#terminalContainer .xterm-screen') ?? document.getElementById('terminalContainer');
+        if (!target) return scrollCalls;
+        const rect = target.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const startY = rect.top + Math.min(180, rect.height - 20);
+        const endY = startY - 120;
+
+        function createTouch(y: number) {
+          return new Touch({
+            identifier: 1,
+            target,
+            clientX: x,
+            clientY: y,
+            pageX: x,
+            pageY: y,
+          });
+        }
+
+        target.dispatchEvent(
+          new TouchEvent('touchstart', {
+            touches: [createTouch(startY)],
+            changedTouches: [createTouch(startY)],
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+        target.dispatchEvent(
+          new TouchEvent('touchmove', {
+            touches: [createTouch(endY)],
+            changedTouches: [createTouch(endY)],
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+        target.dispatchEvent(
+          new TouchEvent('touchend', {
+            touches: [],
+            changedTouches: [createTouch(endY)],
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return scrollCalls;
+      });
+
+      expect(calls.length).toBeGreaterThan(0);
+      expect(calls.some((lines) => lines !== 0)).toBe(true);
+    });
+
+    it('keeps typed phone text in the terminal local echo path', async () => {
+      await page.evaluate(() => {
+        window.__sentInputs = [];
+        app.activeSessionId = 'mobile-visible-input-test';
+        app.sessions.set('mobile-visible-input-test', {
+          id: 'mobile-visible-input-test',
+          mode: 'codex',
+          status: 'running',
+        });
+        app.hideWelcome();
+        app._sendInputAsync = (_sessionId: string, input: string) => {
+          window.__sentInputs.push(input);
+        };
+        const settings = app.loadAppSettingsFromStorage();
+        settings.cjkInputEnabled = false;
+        settings.localEchoEnabled = true;
+        app.saveAppSettingsToStorage(settings);
+        app._updateCjkInputState();
+        app._updateLocalEchoState();
+        app.terminal.focus();
+      });
+
+      await page.locator('#terminalContainer').tap({ position: { x: 40, y: 40 } });
+      await page.keyboard.type('find bug');
+
+      const beforeEnter = await page.evaluate(() => ({
+        activeClass: document.activeElement?.className,
+        cjkDisplay: getComputedStyle(document.getElementById('cjkInput') as HTMLElement).display,
+        pendingText: app._localEchoOverlay?.pendingText,
+        sentInputs: window.__sentInputs,
+      }));
+      expect(beforeEnter.activeClass).toContain('xterm-helper-textarea');
+      expect(beforeEnter.cjkDisplay).toBe('none');
+      expect(beforeEnter.pendingText).toBe('find bug');
+      expect(beforeEnter.sentInputs).toEqual([]);
+
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() => window.__sentInputs?.join('') === 'find bug\r');
+
+      const afterEnter = await page.evaluate(() => ({
+        pendingText: app._localEchoOverlay?.pendingText,
+        sentInputs: window.__sentInputs,
+      }));
+      expect(afterEnter.pendingText).toBe('');
+      expect(afterEnter.sentInputs.join('')).toBe('find bug\r');
+    });
+
+    it('shows terminal local echo at the cursor when no prompt marker is visible', async () => {
+      await page.evaluate(async () => {
+        app.activeSessionId = 'mobile-cursor-fallback-test';
+        app.sessions.set('mobile-cursor-fallback-test', {
+          id: 'mobile-cursor-fallback-test',
+          mode: 'codex',
+          status: 'running',
+        });
+        app.hideWelcome();
+        const settings = app.loadAppSettingsFromStorage();
+        settings.cjkInputEnabled = false;
+        settings.localEchoEnabled = true;
+        app.saveAppSettingsToStorage(settings);
+        app._updateCjkInputState();
+        app._updateLocalEchoState();
+        app.terminal.reset();
+        await new Promise<void>((resolve) => app.terminal.write('working without prompt marker', resolve));
+        app.terminal.focus();
+      });
+
+      await page.keyboard.type('abc');
+
+      const state = await page.evaluate(() => ({
+        cjkDisplay: getComputedStyle(document.getElementById('cjkInput') as HTMLElement).display,
+        pendingText: app._localEchoOverlay?.pendingText,
+        overlayState: app._localEchoOverlay?.state,
+      }));
+
+      expect(state.cjkDisplay).toBe('none');
+      expect(state.pendingText).toBe('abc');
+      expect(state.overlayState?.visible).toBe(true);
+      expect(state.overlayState?.promptPosition).not.toBeNull();
     });
   });
 

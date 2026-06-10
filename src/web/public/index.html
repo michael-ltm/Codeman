@@ -69,6 +69,10 @@
         <span class="logo" onclick="app.goHome()" title="Go to main page">Codeman</span>
       </div>
 
+      <button class="mobile-header-utility-toggle" id="mobileHeaderUtilityToggle" type="button" aria-label="Toggle header utilities" aria-controls="headerRight" aria-expanded="false" title="Header utilities">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+      </button>
+
       <!-- Session Tabs -->
       <div class="session-tabs" id="sessionTabs" role="tablist" aria-label="Session tabs">
       </div>
@@ -76,7 +80,7 @@
       <!-- Detached single-session window title (shown only in solo mode) -->
       <div class="solo-session-title" id="soloSessionTitle" style="display: none;" aria-live="polite"></div>
 
-      <div class="header-right">
+      <div class="header-right mobile-collapsed" id="headerRight">
         <button class="btn-icon-header btn-solo-redock" id="soloRedockBtn" style="display: none;" onclick="window.close()" title="Re-dock to dashboard (close window)" aria-label="Re-dock session to dashboard">&#x229E;</button>
         <button class="tunnel-indicator" id="tunnelIndicator" style="display: none;" onclick="app.toggleTunnelPanel()" title="Cloudflare Tunnel" aria-label="Tunnel status">
           <span class="tunnel-dot"></span>

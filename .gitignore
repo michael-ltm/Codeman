@@ -18,6 +18,10 @@ coverage/
 test/e2e/screenshots/current/
 test/e2e/screenshots/diffs/
 
+# Mobile visual regression failure artifacts
+test/mobile/snapshots/*.actual.png
+test/mobile/snapshots/*.diff.png
+
 # Logs
 *.log
 npm-debug.log*

@@ -82,6 +82,8 @@ import { SessionTaskCache } from './session-task-cache.js';
 export type { BackgroundTask } from './task-tracker.js';
 export type { RalphTrackerState, RalphTodoItem, ActiveBashTool } from './types.js';
 
+export type ResizeViewportType = 'mobile' | 'tablet' | 'desktop';
+
 /** Line buffer flush interval (100ms) - forces processing of partial lines */
 const LINE_BUFFER_FLUSH_INTERVAL = 100;
 
@@ -2051,14 +2053,50 @@ export class Session extends EventEmitter {
   private _ptyRows = 40;
 
   /**
+   * Live WebSocket connections that have announced a desktop viewport for this
+   * session. While at least one is registered, small-viewport (mobile/tablet)
+   * resizes are ignored so a phone glancing at the session can't reflow the
+   * PTY under an active desktop view. Claims are connection-scoped: ws-routes
+   * registers them on a desktop-typed resize and releases them on socket
+   * close, so a mobile-only session (no desktop connected) keeps full control
+   * of its own size — including narrowing below the spawn default.
+   *
+   * Deliberate tradeoff: claims are WS-only because only a socket has a
+   * liveness signal. A desktop degraded to the stateless HTTP resize fallback
+   * still applies its typed resizes but holds no claim, so a concurrent phone
+   * can reflow it. This is cooperative UX arbitration, not a security
+   * boundary — untyped (legacy/API) resizes bypass claims by design.
+   */
+  private _desktopSizeClaims = new Set<symbol>();
+
+  /** Register a live desktop sizing claim (see _desktopSizeClaims). */
+  claimDesktopSizing(token: symbol): void {
+    this._desktopSizeClaims.add(token);
+  }
+
+  /** Release a desktop sizing claim when its connection goes away. */
+  releaseDesktopSizing(token: symbol): void {
+    this._desktopSizeClaims.delete(token);
+  }
+
+  /**
    * Resizes the PTY terminal dimensions.
    * Skips the resize if dimensions haven't changed to avoid triggering
    * unnecessary Ink full-screen redraws (visible flicker on tab switch).
    *
+   * Arbitration: while a desktop connection holds a sizing claim, resizes from
+   * small viewports (mobile/tablet) are ignored entirely — shrink AND grow
+   * would both reflow the desktop view. Without a desktop connected, small
+   * viewports control the PTY size freely.
+   *
    * @param cols - Number of columns (width in characters)
    * @param rows - Number of rows (height in lines)
    */
-  resize(cols: number, rows: number): void {
+  resize(cols: number, rows: number, options: { viewportType?: ResizeViewportType } = {}): void {
+    const isSmallViewport = options.viewportType === 'mobile' || options.viewportType === 'tablet';
+    if (isSmallViewport && this._desktopSizeClaims.size > 0) {
+      return;
+    }
     if (this.ptyProcess && (cols !== this._ptyCols || rows !== this._ptyRows)) {
       this._ptyCols = cols;
       this._ptyRows = rows;
@@ -2155,6 +2193,12 @@ export class Session extends EventEmitter {
     this._isStopped = true;
 
     this._clearAllTimers();
+
+    // Drop desktop sizing claims defensively. Sockets normally release their
+    // own claim on close, but a hung client's close event can lag the session
+    // teardown by up to a ping cycle — don't let a stale claim suppress
+    // mobile resizes if this Session object sees any further use.
+    this._desktopSizeClaims.clear();
 
     // Immediately cleanup Promise callbacks to prevent orphaned references
     // during the rest of stop() processing (e.g., if mux kill times out)

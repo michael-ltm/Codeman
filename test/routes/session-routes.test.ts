@@ -315,6 +315,18 @@ describe('session-routes', () => {
       expect(harness.ctx._session.resize).toHaveBeenCalledWith(120, 40);
     });
 
+    it('passes viewport type through for resize arbitration', async () => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: `/api/sessions/${harness.ctx._sessionId}/resize`,
+        payload: { cols: 48, rows: 28, viewportType: 'mobile' },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(harness.ctx._session.resize).toHaveBeenCalledWith(48, 28, { viewportType: 'mobile' });
+    });
+
     it('rejects cols exceeding max (500)', async () => {
       const res = await harness.app.inject({
         method: 'POST',

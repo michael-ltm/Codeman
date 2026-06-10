@@ -255,10 +255,9 @@ const KeyboardHandler = {
     if (heightDiff > 150 && !this.keyboardVisible) {
       this.keyboardVisible = true;
       document.body.classList.add('keyboard-visible');
-      // Restore --app-height: MobileDetection's resize listener fires before ours
-      // and may have already shrunk it for the keyboard viewport change.
-      // Use initialViewportHeight (captured before keyboard opened).
-      document.documentElement.style.setProperty('--app-height', `${this.initialViewportHeight}px`);
+      // While the keyboard is open, size the app to the visual viewport so
+      // xterm's bottom row and cursor sit above the OS keyboard.
+      document.documentElement.style.setProperty('--app-height', `${currentHeight}px`);
       this.onKeyboardShow();
     }
     // Keyboard hidden (viewport grew back close to initial)
@@ -277,6 +276,8 @@ const KeyboardHandler = {
     // state changes, orientation changes, and other viewport shifts
     if (!this.keyboardVisible) {
       this.initialViewportHeight = currentHeight;
+    } else {
+      document.documentElement.style.setProperty('--app-height', `${currentHeight}px`);
     }
 
     this.updateLayoutForKeyboard();
@@ -295,6 +296,7 @@ const KeyboardHandler = {
 
     const toolbar = document.querySelector('.toolbar');
     const accessoryBar = document.querySelector('.keyboard-accessory-bar');
+    const cjkInput = document.getElementById('cjkInput');
     const main = document.querySelector('.main');
 
     if (this.keyboardVisible) {
@@ -302,7 +304,8 @@ const KeyboardHandler = {
       // translate up so it sits at the bottom of the visual viewport.
       // This formula accounts for iOS scrolling the visual viewport (offsetTop)
       // when the user types in xterm's hidden textarea.
-      const layoutHeight = window.innerHeight;
+      const appEl = document.querySelector('.app');
+      const layoutHeight = appEl?.getBoundingClientRect().bottom || window.innerHeight;
       const visualBottom = window.visualViewport.offsetTop + window.visualViewport.height;
       const keyboardOffset = Math.max(0, layoutHeight - visualBottom);
 
@@ -317,13 +320,17 @@ const KeyboardHandler = {
       if (accessoryBar) {
         accessoryBar.style.transform = keyboardOffset > 0 ? `translateY(${-keyboardOffset}px)` : '';
       }
+      if (cjkInput?.classList.contains('cjk-input-visible')) {
+        cjkInput.style.transform = keyboardOffset > 0 ? `translateY(${-keyboardOffset}px)` : '';
+      }
 
-      // Shrink main content area so terminal doesn't extend behind keyboard.
-      // Use stable keyboard height (not scroll-dependent) for padding.
-      // 84px = toolbar (40px) + accessory bar (44px).
+      // Reserve only Codeman's visible controls. The OS keyboard is outside
+      // the visual viewport; adding its height here creates a large blank area
+      // above the mobile toolbar on iPhone.
       const keyboardHeight = this.initialViewportHeight - (window.visualViewport.height || window.innerHeight);
       if (main && keyboardHeight > 0) {
-        main.style.paddingBottom = `${keyboardHeight + 84}px`;
+        const cjkInputHeight = cjkInput?.classList.contains('cjk-input-visible') ? 44 : 0;
+        main.style.paddingBottom = `${84 + cjkInputHeight}px`;
       }
     } else {
       this.resetLayout();
@@ -334,6 +341,7 @@ const KeyboardHandler = {
   resetLayout() {
     const toolbar = document.querySelector('.toolbar');
     const accessoryBar = document.querySelector('.keyboard-accessory-bar');
+    const cjkInput = document.getElementById('cjkInput');
     const main = document.querySelector('.main');
 
     if (toolbar) {
@@ -341,6 +349,9 @@ const KeyboardHandler = {
     }
     if (accessoryBar) {
       accessoryBar.style.transform = '';
+    }
+    if (cjkInput) {
+      cjkInput.style.transform = '';
     }
     if (main) {
       main.style.paddingBottom = '';
@@ -376,6 +387,8 @@ const KeyboardHandler = {
         // to the accessory bar.
         this._shrinkPaddingToFit();
         app.terminal.scrollToBottom();
+        app._syncMobileHelperTextareaToCursor?.();
+        app._localEchoOverlay?.rerender?.();
         // Send resize to server so PTY dimensions match xterm
         this._sendTerminalResize();
       }
@@ -421,10 +434,13 @@ const KeyboardHandler = {
         const cols = Math.max(dims.cols, 40);
         const rows = Math.max(dims.rows, 10);
         app._lastResizeDims = { cols, rows };
+        // Declare the viewport type so resize arbitration can ignore this
+        // while a desktop connection is sizing the same session.
+        const viewportType = MobileDetection.getDeviceType ? MobileDetection.getDeviceType() : 'mobile';
         fetch(`/api/sessions/${app.activeSessionId}/resize`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cols, rows }),
+          body: JSON.stringify({ cols, rows, viewportType }),
         }).catch(() => {});
       }
     } catch {}

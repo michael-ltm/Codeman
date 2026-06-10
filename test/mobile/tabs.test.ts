@@ -93,6 +93,122 @@ describe('Tab Navigation', () => {
         expect(maxWidthPx).toBeGreaterThan(0);
       }
     });
+
+    it('active tab menu target is touch-sized and opens session options', async () => {
+      const hasActiveTab = await page.locator('.session-tab.active').count();
+      if (!hasActiveTab) {
+        await page.evaluate(() => {
+          const container = document.querySelector('.session-tabs');
+          if (!container) return;
+          container.innerHTML = `
+            <div class="session-tab active" data-id="mobile-menu-test">
+              <span class="tab-number">1</span>
+              <span class="tab-status idle"></span>
+              <span class="tab-info">
+                <span class="tab-name-row"><span class="tab-name">Session</span></span>
+              </span>
+              <span class="tab-gear" onclick="event.stopPropagation(); app.openSessionOptions('mobile-menu-test')" title="Session options" aria-label="Session options" tabindex="0">&#9881;</span>
+              <span class="tab-close">&times;</span>
+            </div>`;
+          (window as any).app.sessions.set('mobile-menu-test', {
+            id: 'mobile-menu-test',
+            name: 'Session',
+            status: 'idle',
+            mode: 'shell',
+            workingDir: '/tmp',
+          });
+        });
+      }
+
+      const gear = page.locator('.session-tab.active .tab-gear').first();
+      expect(await gear.isVisible()).toBe(true);
+      const box = await gear.boundingBox();
+
+      expect(box?.width ?? 0).toBeGreaterThanOrEqual(32);
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(32);
+
+      await gear.click();
+      const modalClass = await page.locator('#sessionOptionsModal').getAttribute('class');
+      expect(modalClass).toMatch(/active/);
+    });
+
+    it('top-left mobile menu button opens the header utility tray', async () => {
+      await page.evaluate(() => {
+        document.querySelectorAll('.modal.active').forEach((modal) => modal.classList.remove('active'));
+        document.getElementById('headerRight')?.classList.add('mobile-collapsed');
+        const toggle = document.getElementById('mobileHeaderUtilityToggle');
+        toggle?.classList.remove('active');
+        toggle?.setAttribute('aria-expanded', 'false');
+      });
+
+      const topLeftElements = await page.evaluate(() => {
+        return document.elementsFromPoint(16, 16).map((el) => ({
+          tag: el.tagName,
+          id: el.id,
+          className: String(el.className),
+          closestButtonId: el.closest('button')?.id ?? '',
+        }));
+      });
+
+      expect(topLeftElements[0]?.closestButtonId).toBe('mobileHeaderUtilityToggle');
+
+      const toggleBox = await page.locator('#mobileHeaderUtilityToggle').boundingBox();
+      expect(toggleBox?.width ?? 0).toBeGreaterThanOrEqual(44);
+      expect(toggleBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+      await page.touchscreen.tap(
+        (toggleBox?.x ?? 0) + (toggleBox?.width ?? 0) / 2,
+        (toggleBox?.y ?? 0) + (toggleBox?.height ?? 0) / 2
+      );
+      await page.waitForTimeout(150);
+
+      const trayClass = await page.locator('#headerRight').getAttribute('class');
+      const expanded = await page.locator('#mobileHeaderUtilityToggle').getAttribute('aria-expanded');
+      const trayBox = await page.locator('#headerRight').boundingBox();
+      const topTrayElement = await page.evaluate(() => {
+        const tray = document.getElementById('headerRight');
+        const rect = tray?.getBoundingClientRect();
+        if (!rect) return '';
+        return (
+          document
+            .elementsFromPoint(rect.left + Math.min(24, rect.width / 2), rect.top + Math.min(24, rect.height / 2))
+            .find((el) => el.id === 'headerRight' || el.closest?.('#headerRight'))
+            ?.closest?.('#headerRight')?.id ?? ''
+        );
+      });
+      expect(trayClass).not.toMatch(/mobile-collapsed/);
+      expect(expanded).toBe('true');
+      expect(trayBox?.x ?? 9999).toBeLessThanOrEqual((toggleBox?.x ?? 0) + (toggleBox?.width ?? 0) + 8);
+      expect(topTrayElement).toBe('headerRight');
+    });
+
+    it('tabs remain visible on large phone and tablet headers', async () => {
+      for (const device of [REPRESENTATIVE_DEVICES['large-phone'], REPRESENTATIVE_DEVICES['small-tablet']]) {
+        const { context: deviceContext, page: devicePage } = await createDevicePage(device, BASE_URL, 'chromium');
+        try {
+          await devicePage.waitForTimeout(WAIT.PAGE_SETTLE);
+          await devicePage.evaluate(() => {
+            const container = document.querySelector('.session-tabs');
+            if (!container) return;
+            container.innerHTML = '';
+            for (let i = 1; i <= 3; i++) {
+              const tab = document.createElement('div');
+              tab.className = i === 1 ? 'session-tab active' : 'session-tab';
+              tab.innerHTML = `<span class="tab-status idle"></span><span class="tab-name">Session ${i}</span>`;
+              container.appendChild(tab);
+            }
+          });
+
+          const tabsWidth = await devicePage.evaluate(() => {
+            return document.querySelector('.session-tabs')?.clientWidth ?? 0;
+          });
+
+          expect(tabsWidth).toBeGreaterThanOrEqual(120);
+        } finally {
+          await deviceContext.close();
+        }
+      }
+    });
   });
 
   // ─── Swipe Navigation (CDP - Chromium) ───────────────────────────────────
@@ -134,7 +250,9 @@ describe('Tab Navigation', () => {
     }
 
     async function clearSwipeLog(): Promise<void> {
-      await page.evaluate(() => { (window as any).__swipeLog = []; });
+      await page.evaluate(() => {
+        (window as any).__swipeLog = [];
+      });
     }
 
     it('swipe left calls nextSession', async () => {
@@ -193,10 +311,12 @@ describe('Tab Navigation', () => {
       const steps = 5;
       for (let i = 1; i <= steps; i++) {
         const progress = i / steps;
-        await dispatchTouchEvent(cdp, 'touchMove', [{
-          x: startX + (endX - startX) * progress,
-          y: startY + (endY - startY) * progress,
-        }]);
+        await dispatchTouchEvent(cdp, 'touchMove', [
+          {
+            x: startX + (endX - startX) * progress,
+            y: startY + (endY - startY) * progress,
+          },
+        ]);
         await page.waitForTimeout(20);
       }
       await dispatchTouchEvent(cdp, 'touchEnd', []);
@@ -451,6 +571,51 @@ describe('Tab Navigation', () => {
     });
   });
 
+  describe('Tab Touch Focus', () => {
+    it('switching tabs with the keyboard closed does not leave the terminal textarea focused', async () => {
+      const { context, page } = await createDevicePage(standardPhone, BASE_URL, 'chromium');
+      try {
+        await page.waitForTimeout(WAIT.PAGE_SETTLE);
+
+        const result = await page.evaluate(() => {
+          if (typeof app === 'undefined') return { hasHandler: false };
+          const textarea = document.querySelector('.xterm-helper-textarea');
+          if (textarea) textarea.focus();
+          if (typeof KeyboardHandler !== 'undefined') KeyboardHandler.keyboardVisible = false;
+
+          let selected: string | null = null;
+          let selectedOptions: { preserveKeyboard?: boolean } | null = null;
+          const originalSelect = app.selectSession;
+          app.selectSession = function (id, options) {
+            selected = id;
+            selectedOptions = options || {};
+            return Promise.resolve();
+          };
+
+          const event = new Event('click', { bubbles: true, cancelable: true });
+          if (typeof app.handleSessionTabClick === 'function') {
+            app.handleSessionTabClick(event, 'mock-session-2');
+          }
+          const activeIsTextarea = document.activeElement === textarea;
+          app.selectSession = originalSelect;
+          return {
+            hasHandler: typeof app.handleSessionTabClick === 'function',
+            selected: selected,
+            preserveKeyboard: selectedOptions ? selectedOptions.preserveKeyboard : undefined,
+            activeIsTextarea: activeIsTextarea,
+          };
+        });
+
+        expect(result.hasHandler).toBe(true);
+        expect(result.selected).toBe('mock-session-2');
+        expect(result.preserveKeyboard).toBe(false);
+        expect(result.activeIsTextarea).toBe(false);
+      } finally {
+        await context.close();
+      }
+    });
+  });
+
   // ─── Tab Close Button Visibility ─────────────────────────────────────────
 
   describe('Tab Close Button Visibility', () => {
@@ -521,10 +686,11 @@ describe('Tab Navigation', () => {
             const isActive = tab?.classList.contains('active') ?? false;
             const style = getComputedStyle(gear);
             // Gear hidden via display:none (mobile) or opacity:0 + width:0 (desktop)
-            const isVisible = style.display !== 'none'
-              && style.visibility !== 'hidden'
-              && parseFloat(style.opacity) > 0
-              && parseFloat(style.width) > 0;
+            const isVisible =
+              style.display !== 'none' &&
+              style.visibility !== 'hidden' &&
+              parseFloat(style.opacity) > 0 &&
+              parseFloat(style.width) > 0;
             return { isActive, isVisible };
           });
         });

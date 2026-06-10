@@ -236,6 +236,10 @@ export class MockSession extends EventEmitter {
   /** Stub for resize */
   resize = vi.fn();
 
+  /** Stubs for the desktop sizing claims used by resize arbitration */
+  claimDesktopSizing = vi.fn();
+  releaseDesktopSizing = vi.fn();
+
   /** Stub for runPrompt */
   runPrompt = vi.fn(async () => {});
 
