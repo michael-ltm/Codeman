@@ -1,5 +1,15 @@
 # aicodeman
 
+## 0.9.12
+
+### Patch Changes
+
+- Documentation refresh — README catches up with the Codex run mode, plus a CLAUDE.md correction.
+
+  **README (en + zh-CN)**: Codex is now listed as a third supported AI coding CLI everywhere the docs previously said "Claude Code or OpenCode": the install requirement in Quick Start (now "any combination works", linking to the official Codex CLI docs), the Windows/WSL setup note, the renamed **Multi-CLI** feature bullet (env-prefix gating now reads `CLAUDE_CODE_*` vs `OPENCODE_*` vs `CODEX_*`), the Zod schema-validation security bullet, and the architecture mermaid diagram. The header tagline was also finalized to "Claude Code • OpenCode • Codex — One Dashboard • Any Device" in both languages.
+
+  **CLAUDE.md**: fixed a stale "Local packages" line that claimed the xterm-zerolag-input local-echo overlay had a copy embedded in `app.js` — it is single-source in `packages/xterm-zerolag-input/`, bundled to the gitignored vendor file, and only consumed by `app.js`, matching the existing single-source gotcha.
+
 ## 0.9.11
 
 ### Patch Changes

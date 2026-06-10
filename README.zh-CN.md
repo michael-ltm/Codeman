@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/Ark0N/Codeman/master/install.sh | b
 
 该脚本会在缺失时自动安装 Node.js 和 tmux，把 Codeman 克隆到 `~/.codeman/app` 并完成构建。
 
-你至少需要安装一个 AI 编程 CLI —— [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 或 [OpenCode](https://opencode.ai)（两个都装也可以）。安装完成后：
+你至少需要安装一个 AI 编程 CLI —— [Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[OpenCode](https://opencode.ai) 或 [Codex](https://developers.openai.com/codex/cli)（任意组合均可）。安装完成后：
 
 ```bash
 codeman web
@@ -105,7 +105,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.codeman.web.plist
 wsl bash -c "curl -fsSL https://raw.githubusercontent.com/Ark0N/Codeman/master/install.sh | bash"
 ```
 
-Codeman 依赖 tmux，因此 Windows 用户需要 [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)。如果还没装 WSL：在管理员 PowerShell 中运行 `wsl --install`，重启，打开 Ubuntu，然后在 WSL 内安装你偏好的 AI 编程 CLI（[Claude Code](https://docs.anthropic.com/en/docs/claude-code) 或 [OpenCode](https://opencode.ai)）。安装完成后，即可从 Windows 浏览器访问 `http://localhost:3000`。
+Codeman 依赖 tmux，因此 Windows 用户需要 [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)。如果还没装 WSL：在管理员 PowerShell 中运行 `wsl --install`，重启，打开 Ubuntu，然后在 WSL 内安装你偏好的 AI 编程 CLI（[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[OpenCode](https://opencode.ai) 或 [Codex](https://developers.openai.com/codex/cli)）。安装完成后，即可从 Windows 浏览器访问 `http://localhost:3000`。
 </details>
 
 ---
@@ -295,7 +295,7 @@ PTY 输出 → 16ms 服务端批处理 → DEC 2026 包裹 → SSE → 客户端
 ## 更多特性
 
 - **自更新** —— systemd/launchd 管理下的 git-clone 安装可在 **App Settings → Updates** 中原地更新：它会检测最新发行版，自动暂存（stash）脏工作树，并在服务重启期间流式展示构建进度（npm 安装会被报告为不可更新）
-- **双 CLI** —— 每个会话可选 **Claude Code** 或 **OpenCode**；环境变量前缀自动隔离（`CLAUDE_CODE_*` 与 `OPENCODE_*`）。详见 [`docs/opencode-integration.md`](docs/opencode-integration.md)
+- **多 CLI** —— 每个会话可选 **Claude Code**、**OpenCode** 或 **Codex**；环境变量前缀自动隔离（`CLAUDE_CODE_*`、`OPENCODE_*` 与 `CODEX_*`）。详见 [`docs/opencode-integration.md`](docs/opencode-integration.md)
 - **Effort 与 Ultracode** —— 设置每会话的默认 effort（`low`–`max`），或启用 **ultracode**（动态多智能体工作流）。这些都只是软默认值 —— 会话中可随时用 `/effort` 切换。扩展思考预算也可配置
 - **语音输入** —— 用 Deepgram Nova-3 口述提示（带 Web Speech API 回退）：切换录音、自动静音停止、实时音量表（`Ctrl+Shift+V`）
 - **图像输入** —— 直接把图片粘贴或拖放进会话
@@ -449,7 +449,7 @@ Codeman 用 `--dangerously-skip-permissions` 启动会话，因此 Web UI 在设
 
 ### 输入、文件与响应头
 
-- **模式校验的输入** —— 每个 API 请求体都用 Zod v4 模式检查；一个 `CLAUDE_CODE_*` / `OPENCODE_*` 环境变量前缀允许列表把控每个 CLI 能接收哪些设置
+- **模式校验的输入** —— 每个 API 请求体都用 Zod v4 模式检查；一个 `CLAUDE_CODE_*` / `OPENCODE_*` / `CODEX_*` 环境变量前缀允许列表把控每个 CLI 能接收哪些设置
 - **路径限定** —— 文件路由在边界检查前先 `realpath`（无 TOCTOU）；`..`、绝对路径、以及解析到工作目录之外的符号链接都会被拒绝。上限：10 MB 文本预览 / 50 MB 原始与下载；`/api/download` 对敏感路径（`.env`、`*credentials*`、`~/.ssh/`、`.aws/credentials`）做黑名单。SVG/HTML 以 `octet-stream` + `nosniff` + attachment 提供，因此会被下载而非执行
 - **安全响应头** —— `Content-Security-Policy`（`default-src 'self'`，每个例外都逐条列举）、`X-Content-Type-Options: nosniff`、`X-Frame-Options: SAMEORIGIN`、HTTPS 下的 HSTS，以及**仅**对 `localhost` / `127.0.0.1` / `::1` 反射的 CORS
 
@@ -581,7 +581,7 @@ flowchart TB
         end
 
         subgraph External["外部"]
-            CLI["AI CLI<br/><small>Claude Code / OpenCode</small>"]
+            CLI["AI CLI<br/><small>Claude Code / OpenCode / Codex</small>"]
             BG["后台智能体<br/><small>(Task 工具)</small>"]
         end
     end

@@ -56,7 +56,7 @@ When user says "COM":
 
 CI runs `npm run check:lockfile` on every push/PR, so lockfile drift fails the build even if the `version-packages` script is bypassed.
 
-**Version**: 0.9.11 (must match `package.json`)
+**Version**: 0.9.12 (must match `package.json`)
 
 ## Project Overview
 
@@ -134,7 +134,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 
 ★ = Large, central file (>50KB) — read its `@fileoverview` first. All files have `@fileoverview` JSDoc — read that before diving in. Discovery aid: `grep -l '@fileoverview' src/web/routes/*.ts` lists all route modules; same grep works for `src/types/`, `src/web/public/*.js`.
 
-**Local packages**: `packages/xterm-zerolag-input/` — local echo overlay for xterm.js; copy embedded in `app.js`. `packages/gesture-control/` (`codeman-gesture-control`) — hand-tracking overlay source; built to `src/web/public/gesture/gesture-codeman.js` via `npm run build:gesture` (see Frontend → Gesture control).
+**Local packages**: `packages/xterm-zerolag-input/` — local echo overlay for xterm.js; single-source, bundled to the gitignored `vendor/xterm-zerolag-input.js` and consumed by `app.js` (see Gotchas). `packages/gesture-control/` (`codeman-gesture-control`) — hand-tracking overlay source; built to `src/web/public/gesture/gesture-codeman.js` via `npm run build:gesture` (see Frontend → Gesture control).
 
 **Config**: `src/config/` — 10 files, no barrel (`index.ts`) exists; import from the specific file.
 

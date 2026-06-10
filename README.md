@@ -34,7 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/Ark0N/Codeman/master/install.sh | b
 
 This installs Node.js and tmux if missing, clones Codeman to `~/.codeman/app`, and builds it.
 
-You'll need at least one AI coding CLI installed — [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [OpenCode](https://opencode.ai) (or both). After install:
+You'll need at least one AI coding CLI installed — [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [OpenCode](https://opencode.ai), or [Codex](https://developers.openai.com/codex/cli) (any combination works). After install:
 
 ```bash
 codeman web
@@ -103,7 +103,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.codeman.web.plist
 wsl bash -c "curl -fsSL https://raw.githubusercontent.com/Ark0N/Codeman/master/install.sh | bash"
 ```
 
-Codeman requires tmux, so Windows users need [WSL](https://learn.microsoft.com/en-us/windows/wsl/install). If you don't have WSL yet: run `wsl --install` in an admin PowerShell, reboot, open Ubuntu, then install your preferred AI coding CLI inside WSL ([Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [OpenCode](https://opencode.ai)). After installing, `http://localhost:3000` is accessible from your Windows browser.
+Codeman requires tmux, so Windows users need [WSL](https://learn.microsoft.com/en-us/windows/wsl/install). If you don't have WSL yet: run `wsl --install` in an admin PowerShell, reboot, open Ubuntu, then install your preferred AI coding CLI inside WSL ([Claude Code](https://docs.anthropic.com/en/docs/claude-code), [OpenCode](https://opencode.ai), or [Codex](https://developers.openai.com/codex/cli)). After installing, `http://localhost:3000` is accessible from your Windows browser.
 </details>
 
 ---
@@ -293,7 +293,7 @@ PTY Output → 16ms Server Batch → DEC 2026 Wrap → SSE → Client rAF → xt
 ## More Features
 
 - **Self-update** — git-clone installs under systemd/launchd update in place from **App Settings → Updates**: it detects the latest release, auto-stashes a dirty tree, and streams build progress across the service restart (npm installs report as non-updatable)
-- **Dual-CLI** — run **Claude Code** or **OpenCode** per session; env-var prefixes auto-gate (`CLAUDE_CODE_*` vs `OPENCODE_*`). See [`docs/opencode-integration.md`](docs/opencode-integration.md)
+- **Multi-CLI** — run **Claude Code**, **OpenCode**, or **Codex** per session; env-var prefixes auto-gate (`CLAUDE_CODE_*` vs `OPENCODE_*` vs `CODEX_*`). See [`docs/opencode-integration.md`](docs/opencode-integration.md)
 - **Effort & Ultracode** — set a per-session default effort (`low`–`max`) or enable **ultracode** (dynamic multi-agent workflows). Soft defaults only — switchable anytime with `/effort` in-session. Extended-thinking budget is configurable too
 - **Voice input** — dictate prompts with Deepgram Nova-3 (Web Speech API fallback): toggle recording, auto-silence stop, live level meter (`Ctrl+Shift+V`)
 - **Image input** — paste or drag-and-drop images straight into a session
@@ -447,7 +447,7 @@ These run for **every** request — before auth, even on the default no-password
 
 ### Input, files & headers
 
-- **Schema-validated inputs** — every API body is checked with Zod v4 schemas; a `CLAUDE_CODE_*` / `OPENCODE_*` env-prefix allowlist gates which settings each CLI can receive
+- **Schema-validated inputs** — every API body is checked with Zod v4 schemas; a `CLAUDE_CODE_*` / `OPENCODE_*` / `CODEX_*` env-prefix allowlist gates which settings each CLI can receive
 - **Path containment** — file routes `realpath` before boundary checks (no TOCTOU); `..`, absolute paths, and symlinks resolving outside the working dir are rejected. Caps: 10 MB text preview / 50 MB raw & download; `/api/download` blocklists sensitive paths (`.env`, `*credentials*`, `~/.ssh/`, `.aws/credentials`). SVG/HTML is served `octet-stream` + `nosniff` + attachment so it downloads rather than executes
 - **Security headers** — `Content-Security-Policy` (`default-src 'self'`, every exception enumerated), `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, HSTS over HTTPS, and CORS reflected **only** for `localhost` / `127.0.0.1` / `::1`
 
@@ -579,7 +579,7 @@ flowchart TB
         end
 
         subgraph External["External"]
-            CLI["AI CLI<br/><small>Claude Code / OpenCode</small>"]
+            CLI["AI CLI<br/><small>Claude Code / OpenCode / Codex</small>"]
             BG["Background Agents<br/><small>(Task tool)</small>"]
         end
     end
