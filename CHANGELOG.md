@@ -1,5 +1,23 @@
 # aicodeman
 
+## 0.9.14
+
+### Patch Changes
+
+- Security hardening for the tunnel exposure path, Codex terminal rendering fixes, and a mobile modal fix.
+
+  **Security (PR #115, COD-54/COD-55):**
+  - `/api/hook-event` localhost bypass is now gated while the managed Cloudflare tunnel is running: tunneled traffic arrives with a loopback source IP, so the bypass additionally requires a per-instance shared secret (`X-Codeman-Hook-Secret`, 256-bit, `~/.codeman/hook-secret`, mode 0600). Locally generated hook commands read the secret file at execution time via `$CODEMAN_HOOK_SECRET_FILE` (exported into every managed session's environment), so the value never lands on command lines or in case configs, and running sessions pick up a new secret without respawn. Failed presentations rate-limit in a dedicated per-IP bucket so misfiring legacy hooks can never lock out the Basic-Auth login path. With no tunnel running, behavior is unchanged.
+  - Enabling the Cloudflare tunnel now **refuses with 403** when no `CODEMAN_PASSWORD` is set (a public tunnel URL with no auth is effectively public RCE), unless `CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK=1` explicitly acknowledges the exposure. The settings UI surfaces the refusal as an error toast and reverts the toggle.
+
+  **Codex rendering (PRs #116, #117):**
+  - Alt-screen toggles (`?47/?1047/?1049`), scrollback-erase (`CSI 3 J`), and mouse-tracking enables (`?1000`–`?1007`) are stripped from the Codex byte stream (live + replay), so conversation history survives tab switches and the scroll wheel scrolls the viewport instead of being hijacked. Sequences split across PTY chunk boundaries are reassembled via a small carry before stripping, so a split `?1049h` can no longer trap xterm in the scrollback-less alt buffer.
+  - Smaller 32KB first-frame write budget for Codex sessions keeps dense synchronized redraws from stalling the renderer; a 1.5s grace window after a manual scroll-up suppresses sticky-scroll so high-frequency `• Working (Ns)` status ticks no longer snap the viewport back to the bottom while reading earlier output.
+
+  **Mobile:** session-options modal raised above the fixed mobile/tablet header (z-index 1300 vs 1200) so the close button is reachable on phones; Respawn tab controls regrouped.
+
+  **Docs:** security-architecture.md updated for the secret-gated hook bypass (including the external-proxy caveat) and the tunnel password guard; README documents auto-resume on usage limit.
+
 ## 0.9.13
 
 ### Patch Changes

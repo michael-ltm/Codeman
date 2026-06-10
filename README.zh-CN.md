@@ -216,6 +216,7 @@ WATCHING → IDLE DETECTED → SEND UPDATE → /clear → /init → CONTINUE →
 ```
 
 - **多层空闲检测** —— 完成消息、AI 驱动的空闲检查、输出静默、token 稳定性
+- **用量限额自动恢复**（*可选，默认关闭*）—— 当 Claude 因订阅用量限额而停止（"You've hit your limit · resets 3pm"）时，Codeman 会解析重置时间，等到限额刷新（外加 2 分钟安全缓冲）后自动关闭限额对话框并发送 `continue`，让通宵任务平稳跨过 5 小时窗口而不是停摆到早晨。可识别 Claude Code 各版本的全部限额消息格式；若仍受限会自动重试；计划在 Codeman 重启后依然生效；暂停期间会阻止重生循环，避免 `/clear` 清掉等待中的对话。在会话 Respawn 标签页顶部按会话启用
 - **熔断器** —— 当 Claude 卡住时防止重生抖动（CLOSED → HALF_OPEN → OPEN 状态，跟踪连续无进展与重复错误）
 - **健康评分** —— 0–100 健康分，分项涵盖循环成功率、熔断器状态、迭代进展与卡死恢复
 - **内置预设** —— `solo-work`（3s 空闲，60min）、`subagent-workflow`（45s，240min）、`team-lead`（90s，480min）、`ralph-todo`（8s，480min）、`overnight-autonomous`（10s，480min）
