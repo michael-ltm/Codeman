@@ -151,7 +151,7 @@ Object.assign(CodemanApp.prototype, {
     return this.run();
   },
 
-  /** Run using the selected mode (Claude Code or OpenCode) */
+  /** Run using the selected mode (Claude Code, OpenCode, or Codex) */
   async run() {
     const mode = this._runMode || 'claude';
     if (mode === 'opencode') {
@@ -163,8 +163,9 @@ Object.assign(CodemanApp.prototype, {
     return this.runClaude();
   },
 
-  /** Get/set the run mode, persisted in localStorage */
-  get runMode() { return this._runMode || 'claude'; },
+  // Note: `runMode` is an accessor defined via Object.defineProperty at the bottom of
+  // this file — an object-literal getter here would be flattened to a static value by
+  // Object.assign (it copies values, not accessor descriptors).
 
   setRunMode(mode) {
     this._runMode = mode;
@@ -593,7 +594,7 @@ Object.assign(CodemanApp.prototype, {
 
     try {
       const statusRes = await fetch('/api/codex/status');
-      const status = await statusRes.json();
+      const status = (await statusRes.json()).data;
       if (!status.available) {
         this.terminal.writeln('\x1b[1;31m Codex CLI not found.\x1b[0m');
         this.terminal.writeln('\x1b[90m Install with: npm install -g @openai/codex\x1b[0m');
@@ -618,8 +619,10 @@ Object.assign(CodemanApp.prototype, {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Failed to start Codex');
 
-      if (data.sessionId) {
-        await this.selectSession(data.sessionId);
+      // Switch to the new session (don't pre-set activeSessionId — selectSession
+      // early-returns when IDs match, skipping buffer load and sendResize)
+      if (data.data.sessionId) {
+        await this.selectSession(data.data.sessionId);
       }
 
       this.terminal.focus();

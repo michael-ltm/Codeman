@@ -97,10 +97,12 @@ describe('Codex quick start settings', () => {
       document: {
         getElementById: (id: string) => elements[id] ?? null,
       },
+      // Mock responses use the real wire shape: the global preSerialization hook in
+      // server.ts wraps route payloads into the { success, data } envelope.
       fetch: async (url: string, init?: { body?: string }) => {
         requests.push({ url, body: init?.body ? JSON.parse(init.body) : undefined });
-        if (url === '/api/codex/status') return { json: async () => ({ available: true }) };
-        if (url === '/api/quick-start') return { json: async () => ({ success: true, sessionId: 'sess-1' }) };
+        if (url === '/api/codex/status') return { json: async () => ({ success: true, data: { available: true } }) };
+        if (url === '/api/quick-start') return { json: async () => ({ success: true, data: { sessionId: 'sess-1' } }) };
         throw new Error(`unexpected fetch: ${url}`);
       },
       console,
@@ -116,7 +118,10 @@ describe('Codex quick start settings', () => {
     });
     app.getCaseSettings = () => ({});
     app.buildEnvOverrides = () => ({});
-    app.selectSession = async () => {};
+    const selected: string[] = [];
+    app.selectSession = async (id: string) => {
+      selected.push(id);
+    };
 
     await app.runCodex();
 
@@ -125,5 +130,6 @@ describe('Codex quick start settings', () => {
       mode: 'codex',
       codexConfig: { dangerouslyBypassApprovals: true, renderMode: 'hybrid' },
     });
+    expect(selected).toEqual(['sess-1']);
   });
 });

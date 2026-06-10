@@ -1064,6 +1064,11 @@ body.solo-mode .btn-lifecycle-log {
   color: #10b981;
 }
 
+.session-tab .tab-mode.codex {
+  background: rgba(168, 85, 247, 0.2);
+  color: #a855f7;
+}
+
 /* Timer Banner - Compact */
 .timer-banner {
   display: flex;
@@ -2745,6 +2750,22 @@ body.solo-mode .btn-lifecycle-log {
   color: #a7f3d0;
 }
 
+/* Codex mode colors */
+.btn-toolbar.btn-run.mode-codex,
+.btn-toolbar.btn-run-gear.mode-codex {
+  background: linear-gradient(135deg, #2a0a3e 0%, #350b4d 50%, #400d5e 100%);
+  border-color: rgba(168, 85, 247, 0.5);
+  color: #d8b4fe;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.btn-toolbar.btn-run.mode-codex:hover,
+.btn-toolbar.btn-run-gear.mode-codex:hover {
+  background: linear-gradient(135deg, #400d5e 0%, #581c87 50%, #6b21a8 100%);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.35), 0 2px 8px rgba(168, 85, 247, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-color: rgba(192, 132, 252, 0.6);
+  color: #e9d5ff;
+}
+
 /* Dropdown menu */
 .run-mode-menu {
   display: none;
@@ -2797,6 +2818,7 @@ body.solo-mode .btn-lifecycle-log {
 }
 .run-mode-dot.claude { background: #3b82f6; }
 .run-mode-dot.opencode { background: #10b981; }
+.run-mode-dot.codex { background: #a855f7; }
 
 .run-mode-sep {
   height: 1px;

@@ -9,7 +9,7 @@ import { join, dirname, resolve, relative, isAbsolute } from 'node:path';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { ApiErrorCode, createErrorResponse, getErrorMessage, type ApiResponse } from '../../types.js';
-import { Session } from '../../session.js';
+import { Session, isExternalCliMode } from '../../session.js';
 import { RespawnController } from '../../respawn-controller.js';
 import { RalphConfigSchema, FixPlanImportSchema, RalphPromptWriteSchema, RalphLoopStartSchema } from '../schemas.js';
 import { SseEvent } from '../sse-events.js';
@@ -44,9 +44,12 @@ export function registerRalphRoutes(
     };
     const session = findSessionOrFail(ctx, id);
 
-    // Ralph tracker is not supported for opencode sessions
-    if (session.mode === 'opencode') {
-      return createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Ralph tracker is not supported for opencode sessions');
+    // Ralph tracker is not supported for external-CLI sessions (opencode/codex)
+    if (isExternalCliMode(session.mode)) {
+      return createErrorResponse(
+        ApiErrorCode.INVALID_INPUT,
+        `Ralph tracker is not supported for ${session.mode} sessions`
+      );
     }
 
     // Handle reset first (before other config)

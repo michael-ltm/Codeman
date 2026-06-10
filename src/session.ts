@@ -125,7 +125,7 @@ const CTRL_L_PATTERN = /\x0c/g;
 const NEWLINE_SPLIT_PATTERN = /\r?\n/;
 
 /** True for external-CLI run modes (non-Claude) that use their own TUI and output format. */
-function isExternalCliMode(mode: SessionMode): boolean {
+export function isExternalCliMode(mode: SessionMode): boolean {
   return mode === 'opencode' || mode === 'codex';
 }
 

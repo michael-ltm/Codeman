@@ -42,7 +42,7 @@ import { execSync } from 'node:child_process';
 import { hostname as getHostname } from 'node:os';
 import { dataPath } from '../config/instance.js';
 import { EventEmitter } from 'node:events';
-import { Session, type BackgroundTask } from '../session.js';
+import { Session, isExternalCliMode, type BackgroundTask } from '../session.js';
 import type { ClaudeMode, SessionState } from '../types.js';
 import { RespawnController, RespawnConfig } from '../respawn-controller.js';
 import type { TerminalMultiplexer } from '../mux-interface.js';
@@ -1189,8 +1189,8 @@ export class WebServer extends EventEmitter {
     this.runSummaryTrackers.set(session.id, summaryTracker);
     summaryTracker.recordSessionStarted(session.mode, session.workingDir);
 
-    // Set working directory for Ralph tracker to auto-load @fix_plan.md (not supported for opencode sessions)
-    if (session.mode !== 'opencode') {
+    // Set working directory for Ralph tracker to auto-load @fix_plan.md (not supported for external CLIs)
+    if (!isExternalCliMode(session.mode)) {
       session.ralphTracker.setWorkingDir(session.workingDir);
     }
 
@@ -2016,8 +2016,8 @@ export class WebServer extends EventEmitter {
                   );
                 }
               }
-              // Ralph / Todo tracker (not supported for opencode sessions)
-              if (session.mode !== 'opencode') {
+              // Ralph / Todo tracker (not supported for external-CLI sessions)
+              if (!isExternalCliMode(session.mode)) {
                 if (savedState.ralphAutoEnableDisabled) {
                   session.ralphTracker.disableAutoEnable();
                   console.log(`[Server] Restored Ralph auto-enable disabled for session ${session.id}`);
@@ -2046,8 +2046,8 @@ export class WebServer extends EventEmitter {
               if (savedState.flickerFilterEnabled !== undefined) {
                 session.flickerFilterEnabled = savedState.flickerFilterEnabled;
               }
-              // Respawn controller (not supported for opencode sessions)
-              if (session.mode !== 'opencode' && savedState.respawnEnabled && savedState.respawnConfig) {
+              // Respawn controller (not supported for external-CLI sessions)
+              if (!isExternalCliMode(session.mode) && savedState.respawnEnabled && savedState.respawnConfig) {
                 try {
                   this.restoreRespawnController(session, savedState.respawnConfig, 'state.json');
                 } catch (err) {
@@ -2056,9 +2056,9 @@ export class WebServer extends EventEmitter {
               }
             }
 
-            // Fallback: restore respawn from mux-sessions.json if state.json didn't have it (not supported for opencode)
+            // Fallback: restore respawn from mux-sessions.json if state.json didn't have it (not supported for external CLIs)
             if (
-              session.mode !== 'opencode' &&
+              !isExternalCliMode(session.mode) &&
               !this.respawnControllers.has(session.id) &&
               muxSession.respawnConfig?.enabled
             ) {
@@ -2073,9 +2073,9 @@ export class WebServer extends EventEmitter {
             }
 
             // Fallback: restore Ralph state from state-inner.json if not already set and not explicitly disabled
-            // Ralph tracker is not supported for opencode sessions
+            // Ralph tracker is not supported for external-CLI sessions
             if (
-              session.mode !== 'opencode' &&
+              !isExternalCliMode(session.mode) &&
               !session.ralphTracker.enabled &&
               !session.ralphTracker.autoEnableDisabled
             ) {
@@ -2086,9 +2086,9 @@ export class WebServer extends EventEmitter {
               }
             }
 
-            // Fallback: auto-detect completion phrase from CLAUDE.md (not supported for opencode)
+            // Fallback: auto-detect completion phrase from CLAUDE.md (not supported for external CLIs)
             if (
-              session.mode !== 'opencode' &&
+              !isExternalCliMode(session.mode) &&
               session.ralphTracker.enabled &&
               !session.ralphTracker.loopState.completionPhrase
             ) {
