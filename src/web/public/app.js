@@ -314,6 +314,7 @@ class CodemanApp {
     this._initGeneration = 0;     // dedup concurrent handleInit calls
     this._initFallbackTimer = null; // fallback timer if SSE init doesn't arrive
     this._selectGeneration = 0;   // cancel stale selectSession loads
+    this.terminalLoadStates = new Map(); // Map<sessionId, { generation, phase }>
     this.respawnStatus = {};
     this.respawnTimers = {}; // Track timed respawn timers
     this.respawnCountdownTimers = {}; // { sessionId: { timerName: { endsAt, totalMs, reason } } }
@@ -416,6 +417,8 @@ class CodemanApp {
     this.syncWaitTimeout = null; // Timeout for incomplete sync blocks
     this._isLoadingBuffer = false; // true during chunkedTerminalWrite — blocks live SSE writes
     this._loadBufferQueue = null;  // queued SSE events during buffer load
+    this._bufferLoadSeq = 0;
+    this._bufferLoadOwner = null;
 
     // Flicker filter state (buffers output after screen clears)
     this.flickerFilterBuffer = '';
@@ -486,7 +489,7 @@ class CodemanApp {
   // If stale, cleans up buffer-loading state and returns true.
   _isStaleSelect(selectGen) {
     if (selectGen !== this._selectGeneration) {
-      if (this._isLoadingBuffer) this._finishBufferLoad();
+      if (this._isLoadingBuffer) this._finishBufferLoad(selectGen);
       this._restoringFlushedState = false;
       return true;
     }
@@ -649,6 +652,7 @@ class CodemanApp {
         this._disposeWebGLObserver();
         this._webglAddon?.dispose();
         this._webglAddon = null;
+        this._scheduleTerminalRepaint();
       });
       this.terminal.loadAddon(this._webglAddon);
       console.log('[CRASH-DIAG] WebGL renderer enabled');
@@ -679,7 +683,7 @@ class CodemanApp {
           this._disposeWebGLObserver();
           this._webglAddon?.dispose();
           this._webglAddon = null;
-          try { this.terminal.refresh(0, this.terminal.rows - 1); } catch {}
+          this._scheduleTerminalRepaint();
         }
       });
       this._webglLongTaskObserver.observe({ type: 'longtask', buffered: false });
@@ -696,6 +700,22 @@ class CodemanApp {
     if (!this._webglLongTaskObserver) return;
     try { this._webglLongTaskObserver.disconnect(); } catch {}
     this._webglLongTaskObserver = null;
+  }
+
+  /**
+   * Repaint the full terminal viewport after a renderer swap (WebGL → canvas/DOM).
+   * Scheduled on the next frame so it lands after the addon teardown settles, and
+   * debounced so the context-loss and long-task fallback paths can't double-fire.
+   * No-ops safely if the terminal isn't ready.
+   */
+  _scheduleTerminalRepaint() {
+    if (this._terminalRepaintScheduled) return;
+    this._terminalRepaintScheduled = true;
+    const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(cb, 0);
+    raf(() => {
+      this._terminalRepaintScheduled = false;
+      try { this.terminal?.refresh(0, this.terminal.rows - 1); } catch {}
+    });
   }
 
   _disableWebGLSticky(reason) {
@@ -2039,6 +2059,7 @@ class CodemanApp {
     this.writeFrameScheduled = false;
     this._isLoadingBuffer = false;
     this._loadBufferQueue = null;
+    this._bufferLoadOwner = null;
     // Abort any in-flight chunkedTerminalWrite (SSE reconnect reloads buffers)
     this._chunkedWriteGen = (this._chunkedWriteGen || 0) + 1;
     // Preserve local echo overlay text across SSE reconnect — just hide until
@@ -2281,7 +2302,7 @@ class CodemanApp {
 
   renderSessionTabs() {
     // Don't re-render while user is typing in the inline rename input
-    if (this._activeRename) return;
+    if (this._inlineRenameActive) return;
     this._debouncedCall('sessionTabs', this._renderSessionTabsImmediate);
   }
 
@@ -2296,6 +2317,45 @@ class CodemanApp {
       } else {
         tab.classList.remove('active');
       }
+    }
+  }
+
+  _setTerminalLoadState(sessionId, selectGen, phase) {
+    this.terminalLoadStates.set(sessionId, { generation: selectGen, phase });
+    this._updateTerminalLoadTab(sessionId);
+  }
+
+  _clearTerminalLoadState(sessionId, selectGen) {
+    const state = this.terminalLoadStates.get(sessionId);
+    if (state && state.generation !== selectGen) return;
+    this.terminalLoadStates.delete(sessionId);
+    this._updateTerminalLoadTab(sessionId);
+  }
+
+  _updateTerminalLoadTab(sessionId) {
+    const tab = this.$('sessionTabs')?.querySelector(`.session-tab[data-id="${sessionId}"]`);
+    if (!tab) return;
+
+    const loadState = this.terminalLoadStates.get(sessionId);
+    tab.classList.toggle('tab-loading', !!loadState);
+    if (loadState) {
+      tab.setAttribute('aria-busy', 'true');
+      tab.dataset.loadPhase = loadState.phase;
+      if (!tab.querySelector('.tab-load-spinner')) {
+        const spinner = document.createElement('span');
+        spinner.className = 'tab-load-spinner';
+        spinner.setAttribute('aria-hidden', 'true');
+        const numberEl = tab.querySelector('.tab-number');
+        if (numberEl) {
+          numberEl.insertAdjacentElement('afterend', spinner);
+        } else {
+          tab.insertBefore(spinner, tab.firstChild);
+        }
+      }
+    } else {
+      tab.setAttribute('aria-busy', 'false');
+      delete tab.dataset.loadPhase;
+      tab.querySelector('.tab-load-spinner')?.remove();
     }
   }
 
@@ -2320,12 +2380,34 @@ class CodemanApp {
         const name = this.getSessionName(session);
         const taskStats = session.taskStats || { running: 0, total: 0 };
         const hasRunningTasks = taskStats.running > 0;
+        const loadState = this.terminalLoadStates.get(id);
 
         // Update active class
         if (isActive && !tab.classList.contains('active')) {
           tab.classList.add('active');
         } else if (!isActive && tab.classList.contains('active')) {
           tab.classList.remove('active');
+        }
+
+        tab.classList.toggle('tab-loading', !!loadState);
+        if (loadState) {
+          tab.setAttribute('aria-busy', 'true');
+          tab.dataset.loadPhase = loadState.phase;
+          if (!tab.querySelector('.tab-load-spinner')) {
+            const spinner = document.createElement('span');
+            spinner.className = 'tab-load-spinner';
+            spinner.setAttribute('aria-hidden', 'true');
+            const numberEl = tab.querySelector('.tab-number');
+            if (numberEl) {
+              numberEl.insertAdjacentElement('afterend', spinner);
+            } else {
+              tab.insertBefore(spinner, tab.firstChild);
+            }
+          }
+        } else {
+          tab.setAttribute('aria-busy', 'false');
+          delete tab.dataset.loadPhase;
+          tab.querySelector('.tab-load-spinner')?.remove();
         }
 
         // Update alert class
@@ -2426,7 +2508,7 @@ class CodemanApp {
   }
 
   _fullRenderSessionTabs() {
-    if (this._activeRename) return;
+    if (this._inlineRenameActive) return;
     const container = this.$('sessionTabs');
 
     // Clean up any orphaned dropdowns before re-rendering
@@ -2456,6 +2538,7 @@ class CodemanApp {
       const hasRunningTasks = taskStats.running > 0;
       const alertType = this.tabAlerts.get(id);
       const alertClass = alertType === 'action' ? ' tab-alert-action' : alertType === 'idle' ? ' tab-alert-idle' : '';
+      const loadState = this.terminalLoadStates.get(id);
 
       // Get minimized subagents for this session
       const minimizedAgents = this.minimizedSubagents.get(id);
@@ -2467,8 +2550,9 @@ class CodemanApp {
       const tallTabsEnabled = this._tallTabsEnabled ?? false;
       const showFolder = tallTabsEnabled && session.name && folderName && folderName !== name;
 
-      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${this.detachedSessions.has(id) ? ' detached' : ''}" data-id="${id}" data-color="${color}" onclick="app.selectSession('${escapeHtml(id)}')" oncontextmenu="event.preventDefault(); app.startInlineRename('${escapeHtml(id)}')" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-label="${escapeHtml(name)} session" ${session.workingDir ? `title="${escapeHtml(session.workingDir)}"` : ''}>
+      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${loadState ? ' tab-loading' : ''}" data-id="${id}" data-color="${color}" ${loadState ? `data-load-phase="${escapeHtml(loadState.phase)}"` : ''} onclick="app.selectSession('${escapeHtml(id)}', { forceReload: true })" oncontextmenu="event.preventDefault(); app.startInlineRename('${escapeHtml(id)}')" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-busy="${loadState ? 'true' : 'false'}" aria-label="${escapeHtml(name)} session" ${session.workingDir ? `title="${escapeHtml(session.workingDir)}"` : ''}>
           ${_tabIdx < 9 ? '<span class="tab-number">' + (_tabIdx + 1) + '</span>' : ''}
+          ${loadState ? '<span class="tab-load-spinner" aria-hidden="true"></span>' : ''}
           <span class="tab-status ${status}" aria-hidden="true"></span>
           <span class="tab-info">
             <span class="tab-name-row">
@@ -2516,7 +2600,7 @@ class CodemanApp {
       if ((e.key === 'Enter' || e.key === ' ') && currentIndex >= 0) {
         e.preventDefault();
         const sessionId = tabs[currentIndex].dataset.id;
-        this.selectSession(sessionId);
+        this.selectSession(sessionId, { forceReload: true });
         return;
       }
 
@@ -2761,6 +2845,7 @@ class CodemanApp {
     this.writeFrameScheduled = false;
     this._isLoadingBuffer = false;
     this._loadBufferQueue = null;
+    this._bufferLoadOwner = null;
     // Abort any in-flight chunkedTerminalWrite from the previous session.
     // Without this, old rAF-scheduled chunks continue writing stale data
     // into the terminal, interleaving with the new session's buffer.
@@ -2811,15 +2896,31 @@ class CodemanApp {
     }
   }
 
-  async selectSession(sessionId) {
+  _resetTerminalForReplay() {
+    this.terminal.reset();
+    this.terminal.write('\x1b[3J\x1b[H\x1b[2J');
+  }
+
+  async selectSession(sessionId, options = {}) {
     // If this session is popped out into its own window, raise that window
-    // instead of showing it inline (focus-on-click for detached tabs).
+    // instead of showing it inline (focus-on-click for detached tabs). If we
+    // owned a now-closed window, _raiseDetached re-docks and returns false so
+    // we fall through and load it inline.
     if (!this.isSoloWindow && this.detachedSessions.has(sessionId)) {
-      // Raise the popup instead of showing inline. If we owned a now-closed
-      // window, _raiseDetached re-docks and returns false so we fall through.
       if (this._raiseDetached(sessionId)) return;
     }
-    if (this.activeSessionId === sessionId) return;
+    const forceReload = options?.forceReload === true;
+    if (this.activeSessionId === sessionId && !forceReload) return;
+    if (this.activeSessionId === sessionId && forceReload) {
+      this.terminalBufferCache?.delete(sessionId);
+      this._clearTimer('syncWaitTimeout');
+      this.pendingWrites = [];
+      this.writeFrameScheduled = false;
+      this._isLoadingBuffer = false;
+      this._loadBufferQueue = null;
+      this._chunkedWriteGen = (this._chunkedWriteGen || 0) + 1;
+      this.activeSessionId = null;
+    }
     // Focus terminal SYNCHRONOUSLY before any await — iOS Safari only honors
     // programmatic focus() within the user-gesture call stack (e.g. tab click).
     // After the first await the gesture context is lost and focus() is silently
@@ -2832,8 +2933,12 @@ class CodemanApp {
     console.log(`[CRASH-DIAG] selectSession START: ${sessionId.slice(0,8)}`);
 
     const selectGen = ++this._selectGeneration;
+    this._setTerminalLoadState(sessionId, selectGen, 'resizing');
 
-    if (selectGen !== this._selectGeneration) return; // newer tab switch won
+    if (selectGen !== this._selectGeneration) {
+      this._clearTerminalLoadState(sessionId, selectGen);
+      return; // newer tab switch won
+    }
 
     this._cleanupPreviousSession(sessionId);
     this.activeSessionId = sessionId;
@@ -2905,13 +3010,27 @@ class CodemanApp {
     // Without this, SSE events arriving during the fetch() gap compete with
     // the buffer write, causing 70KB+ single-frame flushes that stall WebGL.
     // chunkedTerminalWrite also sets this, but we need it before the fetch too.
-    this._isLoadingBuffer = true;
-    this._loadBufferQueue = [];
+    const bufferLoadOwner = this._beginBufferLoad(selectGen);
     try {
       // Fit terminal to container BEFORE writing any buffer data.
       // If the browser was resized while viewing another session, the terminal
       // canvas may be at stale dimensions — content would render at wrong width.
       if (this.fitAddon) this.fitAddon.fit();
+
+      // Also push the new dimensions to the PTY. Without this, codex/codeman
+      // sees the size that was set the last time the throttled resize handler
+      // fired (often the size of a different session's container, or the
+      // initial tmux default). The visible symptom is codex rendering inside
+      // a small region with empty rows below the status bar.
+      // sendResize is a no-op on the server when dims haven't changed, so
+      // calling it every tab switch is cheap.
+      const dimsChanged = await this.sendResize(sessionId, { forceHttp: true }).catch(() => false);
+      if (this._isStaleSelect(selectGen)) {
+        this._clearTerminalLoadState(sessionId, selectGen);
+        return;
+      }
+
+      const sessionIsBusy = session && (session.status === 'busy' || session.status === 'working');
 
       // Instant cache restore for IDLE sessions only.
       // For busy sessions, the cache is always stale — writing it first causes a
@@ -2919,25 +3038,43 @@ class CodemanApp {
       // blank and rewrites with fresh data. Skip the cache and write the fresh
       // buffer once for a single clean transition.
       const cachedBuffer = this.terminalBufferCache.get(sessionId);
-      const sessionIsBusy = session && (session.status === 'busy' || session.status === 'working');
       if (cachedBuffer && !sessionIsBusy) {
         _crashDiag.log(`CACHE_WRITE: ${(cachedBuffer.length/1024).toFixed(0)}KB`);
-        this.terminal.clear();
-        this.terminal.reset();
-        await this.chunkedTerminalWrite(cachedBuffer);
-        if (this._isStaleSelect(selectGen)) return;
+        this._setTerminalLoadState(sessionId, selectGen, 'replaying');
+        this._resetTerminalForReplay();
+        await this.chunkedTerminalWrite(cachedBuffer, TERMINAL_CHUNK_SIZE, bufferLoadOwner);
+        if (this._isStaleSelect(selectGen)) {
+          this._clearTerminalLoadState(sessionId, selectGen);
+          return;
+        }
         this.terminal.scrollToBottom();
         _crashDiag.log('CACHE_DONE');
       } else if (sessionIsBusy) {
         // Clear stale content immediately — fresh buffer is being fetched
-        this.terminal.clear();
-        this.terminal.reset();
+        this._resetTerminalForReplay();
         _crashDiag.log('CACHE_SKIP_BUSY');
       }
 
+      // Give TUI sessions a short chance to redraw after resize before the
+      // fresh buffer fetch. Only needed when the resize actually changed
+      // dimensions (a real SIGWINCH → Ink redraw); a same-size tab switch sent
+      // no resize, so waiting would just add latency. Shell sessions never need
+      // it, so terminal content can appear immediately when switching shells.
+      if (session?.mode !== 'shell' && dimsChanged) {
+        await new Promise((resolve) => setTimeout(resolve, TUI_REDRAW_SETTLE_MS));
+        if (this._isStaleSelect(selectGen)) {
+          this._clearTerminalLoadState(sessionId, selectGen);
+          return;
+        }
+      }
+
+      this._setTerminalLoadState(sessionId, selectGen, 'fetching');
       _crashDiag.log('FETCH_START');
       const res = await fetch(`/api/sessions/${sessionId}/terminal?tail=${TERMINAL_TAIL_SIZE}`);
-      if (this._isStaleSelect(selectGen)) return;
+      if (this._isStaleSelect(selectGen)) {
+        this._clearTerminalLoadState(sessionId, selectGen);
+        return;
+      }
       const data = await res.json();
       _crashDiag.log(`FETCH_DONE: ${data.terminalBuffer ? (data.terminalBuffer.length/1024).toFixed(0) + 'KB' : 'empty'} truncated=${data.truncated}`);
 
@@ -2945,18 +3082,23 @@ class CodemanApp {
         // Skip rewrite if fresh buffer matches cache — avoids visible clear+rewrite flash.
         // On slow connections (mobile 5G), the gap between clear() and chunkedWrite() is
         // very visible, causing the terminal to flash blank then repaint.
-        const needsRewrite = data.terminalBuffer !== cachedBuffer;
+        // Busy sessions skip cache restore and clear the terminal before fetching,
+        // so they must replay the fetched buffer even when it matches cache.
+        const needsRewrite = sessionIsBusy || data.terminalBuffer !== cachedBuffer;
         if (needsRewrite) {
           _crashDiag.log(`REWRITE: ${(data.terminalBuffer.length/1024).toFixed(0)}KB`);
-          this.terminal.clear();
-          this.terminal.reset();
+          this._setTerminalLoadState(sessionId, selectGen, 'replaying');
+          this._resetTerminalForReplay();
           // Show truncation indicator if buffer was cut
           if (data.truncated) {
             this.terminal.write('\x1b[90m... (earlier output truncated for performance) ...\x1b[0m\r\n\r\n');
           }
           // Use chunked write for large buffers to avoid UI jank
-          await this.chunkedTerminalWrite(data.terminalBuffer);
-          if (this._isStaleSelect(selectGen)) return;
+          await this.chunkedTerminalWrite(data.terminalBuffer, TERMINAL_CHUNK_SIZE, bufferLoadOwner);
+          if (this._isStaleSelect(selectGen)) {
+            this._clearTerminalLoadState(sessionId, selectGen);
+            return;
+          }
           // Ensure terminal is scrolled to bottom after buffer load
           this.terminal.scrollToBottom();
         }
@@ -2970,15 +3112,14 @@ class CodemanApp {
         }
       } else if (!cachedBuffer) {
         // No fresh buffer and no cache — clear any stale content
-        this.terminal.clear();
-        this.terminal.reset();
+        this._resetTerminalForReplay();
       }
 
       // Buffer load complete — unblock live SSE writes (queued events are discarded
       // to prevent duplicate content). chunkedTerminalWrite calls _finishBufferLoad
       // internally, but if we skipped the write (cache hit or empty), call it here.
       if (this._isLoadingBuffer) {
-        this._finishBufferLoad();
+        this._finishBufferLoad(bufferLoadOwner);
       }
       // Drop the guard so user input clears state normally
       this._restoringFlushedState = false;
@@ -3091,12 +3232,14 @@ class CodemanApp {
 
       _crashDiag.log('FOCUS');
       this.terminal.focus();
-      this.terminal.scrollToBottom();
+      this.scrollToLastNonEmptyLine();
+      this._clearTerminalLoadState(sessionId, selectGen);
       _crashDiag.log(`SELECT_DONE: ${(performance.now() - _selStart).toFixed(0)}ms`);
       console.log(`[CRASH-DIAG] selectSession DONE: ${sessionId.slice(0,8)} in ${(performance.now() - _selStart).toFixed(0)}ms`);
     } catch (err) {
-      if (this._isLoadingBuffer) this._finishBufferLoad();
+      if (this._isLoadingBuffer) this._finishBufferLoad(bufferLoadOwner);
       this._restoringFlushedState = false;
+      this._setTerminalLoadState(sessionId, selectGen, 'failed');
       console.error('Failed to load session terminal:', err);
     }
   }
@@ -3126,6 +3269,7 @@ class CodemanApp {
     this.projectInsights.delete(sessionId);
     this.pendingHooks.delete(sessionId);
     this.tabAlerts.delete(sessionId);
+    this.terminalLoadStates.delete(sessionId);
     this.clearCountdownTimers(sessionId);
     this.closeSessionLogViewerWindows(sessionId);
     this.closeSessionImagePopups(sessionId);
@@ -3286,6 +3430,7 @@ class CodemanApp {
       this.sessions.clear();
       this.terminalBuffers.clear();
       this.terminalBufferCache.clear();
+      this.terminalLoadStates.clear();
       this.activeSessionId = null;
       try { localStorage.removeItem('codeman-active-session'); } catch {}
       this.respawnStatus = {};
