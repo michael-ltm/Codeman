@@ -1,5 +1,31 @@
 # aicodeman
 
+## 0.9.8
+
+### Patch Changes
+
+- Stable HTTP contract, terminal pane-buffer rework, mobile/touch fixes, and fresh-install default cleanups.
+
+  **API / v1 readiness (PR #113)**
+  - Stable HTTP contract: uniform `{success, data}` / `{success: false, error, errorCode}` response envelope across all ~134 handlers, correct HTTP status codes, and a versioned `/api/v1/*` alias of `/api/*`
+  - Post-merge adversarial audit closed 9 contract gaps (envelope/status-code stragglers), incl. `loadQuickStartCases` double-unwrap
+  - Node.js floor raised to >=22; `codeman` bin alias installed alongside `aicodeman`
+  - Security hardening: SSRF guard on the push endpoint, tmux session-name validation, documented tail-file roots
+  - Governance: SECURITY.md and a SemVer versioning policy (docs/versioning-policy.md)
+  - CI now runs the full unit/integration suite (vitest.ci.config.ts) plus a frontend JS syntax gate
+
+  **Terminal (PR #112)**
+  - tmux pane-buffer primitives and session/render reliability fixes for the terminal pipeline, with re-review findings addressed
+
+  **Mobile / touch (PR #111)**
+  - Terminal and layout fixes for touch devices: desktop focus handling, WS resize-claim wiring, CJK setting, ESC passthrough
+  - New: Esc button in the simple (default) keyboard accessory bar, next to paste — sends a real ESC to the session
+
+  **Defaults & UI**
+  - Monitor panel is now disabled by default on fresh installs (desktop previously slid it open at startup; mobile was already off). Opt in via App Settings -> Show Monitor
+  - Fixed the session-tab task badge silently failing to open the Monitor panel when it was hidden by the setting (long-broken on mobile)
+  - Local echo defaults audited and confirmed per-device: off on desktop, on for touch devices, never server-synced
+
 ## 0.9.7
 
 ### Patch Changes
