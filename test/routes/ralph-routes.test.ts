@@ -21,6 +21,8 @@ function createMockRalphTracker() {
     disableAutoEnable: vi.fn(),
     startLoop: vi.fn(),
     setMaxIterations: vi.fn(),
+    setMaxTodos: vi.fn(),
+    setTodoExpirationMinutes: vi.fn(),
     resetCircuitBreaker: vi.fn(),
     generateFixPlanMarkdown: vi.fn(() => '# Fix Plan\n\n- [ ] Task 1\n'),
     importFixPlanMarkdown: vi.fn(() => 3),
@@ -156,6 +158,25 @@ describe('ralph-routes', () => {
         payload: { maxIterations: 50 },
       });
       expect(tracker.setMaxIterations).toHaveBeenCalledWith(50);
+    });
+
+    it('applies maxTodos and todoExpirationMinutes to the tracker (COD-52)', async () => {
+      const tracker = (harness.ctx._session as Record<string, unknown>).ralphTracker as ReturnType<
+        typeof createMockRalphTracker
+      >;
+
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: `/api/sessions/${harness.ctx._sessionId}/ralph-config`,
+        payload: { maxTodos: 25, todoExpirationMinutes: 90 },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      // The ralph-config success path returns a bare {} envelope (matching its
+      // sibling config routes); an error would surface as { success: false }.
+      expect(body.success).not.toBe(false);
+      expect(tracker.setMaxTodos).toHaveBeenCalledWith(25);
+      expect(tracker.setTodoExpirationMinutes).toHaveBeenCalledWith(90);
     });
 
     it('returns error for unknown session', async () => {

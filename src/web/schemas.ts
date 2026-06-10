@@ -497,6 +497,8 @@ export const RalphConfigSchema = z.object({
   enabled: z.boolean().optional(),
   completionPhrase: z.string().max(500).optional(),
   maxIterations: z.number().int().min(0).max(10000).optional(),
+  maxTodos: z.number().int().positive().max(10000).optional(),
+  todoExpirationMinutes: z.number().int().positive().max(525600).optional(),
   reset: z.union([z.boolean(), z.literal('full')]).optional(),
   disableAutoEnable: z.boolean().optional(),
 });
