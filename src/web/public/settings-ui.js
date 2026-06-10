@@ -569,7 +569,7 @@ Object.assign(CodemanApp.prototype, {
     const res = await this._apiPost('/api/system/update', {});
     if (!res || !res.ok) {
       let msg = 'Failed to start the update.';
-      try { const j = await res.json(); if (j?.error?.message) msg = j.error.message; } catch {}
+      try { const j = await res.json(); if (typeof j?.error === 'string' && j.error) msg = j.error; } catch {}
       this._setUpdateProgress(`<span style="color:var(--danger,#e5534b)">${escapeHtml(msg)}</span>`);
       if (btn) { btn.disabled = false; btn.textContent = 'Update now'; }
       return;

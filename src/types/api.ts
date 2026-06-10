@@ -114,22 +114,6 @@ export function createErrorResponse(code: ApiErrorCode, details?: string): ApiRe
 }
 
 /**
- * Response for quick start operation
- */
-export interface QuickStartResponse {
-  /** Whether the request succeeded */
-  success: boolean;
-  /** Created session ID */
-  sessionId?: string;
-  /** Path to case folder */
-  casePath?: string;
-  /** Case name */
-  caseName?: string;
-  /** Error message if failed */
-  error?: string;
-}
-
-/**
  * Information about a case folder
  */
 export interface CaseInfo {

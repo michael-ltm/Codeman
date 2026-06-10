@@ -104,6 +104,7 @@ function rewriteApiV1Url(url: string): string {
 import {
   getErrorMessage,
   httpStatusForErrorCode,
+  createErrorResponse,
   ApiErrorCode,
   type PersistedRespawnConfig,
   type NiceConfig,
@@ -738,7 +739,7 @@ export class WebServer extends EventEmitter {
     this.app.post('/api/events/subscribe', (req, reply) => {
       const body = (req.body || {}) as { clientId?: string; sessions?: string[] | null };
       if (typeof body.clientId !== 'string' || !SSE_CLIENT_ID_RE.test(body.clientId)) {
-        reply.code(400).send({ error: 'clientId required' });
+        reply.code(400).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'clientId required'));
         return;
       }
       const sessions = Array.isArray(body.sessions)
@@ -751,6 +752,18 @@ export class WebServer extends EventEmitter {
     // Global error handler for structured errors thrown by findSessionOrFail /
     // parseBody. Shared with the route test harness so test behavior matches prod.
     installRouteErrorHandler(this.app);
+
+    // Stable-contract 404 for unknown /api routes — without this, Fastify's
+    // default not-found payload {message,error,statusCode} would be wrapped by
+    // the envelope hook into a contradictory HTTP 404 {success:true,...}.
+    this.app.setNotFoundHandler((req, reply) => {
+      const notFound = `Route ${req.method}:${req.url} not found`;
+      if (req.url.startsWith('/api')) {
+        reply.code(404).send(createErrorResponse(ApiErrorCode.NOT_FOUND, notFound));
+        return;
+      }
+      reply.code(404).send({ message: notFound, error: 'Not Found', statusCode: 404 });
+    });
 
     // Crash diagnostics beacon — frontend POSTs breadcrumbs, GET to read them.
     // text/plain is used ONLY by this beacon (navigator.sendBeacon sends text/plain).

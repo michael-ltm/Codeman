@@ -235,13 +235,14 @@ describe('plan-routes', () => {
       expect(body.error).toContain('Ralph tracker');
     });
 
-    it('returns plan version history', async () => {
+    it('returns plan version history with the current version', async () => {
       const mockHistory = [
         { version: 1, timestamp: Date.now() - 60000, itemCount: 10 },
         { version: 2, timestamp: Date.now(), itemCount: 12 },
       ];
       harness.ctx._session.ralphTracker = {
         getPlanHistory: vi.fn(() => mockHistory),
+        planVersion: 2,
       } as never;
 
       const res = await harness.app.inject({
@@ -251,8 +252,9 @@ describe('plan-routes', () => {
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(true);
-      expect(body.data).toHaveLength(2);
-      expect(body.data[1].version).toBe(2);
+      expect(body.data.history).toHaveLength(2);
+      expect(body.data.history[1].version).toBe(2);
+      expect(body.data.currentVersion).toBe(2);
     });
   });
 

@@ -375,12 +375,15 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort): void
     });
   });
 
-  // Close a file stream
+  // Close a file stream. Returns { closed } rather than { success: closed } —
+  // a top-level `success` key would collide with the envelope discriminator
+  // (the preSerialization hook would pass `{success:false}` through as a
+  // malformed error envelope instead of wrapping it).
   app.delete('/api/sessions/:id/tail-file/:streamId', async (req) => {
     const { id, streamId } = req.params as { id: string; streamId: string };
     findSessionOrFail(ctx, id); // Validates session exists
     const closed = fileStreamManager.closeStream(streamId);
-    return { success: closed };
+    return { closed };
   });
   // Session-scoped file download.
   // Uses the same realpath-based workspace boundary as file preview/raw routes;

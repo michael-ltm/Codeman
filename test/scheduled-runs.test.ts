@@ -205,8 +205,14 @@ describe('Quick Run API', () => {
       const data = await response.json();
 
       // On success the payload is wrapped ({ success:true, data:{ sessionId, ... } });
-      // on failure the handler returns a bare { success:false, sessionId, error }.
-      expect(data.data?.sessionId ?? data.sessionId).toBeDefined();
+      // on failure the handler returns the standard error envelope
+      // ({ success:false, error, errorCode }) with the dead session id in the message.
+      if (data.success) {
+        expect(data.data?.sessionId).toBeDefined();
+      } else {
+        expect(data.errorCode).toBeDefined();
+        expect(data.error).toMatch(/session /);
+      }
       // Note: success/failure depends on Claude actually running
     });
 

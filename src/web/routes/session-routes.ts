@@ -1086,9 +1086,10 @@ export function registerSessionRoutes(
       await ctx.cleanupSession(session.id, true, 'run_prompt_complete');
       return { sessionId: session.id, ...result };
     } catch (err) {
-      // Clean up session on error too
+      // Clean up session on error too. The session is destroyed here, so its id
+      // is only useful for log correlation — carry it in the error message.
       await ctx.cleanupSession(session.id, true, 'run_prompt_error');
-      return { success: false, sessionId: session.id, error: getErrorMessage(err) };
+      return createErrorResponse(ApiErrorCode.OPERATION_FAILED, `${getErrorMessage(err)} (session ${session.id})`);
     }
   });
 

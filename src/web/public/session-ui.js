@@ -304,7 +304,7 @@ Object.assign(CodemanApp.prototype, {
     try {
       // Get case path first
       const caseRes = await fetch(`/api/cases/${caseName}`);
-      let caseData = (await caseRes.json()).data;
+      let caseData = (await caseRes.json())?.data ?? {};
 
       // Create the case if it doesn't exist
       if (!caseData.path) {
@@ -452,7 +452,7 @@ Object.assign(CodemanApp.prototype, {
     try {
       // Get the case path
       const caseRes = await fetch(`/api/cases/${caseName}`);
-      let caseData = (await caseRes.json()).data;
+      let caseData = (await caseRes.json())?.data ?? {};
 
       // Create the case if it doesn't exist
       if (!caseData.path) {
