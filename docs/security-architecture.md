@@ -124,7 +124,11 @@ loopback bind matters. The auth pipeline (`src/web/middleware/auth.ts`,
 `onRequest` hook) runs in this order:
 
 1. **Localhost‑only exemptions** (always first): `POST /api/hook-event` and the QR
-   `/q/` short‑code path are exempt when `req.ip` is loopback (see §3).
+   `/q/` short‑code path are exempt when `req.ip` is loopback (see §3). While the
+   **managed tunnel is running**, the hook‑event exemption additionally requires
+   the per‑instance `X-Codeman-Hook-Secret` header (COD‑54); failed presentations
+   are rate‑limited in a **dedicated bucket** (separate from Basic‑Auth failures)
+   so misfiring hooks can never lock out the login path.
 2. **Session cookie** check — a valid `codeman_session` cookie short‑circuits to
    allow.
 3. **HTTP Basic** check — correct credentials short‑circuit to allow and clear
@@ -165,17 +169,29 @@ protection is unchanged.
 with `req.ip = 127.0.0.1`**. The localhost‑only exemptions then treat those
 requests as local:
 
-- `POST /api/hook-event` — auth‑exempt for loopback. Bounded impact: it is
+- `POST /api/hook-event` — auth‑exempt for loopback **only while no managed tunnel
+  is running**. When Codeman's own tunnel is up, the exemption requires the
+  per‑instance shared secret (`X-Codeman-Hook-Secret`, 256‑bit hex in
+  `~/.codeman/hook-secret`, mode 0600, COD‑54). Local hook commands read the
+  secret file at execution time (`$CODEMAN_HOOK_SECRET_FILE`, exported into every
+  managed session), so they keep working — tunneled internet traffic can't know
+  it. Even without the secret the impact is bounded: the route is
   `HookEventSchema`‑validated and requires a valid in‑memory `sessionId`; it can
   drive respawn signals, SSE broadcasts, push notifications, and transcript
-  watching — **not** arbitrary terminal input or file reads. It is a
-  session‑disruption / notification‑spoofing surface, not RCE.
+  watching — **not** arbitrary terminal input or file reads. ⚠️ The gate keys off
+  the **managed** tunnel — an externally run loopback proxy (your own
+  `cloudflared`, `tailscale serve`) is invisible to it, so the plain loopback
+  exemption still applies there (prefer `tailscale serve`, which authenticates at
+  the tailnet layer). Hook configs regenerated since COD‑54 always present the
+  header, so a future release can require the secret unconditionally.
 - QR `/q/` — still protected by its own short‑code brute‑force limiter
   (10 failures / 60s against a 62⁶ space).
 
 **Mitigation:** set `CODEMAN_PASSWORD` whenever a loopback‑connecting tunnel is
-up (it does not gate the hook‑event exemption, but it gates everything else and
-is the documented practice). Prefer `tailscale serve` (below), which authenticates
+up — it gates everything except the (secret‑gated) hook exemption and is the
+documented practice; since COD‑55 enabling the managed tunnel **refuses** to start
+without it unless `CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK=1` explicitly
+acknowledges the exposure. Prefer `tailscale serve` (below), which authenticates
 at the tailnet layer so untrusted clients never reach the loopback port at all.
 
 ### Host‑header & Origin allowlist (DNS‑rebinding & CSRF defense)

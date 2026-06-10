@@ -857,6 +857,9 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       `export CODEMAN_SESSION_ID=${sessionId}`,
       `export CODEMAN_MUX_NAME=${muxName}`,
       `export CODEMAN_API_URL=${process.env.CODEMAN_API_URL || 'http://localhost:3000'}`,
+      // Path only (not the secret value): hook curl commands cat the file at
+      // execution time, so the COD-54 hook secret stays off the command line.
+      `export CODEMAN_HOOK_SECRET_FILE="${dataPath('hook-secret')}"`,
     ];
     // Only unset CLAUDECODE for Claude sessions
     if (mode === 'claude') exports.splice(2, 0, 'unset CLAUDECODE');

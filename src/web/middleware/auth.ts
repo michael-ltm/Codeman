@@ -29,6 +29,7 @@ interface AuthState {
   authSessions: StaleExpirationMap<string, AuthSessionRecord> | null;
   authFailures: StaleExpirationMap<string, number> | null;
   qrAuthFailures: StaleExpirationMap<string, number> | null;
+  hookSecretFailures: StaleExpirationMap<string, number> | null;
 }
 
 /**
@@ -53,6 +54,7 @@ export function registerAuthMiddleware(
     authSessions: null,
     authFailures: null,
     qrAuthFailures: null,
+    hookSecretFailures: null,
   };
 
   const authPassword = process.env.CODEMAN_PASSWORD;
@@ -79,11 +81,26 @@ export function registerAuthMiddleware(
     refreshOnGet: false,
   });
 
+  // Separate hook-secret failure counter (COD-54). MUST NOT share authFailures:
+  // legacy (pre-secret) hook configs fire constantly from 127.0.0.1, and counting
+  // their 401s against the shared bucket would 429 every cookie-less request from
+  // loopback — locking out the Basic-Auth login path (and, through a tunnel, every
+  // client, since tunneled traffic also arrives as 127.0.0.1).
+  state.hookSecretFailures = new StaleExpirationMap<string, number>({
+    ttlMs: AUTH_FAILURE_WINDOW_MS,
+    refreshOnGet: false,
+  });
+
   const authSessions = state.authSessions;
   const authFailures = state.authFailures;
+  const hookSecretFailures = state.hookSecretFailures;
 
-  function sendAuthRateLimit(reply: FastifyReply, clientIp: string): void {
-    const remainingMs = authFailures.getRemainingTtl(clientIp) ?? AUTH_FAILURE_WINDOW_MS;
+  function sendAuthRateLimit(
+    reply: FastifyReply,
+    clientIp: string,
+    failures: StaleExpirationMap<string, number> = authFailures
+  ): void {
+    const remainingMs = failures.getRemainingTtl(clientIp) ?? AUTH_FAILURE_WINDOW_MS;
     const retryAfterSeconds = Math.max(1, Math.ceil(remainingMs / 1000));
     reply.header('Retry-After', String(retryAfterSeconds));
     reply.code(429).send('Too Many Requests — try again later');
@@ -118,15 +135,15 @@ export function registerAuthMiddleware(
           done();
           return;
         }
-        // Wrong/absent secret while tunneled — treat as a failed auth attempt so the
-        // per-IP rate limiter (below) throttles brute-force/abuse of this route.
+        // Wrong/absent secret while tunneled — rate-limit per IP in the DEDICATED
+        // hook bucket (never authFailures, which would lock out the login path).
         const hookIp = req.ip;
-        const hookFailures = authFailures.get(hookIp) ?? 0;
+        const hookFailures = hookSecretFailures.get(hookIp) ?? 0;
         if (hookFailures >= AUTH_FAILURE_MAX) {
-          sendAuthRateLimit(reply, hookIp);
+          sendAuthRateLimit(reply, hookIp, hookSecretFailures);
           return;
         }
-        authFailures.set(hookIp, hookFailures + 1);
+        hookSecretFailures.set(hookIp, hookFailures + 1);
         reply.code(401).send('Unauthorized: hook secret required');
         return;
       }

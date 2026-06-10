@@ -147,4 +147,40 @@ describe('COD-54 hook-event auth — rate limiting', () => {
     }
     expect(saw429).toBe(true);
   });
+
+  it('hook-secret failures do NOT lock out the Basic-Auth login path (separate bucket)', async () => {
+    // The previous test exhausted the hook bucket for 127.0.0.1. Legacy (pre-secret)
+    // hooks fire constantly, so if they shared authFailures, every cookie-less
+    // request from loopback would now 429 — locking out login (and, via a tunnel,
+    // every client). Assert the login path is unaffected:
+    // 1. A credential-less request still gets a 401 challenge, NOT 429.
+    const unauthed = await fetch(`${baseUrl}/api/status`);
+    expect(unauthed.status).toBe(401);
+    // 2. Correct Basic credentials still authenticate.
+    const authed = await fetch(`${baseUrl}/api/status`, {
+      headers: { Authorization: 'Basic ' + Buffer.from(`${TEST_USER}:${TEST_PASS}`).toString('base64') },
+    });
+    expect(authed.status).toBe(200);
+  });
+});
+
+describe('COD-54 secret delivery — generated hooks + session env present the secret', () => {
+  it('generated hook curl commands send the secret header, read from the file at exec time', async () => {
+    const { generateHooksConfig } = await import('../src/hooks-config.js');
+    const config = generateHooksConfig();
+    const commands = JSON.stringify(config);
+    // Header present, value sourced from $CODEMAN_HOOK_SECRET_FILE (not embedded).
+    expect(commands).toContain(HOOK_SECRET_HEADER);
+    expect(commands).toContain('$CODEMAN_HOOK_SECRET_FILE');
+    expect(commands).not.toContain(getHookSecret());
+  });
+
+  it('session env builders export CODEMAN_HOOK_SECRET_FILE (path only, never the value)', async () => {
+    const { buildClaudeEnv, buildShellEnv } = await import('../src/session-cli-builder.js');
+    const claudeEnv = buildClaudeEnv('test-session');
+    const shellEnv = buildShellEnv('test-session');
+    expect(claudeEnv.CODEMAN_HOOK_SECRET_FILE).toMatch(/hook-secret$/);
+    expect(shellEnv.CODEMAN_HOOK_SECRET_FILE).toMatch(/hook-secret$/);
+    expect(JSON.stringify(claudeEnv)).not.toContain(getHookSecret());
+  });
 });
