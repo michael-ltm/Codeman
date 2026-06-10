@@ -164,8 +164,22 @@ describe('TmuxManager (unit)', () => {
         cursorY: 1,
       });
 
-      expect(snapshot).toBe(`\x1b[1;1H${'x'.repeat(9)}\x1b[2;1Hnext line\x1b[2;3H`);
+      // Full pane width is painted (10 cols); autowrap is avoided by the
+      // absolute cursor positioning, not by dropping the last column.
+      expect(snapshot).toBe(`\x1b[1;1H${'x'.repeat(10)}\x1b[2;1Hnext line\x1b[2;3H`);
       expect(snapshot).not.toContain('\n');
+    });
+
+    it('preserves the rightmost column of each captured row', () => {
+      const snapshot = formatPaneSnapshot(['abcd'], {
+        cols: 4,
+        rows: 1,
+        cursorX: 0,
+        cursorY: 0,
+      });
+
+      // Previously truncated to cols - 1 ('abc'); the full width is now kept.
+      expect(snapshot).toBe('\x1b[1;1Habcd\x1b[1;1H');
     });
 
     it('preserves SGR color while stripping non-style pane controls', () => {
@@ -190,18 +204,18 @@ describe('TmuxManager (unit)', () => {
         cursorY: 0,
       });
 
-      expect(snapshot).toBe('\x1b[1;1H\x1b[31mabc\x1b[0m\x1b[1;1H');
+      expect(snapshot).toBe('\x1b[1;1H\x1b[31mabcd\x1b[0m\x1b[1;1H');
     });
 
     it('does not let full-width glyphs cross the paint boundary', () => {
-      const snapshot = formatPaneSnapshot(['abc\u754cdef'], {
-        cols: 5,
-        rows: 1,
-        cursorX: 0,
-        cursorY: 0,
-      });
-
-      expect(snapshot).toBe('\x1b[1;1Habc\x1b[1;1H');
+      // cols 5 = 'abc' (3) + full-width \u754c (2) fits exactly; with cols 4 the
+      // wide glyph would straddle the boundary and is dropped.
+      expect(formatPaneSnapshot(['abc\u754cdef'], { cols: 5, rows: 1, cursorX: 0, cursorY: 0 })).toBe(
+        '\x1b[1;1Habc\u754c\x1b[1;1H'
+      );
+      expect(formatPaneSnapshot(['abc\u754cdef'], { cols: 4, rows: 1, cursorX: 0, cursorY: 0 })).toBe(
+        '\x1b[1;1Habc\x1b[1;1H'
+      );
     });
 
     it('keeps combining marks attached without consuming a terminal column', () => {

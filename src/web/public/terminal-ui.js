@@ -84,6 +84,23 @@ Object.assign(CodemanApp.prototype, {
     this.fitAddon = new FitAddon.FitAddon();
     this.terminal.loadAddon(this.fitAddon);
 
+    // SerializeAddon: lets us snapshot the xterm rendered state (viewport +
+    // scrollback + colors/attrs) when switching away from a tab and restore
+    // it on switch-back. Needed primarily for codex tabs — codex's TUI drops
+    // earlier conversation from its current frame, so replaying the server
+    // byte buffer on tab-switch shows only the latest (idle) frame. The
+    // snapshot captures what the user was actually looking at.
+    this._xtermSnapshots = new Map(); // Map<sessionId, serialized-string>
+    if (typeof SerializeAddon !== 'undefined') {
+      try {
+        this._serializeAddon = new SerializeAddon.SerializeAddon();
+        this.terminal.loadAddon(this._serializeAddon);
+      } catch (_e) {
+        /* SerializeAddon failed — snapshot/restore disabled, fallback to buffer-fetch */
+        this._serializeAddon = null;
+      }
+    }
+
     if (typeof Unicode11Addon !== 'undefined') {
       try {
         const unicode11Addon = new Unicode11Addon.Unicode11Addon();

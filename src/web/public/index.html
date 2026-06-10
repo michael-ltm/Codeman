@@ -30,6 +30,11 @@
        'defer' preserves execution order (xterm loads before fit addon). -->
   <script defer src="vendor/xterm.min.js"></script>
   <script defer src="vendor/xterm-addon-fit.min.js"></script>
+  <!-- SerializeAddon: snapshots xterm state (viewport + scrollback + attrs) for
+       per-session restore on tab switches. Lets codex tabs survive switch-away
+       without codeman having to replay codex's byte stream (which loses earlier
+       conversation because codex's TUI redraws drop it from the viewport). -->
+  <script defer src="vendor/xterm-addon-serialize.min.js"></script>
   <!-- WebGL addon lazy-loaded by app.js on desktop only (skipped on mobile, saving 244KB) -->
   <script defer src="vendor/xterm-addon-unicode11.min.js"></script>
   <script defer src="vendor/xterm-zerolag-input.js"></script>

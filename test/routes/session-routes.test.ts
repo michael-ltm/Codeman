@@ -441,6 +441,39 @@ describe('session-routes', () => {
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
+
+    it('prepends the live tmux pane buffer (cleared) before the byte history', async () => {
+      harness.ctx._session.terminalBuffer = 'history-bytes';
+      harness.ctx.mux.captureActivePaneBuffer = vi.fn(() => 'LIVE-PANE-FRAME');
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: `/api/sessions/${harness.ctx._sessionId}/terminal`,
+      });
+      expect(res.statusCode).toBe(200);
+      const buf = JSON.parse(res.body).data.terminalBuffer as string;
+      // history, then a viewport clear, then the live pane frame
+      expect(buf).toContain('history-bytes');
+      expect(buf).toContain('\x1b[H\x1b[2J');
+      expect(buf).toContain('LIVE-PANE-FRAME');
+      expect(buf.indexOf('history-bytes')).toBeLessThan(buf.indexOf('LIVE-PANE-FRAME'));
+      expect(harness.ctx.mux.captureActivePaneBuffer).toHaveBeenCalledWith(harness.ctx._session.muxName);
+    });
+
+    it('falls back to the byte history when no live pane buffer is available', async () => {
+      harness.ctx._session.terminalBuffer = 'history-only';
+      // Empty string (the test-mode return) and null both mean "no live frame".
+      harness.ctx.mux.captureActivePaneBuffer = vi.fn(() => '');
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: `/api/sessions/${harness.ctx._sessionId}/terminal`,
+      });
+      expect(res.statusCode).toBe(200);
+      const buf = JSON.parse(res.body).data.terminalBuffer as string;
+      expect(buf).toContain('history-only');
+      expect(buf).not.toContain('\x1b[H\x1b[2J');
+    });
   });
 
   // ========== POST /api/sessions/:id/run ==========

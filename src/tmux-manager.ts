@@ -426,7 +426,12 @@ export function formatPaneSnapshot(
   geometry: { cols: number; rows: number; cursorX: number; cursorY: number }
 ): string {
   const cols = Math.max(1, geometry.cols);
-  const paintCols = Math.max(1, cols - 1);
+  // Paint the full pane width. Earlier this dropped the rightmost column
+  // (cols - 1) out of caution about last-column autowrap, but every painted
+  // row is immediately followed by an absolute cursor-position CSI (the next
+  // row's `\x1b[r;1H`, or the final cursor move), which cancels xterm's
+  // pending-wrap state before any further glyph — so the last column is safe.
+  const paintCols = cols;
   const rows = Math.max(1, geometry.rows);
   const parts: string[] = [];
   for (let row = 0; row < Math.min(lines.length, rows); row++) {
