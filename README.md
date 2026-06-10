@@ -5,7 +5,7 @@
 <h2 align="center">The missing control plane for AI coding agents</h2>
 
 <p align="center">
-  <em>Agent Visualization &bull; Zero-Lag Input &bull; Autonomous Orchestrator &bull; Respawn Controller &bull; Mobile-First UI &bull; Hardened Security</em>
+  <em>Agent Visualization &bull; Zero-Lag Input &bull; Mobile-First UI &bull; Hardened Security</em>
 </p>
 
 <p align="center">

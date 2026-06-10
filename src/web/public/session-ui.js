@@ -927,9 +927,8 @@ Object.assign(CodemanApp.prototype, {
     const tabName = document.querySelector(`.tab-name[data-session-id="${sessionId}"]`);
     if (!tabName) return;
 
-    // If a previous rename somehow leaked (shouldn't happen, but defends against
-    // future code paths that throw before cleanup), abort it before starting fresh.
-    if (this._activeRename) this._activeRename.cancel();
+    // Prevent tab re-renders from destroying the input while renaming
+    this._inlineRenameActive = true;
 
     const currentName = this.getSessionName(session);
     const parsed = parseSessionPrefix(session.name);
@@ -957,14 +956,14 @@ Object.assign(CodemanApp.prototype, {
     input.focus();
     input.select();
 
-    let settled = false;
     const finishRename = async ({ commit }) => {
-      if (settled) return;
-      settled = true;
+      if (!this._inlineRenameActive) return; // prevent double-fire
+      this._inlineRenameActive = false;
       this._activeRename = null;
 
-      // Aborted (e.g. session was deleted mid-rename): just re-render so any
-      // ghost DOM left behind is replaced with the canonical tab list.
+      // Aborted (e.g. the session was deleted mid-rename, or Escape): re-render
+      // so any ghost DOM is replaced with the canonical tab list, and skip the
+      // API call — a cancel must not fire a stale rename PUT.
       if (!commit) {
         this.renderSessionTabs();
         return;

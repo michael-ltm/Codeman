@@ -888,8 +888,9 @@ export function registerSessionRoutes(
     const query = req.query as { tail?: string };
     const session = findSessionOrFail(ctx, id);
 
+    const rawBuffer = session.terminalBuffer;
     const tailBytes = query.tail ? parseInt(query.tail, 10) : 0;
-    const fullSize = session.terminalBufferLength;
+    const fullSize = rawBuffer.length;
     let truncated = false;
     let cleanBuffer: string;
 
@@ -897,7 +898,7 @@ export function registerSessionRoutes(
     // During long thinking phases, Ink rewrites the same rows thousands of times
     // (500KB+). Without stripping, tail mode returns only spinner frames and
     // the terminal appears empty when switching tabs.
-    const strippedBuffer = stripInkRedrawBloat(session.terminalBuffer);
+    const strippedBuffer = stripInkRedrawBloat(rawBuffer);
 
     if (tailBytes > 0 && strippedBuffer.length > tailBytes) {
       // Fast path: tail from the end, skip expensive banner search on full 2MB buffer.
