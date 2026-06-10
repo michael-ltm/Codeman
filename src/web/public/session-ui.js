@@ -157,6 +157,9 @@ Object.assign(CodemanApp.prototype, {
     if (mode === 'opencode') {
       return this.runOpenCode();
     }
+    if (mode === 'codex') {
+      return this.runCodex();
+    }
     return this.runClaude();
   },
 
@@ -253,7 +256,7 @@ Object.assign(CodemanApp.prototype, {
       gearBtn.className = `btn-toolbar btn-run-gear mode-${mode}`;
     }
     if (label) {
-      label.textContent = mode === 'opencode' ? 'Run OC' : 'Run';
+      label.textContent = mode === 'opencode' ? 'Run OC' : mode === 'codex' ? 'Run CX' : 'Run';
     }
   },
 
@@ -580,6 +583,51 @@ Object.assign(CodemanApp.prototype, {
     }
   },
 
+  async runCodex() {
+    const caseName = document.getElementById('quickStartCase').value || 'testcase';
+
+    this.terminal.clear();
+    this.terminal.writeln(`\x1b[1;32m Starting Codex session in ${caseName}...\x1b[0m`);
+    this.terminal.writeln('');
+    this.terminal.focus();
+
+    try {
+      const statusRes = await fetch('/api/codex/status');
+      const status = await statusRes.json();
+      if (!status.available) {
+        this.terminal.writeln('\x1b[1;31m Codex CLI not found.\x1b[0m');
+        this.terminal.writeln('\x1b[90m Install with: npm install -g @openai/codex\x1b[0m');
+        return;
+      }
+
+      const globalSettings = this.loadAppSettingsFromStorage();
+      const envOverrides = this.buildEnvOverrides(this.getCaseSettings(caseName), globalSettings);
+      const res = await fetch('/api/quick-start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          caseName,
+          mode: 'codex',
+          codexConfig: {
+            dangerouslyBypassApprovals: globalSettings.codexDangerouslyBypassApprovals ?? false,
+            renderMode: 'hybrid',
+          },
+          ...(Object.keys(envOverrides).length > 0 ? { envOverrides } : {}),
+        })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Failed to start Codex');
+
+      if (data.sessionId) {
+        await this.selectSession(data.sessionId);
+      }
+
+      this.terminal.focus();
+    } catch (err) {
+      this.terminal.writeln(`\x1b[1;31m Error: ${err.message}\x1b[0m`);
+    }
+  },
+
 
   // ═══════════════════════════════════════════════════════════════
   // Session Options Modal
@@ -592,7 +640,7 @@ Object.assign(CodemanApp.prototype, {
     this.editingSessionId = sessionId;
 
     // Reset to an appropriate tab — Summary for OpenCode (Respawn/Ralph are Claude-only)
-    this.switchOptionsTab(session.mode === 'opencode' ? 'summary' : 'respawn');
+    this.switchOptionsTab(session.mode === 'opencode' || session.mode === 'codex' ? 'summary' : 'respawn');
 
     // Update respawn status display and buttons
     const respawnStatus = document.getElementById('sessionRespawnStatus');
@@ -621,7 +669,7 @@ Object.assign(CodemanApp.prototype, {
     }
 
     // Hide Claude-specific options for OpenCode sessions
-    const isOpenCode = session.mode === 'opencode';
+    const isOpenCode = session.mode === 'opencode' || session.mode === 'codex';
     const claudeOnlyEls = document.querySelectorAll('[data-claude-only]');
     claudeOnlyEls.forEach(el => { el.style.display = isOpenCode ? 'none' : ''; });
 
@@ -1472,5 +1520,16 @@ Object.assign(CodemanApp.prototype, {
     modal.classList.add('from-mobile');
     // Remove animation class after it plays
     setTimeout(() => modal.classList.remove('from-mobile'), 300);
+  },
+});
+
+Object.defineProperty(CodemanApp.prototype, 'runMode', {
+  configurable: true,
+  enumerable: true,
+  get() {
+    return this._runMode || 'claude';
+  },
+  set(mode) {
+    this._runMode = mode === 'opencode' || mode === 'codex' || mode === 'claude' ? mode : 'claude';
   },
 });

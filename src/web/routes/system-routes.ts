@@ -341,6 +341,14 @@ export function registerSystemRoutes(
     };
   });
 
+  app.get('/api/codex/status', async () => {
+    const { isCodexAvailable, resolveCodexDir } = await import('../../utils/codex-cli-resolver.js');
+    return {
+      available: isCodexAvailable(),
+      path: resolveCodexDir(),
+    };
+  });
+
   // ═══════════════════════════════════════════════════════════════
   // State & Lifecycle (cleanup, lifecycle log, stats)
   // ═══════════════════════════════════════════════════════════════

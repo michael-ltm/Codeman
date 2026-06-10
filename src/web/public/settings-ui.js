@@ -339,6 +339,9 @@ Object.assign(CodemanApp.prototype, {
     claudeModeSelect.onchange = () => {
       allowedToolsRow.style.display = claudeModeSelect.value === 'allowedTools' ? '' : 'none';
     };
+    // Codex CLI settings
+    document.getElementById('appSettingsCodexDangerouslyBypassApprovals').checked =
+      settings.codexDangerouslyBypassApprovals ?? false;
     // Claude Permissions settings
     document.getElementById('appSettingsAgentTeams').checked = settings.agentTeamsEnabled ?? false;
     document.getElementById('appSettingsOpusContext1m').checked = settings.opusContext1mEnabled ?? false;
@@ -1340,6 +1343,8 @@ Object.assign(CodemanApp.prototype, {
       // Claude CLI settings
       claudeMode: document.getElementById('appSettingsClaudeMode').value,
       allowedTools: document.getElementById('appSettingsAllowedTools').value.trim(),
+      // Codex CLI settings
+      codexDangerouslyBypassApprovals: document.getElementById('appSettingsCodexDangerouslyBypassApprovals').checked,
       // Claude Permissions settings
       agentTeamsEnabled: document.getElementById('appSettingsAgentTeams').checked,
       opusContext1mEnabled: document.getElementById('appSettingsOpusContext1m').checked,

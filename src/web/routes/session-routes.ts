@@ -282,6 +282,17 @@ export function registerSessionRoutes(
       }
     }
 
+    // Check Codex availability if requested
+    if (body.mode === 'codex') {
+      const { isCodexAvailable } = await import('../../utils/codex-cli-resolver.js');
+      if (!isCodexAvailable()) {
+        return createErrorResponse(
+          ApiErrorCode.OPERATION_FAILED,
+          'Codex CLI not found. Install with: npm install -g @openai/codex'
+        );
+      }
+    }
+
     // Pre-validate resumeSessionId: check that the conversation file actually exists
     // in Claude's projects directory. If not, skip resume to avoid confusing
     // "No conversation found" errors from Claude CLI.
@@ -318,9 +329,11 @@ export function registerSessionRoutes(
     const model =
       mode === 'opencode'
         ? body.openCodeConfig?.model
-        : mode !== 'shell'
-          ? modelConfig?.defaultModel || undefined
-          : undefined;
+        : mode === 'codex'
+          ? body.codexConfig?.model
+          : mode !== 'shell'
+            ? modelConfig?.defaultModel || undefined
+            : undefined;
     const claudeModeConfig = await ctx.getClaudeModeConfig();
     const session = new Session({
       workingDir,
@@ -333,6 +346,7 @@ export function registerSessionRoutes(
       claudeMode: claudeModeConfig.claudeMode,
       allowedTools: claudeModeConfig.allowedTools,
       openCodeConfig: mode === 'opencode' ? body.openCodeConfig : undefined,
+      codexConfig: mode === 'codex' ? body.codexConfig : undefined,
       resumeSessionId: validatedResumeId,
       envOverrides: body.envOverrides,
       effort: body.effort,
@@ -1112,6 +1126,7 @@ export function registerSessionRoutes(
       caseName = 'testcase',
       mode = 'claude',
       openCodeConfig,
+      codexConfig,
       envOverrides,
       effort,
     } = parseBody(QuickStartSchema, req.body);
@@ -1123,6 +1138,17 @@ export function registerSessionRoutes(
         return createErrorResponse(
           ApiErrorCode.OPERATION_FAILED,
           'OpenCode CLI not found. Install with: curl -fsSL https://opencode.ai/install | bash'
+        );
+      }
+    }
+
+    // Check Codex availability if requested
+    if (mode === 'codex') {
+      const { isCodexAvailable } = await import('../../utils/codex-cli-resolver.js');
+      if (!isCodexAvailable()) {
+        return createErrorResponse(
+          ApiErrorCode.OPERATION_FAILED,
+          'Codex CLI not found. Install with: npm install -g @openai/codex'
         );
       }
     }
@@ -1179,9 +1205,11 @@ export function registerSessionRoutes(
     const qsModel =
       mode === 'opencode'
         ? openCodeConfig?.model
-        : mode !== 'shell'
-          ? qsModelConfig?.defaultModel || undefined
-          : undefined;
+        : mode === 'codex'
+          ? codexConfig?.model
+          : mode !== 'shell'
+            ? qsModelConfig?.defaultModel || undefined
+            : undefined;
     const qsClaudeModeConfig = await ctx.getClaudeModeConfig();
     const session = new Session({
       workingDir: casePath,
@@ -1193,6 +1221,7 @@ export function registerSessionRoutes(
       claudeMode: qsClaudeModeConfig.claudeMode,
       allowedTools: qsClaudeModeConfig.allowedTools,
       openCodeConfig: mode === 'opencode' ? openCodeConfig : undefined,
+      codexConfig: mode === 'codex' ? codexConfig : undefined,
       envOverrides,
       effort,
     });

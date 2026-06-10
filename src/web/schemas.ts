@@ -46,7 +46,7 @@ const safePathSchema = z.string().max(1000).refine(isValidWorkingDir, {
 // ========== Env Var Allowlist ==========
 
 /** Allowlisted env var key prefixes */
-const ALLOWED_ENV_PREFIXES = ['CLAUDE_CODE_', 'OPENCODE_'];
+const ALLOWED_ENV_PREFIXES = ['CLAUDE_CODE_', 'OPENCODE_', 'CODEX_'];
 
 /** Env var keys that are always blocked (security-sensitive) */
 const BLOCKED_ENV_KEYS = new Set([
@@ -76,7 +76,7 @@ const safeEnvOverridesSchema = z
     },
     {
       message:
-        'envOverrides contains blocked or disallowed env var keys. Only CLAUDE_CODE_* and OPENCODE_* keys are allowed.',
+        'envOverrides contains blocked or disallowed env var keys. Only CLAUDE_CODE_*, OPENCODE_*, and CODEX_* keys are allowed.',
     }
   );
 
@@ -128,9 +128,30 @@ const OpenCodeConfigSchema = z
   })
   .optional();
 
+/** Schema for Codex (OpenAI CLI)-specific configuration */
+const CodexConfigSchema = z
+  .object({
+    model: z
+      .string()
+      .max(100)
+      .regex(/^[a-zA-Z0-9._\-/]+$/)
+      .optional(),
+    resumeSessionId: z
+      .string()
+      .max(100)
+      .regex(/^[a-zA-Z0-9_-]+$/)
+      .optional(),
+    dangerouslyBypassApprovals: z.boolean().optional(),
+    renderMode: z
+      .enum(['scrollback', 'hybrid'])
+      .optional()
+      .transform(() => 'hybrid' as const),
+  })
+  .optional();
+
 export const CreateSessionSchema = z.object({
   workingDir: safePathSchema.optional(),
-  mode: z.enum(['claude', 'shell', 'opencode']).optional(),
+  mode: z.enum(['claude', 'shell', 'opencode', 'codex']).optional(),
   name: z.string().max(100).optional(),
   envOverrides: safeEnvOverridesSchema,
   /** Claude CLI effort level (soft default via --settings, switchable in-session via /effort) */
@@ -138,6 +159,7 @@ export const CreateSessionSchema = z.object({
   /** Model override to write to .claude/settings.local.json (e.g., "opus[1m]"). Empty string clears. */
   modelOverride: z.string().max(50).optional(),
   openCodeConfig: OpenCodeConfigSchema,
+  codexConfig: CodexConfigSchema,
   /** Resume a previous Claude conversation by its session ID (used for reboot recovery) */
   resumeSessionId: z
     .string()
@@ -188,8 +210,9 @@ export const QuickStartSchema = z.object({
     .string()
     .regex(/^[a-zA-Z0-9_-]+$/, 'Invalid case name format. Use only letters, numbers, hyphens, underscores.')
     .optional(),
-  mode: z.enum(['claude', 'shell', 'opencode']).optional(),
+  mode: z.enum(['claude', 'shell', 'opencode', 'codex']).optional(),
   openCodeConfig: OpenCodeConfigSchema,
+  codexConfig: CodexConfigSchema,
   envOverrides: safeEnvOverridesSchema,
   /** Claude CLI effort level (soft default via --settings, switchable in-session via /effort) */
   effort: effortLevelSchema,
@@ -300,6 +323,8 @@ export const SettingsUpdateSchema = z
     // Claude CLI settings
     claudeMode: z.string().max(50).optional(),
     allowedTools: z.string().max(2000).optional(),
+    // Codex CLI settings
+    codexDangerouslyBypassApprovals: z.boolean().optional(),
     // CPU priority
     nice: z
       .object({

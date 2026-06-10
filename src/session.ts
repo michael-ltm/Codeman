@@ -46,6 +46,7 @@ import {
   type ClaudeMode,
   type SessionMode,
   type OpenCodeConfig,
+  type CodexConfig,
   type EffortLevel,
 } from './types.js';
 import type { TerminalMultiplexer, MuxSession } from './mux-interface.js';
@@ -122,6 +123,11 @@ const LEADING_ANSI_WHITESPACE_PATTERN = /^(\x1b\[\??[\d;]*[A-Za-z]|[\s\r\n])+/;
 const CTRL_L_PATTERN = /\x0c/g;
 /** Pattern to split by newlines (CR or LF) */
 const NEWLINE_SPLIT_PATTERN = /\r?\n/;
+
+/** True for external-CLI run modes (non-Claude) that use their own TUI and output format. */
+function isExternalCliMode(mode: SessionMode): boolean {
+  return mode === 'opencode' || mode === 'codex';
+}
 
 // Note: Claude CLI PATH resolution moved to session-cli-builder.ts (buildClaudeEnv)
 
@@ -313,6 +319,8 @@ export class Session extends EventEmitter {
 
   // OpenCode configuration (only for mode === 'opencode')
   private _openCodeConfig: OpenCodeConfig | undefined;
+  // Codex configuration (only for mode === 'codex')
+  private _codexConfig: CodexConfig | undefined;
   private _resumeSessionId: string | undefined;
 
   // Ephemeral env overrides (e.g., CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS). Exported by tmux
@@ -381,6 +389,8 @@ export class Session extends EventEmitter {
       allowedTools?: string;
       /** OpenCode configuration (only for mode === 'opencode') */
       openCodeConfig?: OpenCodeConfig;
+      /** Codex configuration (only for mode === 'codex') */
+      codexConfig?: CodexConfig;
       /** Resume a previous Claude conversation (used after server reboot) */
       resumeSessionId?: string;
       /** Extra env vars exported to the CLI at spawn time (no disk persistence) */
@@ -432,6 +442,11 @@ export class Session extends EventEmitter {
     // Apply OpenCode configuration
     if (config.openCodeConfig) {
       this._openCodeConfig = config.openCodeConfig;
+    }
+
+    // Apply Codex configuration
+    if (config.codexConfig) {
+      this._codexConfig = config.codexConfig;
     }
 
     // Apply env overrides (exported at spawn, not persisted to disk).
@@ -696,6 +711,11 @@ export class Session extends EventEmitter {
     return this._allowedTools;
   }
 
+  /** Codex CLI configuration for this session. */
+  get codexConfig(): CodexConfig | undefined {
+    return this._codexConfig;
+  }
+
   // Note: _buildPermissionArgs removed — now using buildInteractiveArgs from session-cli-builder.ts
 
   /**
@@ -867,6 +887,7 @@ export class Session extends EventEmitter {
       cliAccountType: this._cliAccountType || undefined,
       cliLatestVersion: this._cliLatestVersion || undefined,
       openCodeConfig: this._openCodeConfig,
+      codexConfig: this._codexConfig,
       resumeSessionId: this._resumeSessionId,
       effort: this._effort,
       // envOverrides intentionally NOT on the public SessionState type — they must not
@@ -1045,7 +1066,7 @@ export class Session extends EventEmitter {
 
     this._resetBuffers();
 
-    const modeLabel = this.mode === 'opencode' ? 'OpenCode' : 'Claude';
+    const modeLabel = this.mode === 'opencode' ? 'OpenCode' : this.mode === 'codex' ? 'Codex' : 'Claude';
     console.log(
       `[Session] Starting interactive ${modeLabel} session` + (this._useMux ? ` (with ${this._mux!.backend})` : '')
     );
@@ -1063,6 +1084,7 @@ export class Session extends EventEmitter {
             claudeMode: this._claudeMode,
             allowedTools: this._allowedTools,
             openCodeConfig: this._openCodeConfig,
+            codexConfig: this._codexConfig,
             resumeSessionId: this._resumeSessionId,
             envOverrides: this._envOverrides,
             effort: this._effort,
@@ -1077,6 +1099,7 @@ export class Session extends EventEmitter {
             claudeMode: this._claudeMode,
             allowedTools: this._allowedTools,
             openCodeConfig: this._openCodeConfig,
+            codexConfig: this._codexConfig,
             resumeSessionId: this._resumeSessionId,
             envOverrides: this._envOverrides,
             effort: this._effort,
@@ -1090,8 +1113,8 @@ export class Session extends EventEmitter {
         // For NEW mux sessions: wait for readiness then clean buffer
         // For RESTORED mux sessions: don't do anything - client will fetch buffer on tab switch
         if (!isRestored) {
-          if (this.mode === 'opencode') {
-            // OpenCode uses Bubble Tea TUI — no ❯ prompt to detect.
+          if (isExternalCliMode(this.mode)) {
+            // External CLIs use custom TUIs — no ❯ prompt to detect.
             // Wait for TUI to stabilize (output stops changing), then mark ready.
             // Don't clear the buffer — the TUI's initial render IS the useful content.
             // Emit needsRefresh so the client fetches the full buffer once the TUI has rendered.
@@ -1145,6 +1168,10 @@ export class Session extends EventEmitter {
       // OpenCode sessions require tmux for env var injection (API keys via setenv)
       if (this.mode === 'opencode') {
         throw new Error('OpenCode sessions require tmux. Direct PTY fallback is not supported.');
+      }
+      // Codex sessions require tmux for OPENAI_API_KEY injection via setenv
+      if (this.mode === 'codex') {
+        throw new Error('Codex sessions require tmux. Direct PTY fallback is not supported.');
       }
       try {
         // Pass --session-id to use the SAME ID as the Codeman session
@@ -1305,9 +1332,9 @@ export class Session extends EventEmitter {
    * PTY data chunk. Receives accumulated raw data to process in one batch.
    */
   private _processExpensiveParsers(rawData: string): void {
-    // Skip Claude-specific parsers for OpenCode sessions — Ralph tracker, BashToolParser,
-    // token parsing, and CLI info parsing all depend on Claude's output format.
-    if (this.mode === 'opencode') return;
+    // Skip Claude-specific parsers for external CLI sessions (Ralph tracker,
+    // BashToolParser, token + CLI-info parsing all depend on Claude's output format).
+    if (isExternalCliMode(this.mode)) return;
 
     // Lazy ANSI strip: only compute cleanData when a consumer actually needs it.
     let _cleanData: string | null = null;

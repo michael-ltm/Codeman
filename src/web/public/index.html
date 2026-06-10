@@ -384,6 +384,9 @@
               <button class="run-mode-option" data-mode="opencode" onclick="app.setRunMode('opencode')">
                 <span class="run-mode-dot opencode"></span>OpenCode
               </button>
+              <button class="run-mode-option" data-mode="codex" onclick="app.setRunMode('codex')">
+                <span class="run-mode-dot codex"></span>Codex
+              </button>
               <div class="run-mode-sep"></div>
               <div class="run-mode-header">Recent Sessions</div>
               <div class="run-mode-history" id="runModeHistory"></div>
@@ -895,6 +898,7 @@
         <div class="modal-tabs">
           <button class="modal-tab-btn active" data-tab="settings-display">Display</button>
           <button class="modal-tab-btn" data-tab="settings-claude">Claude CLI</button>
+          <button class="modal-tab-btn" data-tab="settings-codex">Codex CLI</button>
           <button class="modal-tab-btn" data-tab="settings-models">Models</button>
           <button class="modal-tab-btn" data-tab="settings-paths">Paths</button>
           <button class="modal-tab-btn" data-tab="settings-notifications">Notifications</button>
@@ -1172,6 +1176,18 @@
               <label>Nice Value</label>
               <input type="number" id="appSettingsNiceValue" min="-20" max="19" value="10" style="width: 80px;">
               <span class="form-hint">Process priority (-20 to 19, higher = lower priority, default: 10)</span>
+            </div>
+          </div>
+          <!-- Codex CLI Tab -->
+          <div class="modal-tab-content hidden" id="settings-codex">
+            <div class="form-section-header">Codex CLI</div>
+            <div class="form-row form-row-switch">
+              <label>Bypass Approvals and Sandbox</label>
+              <label class="switch">
+                <input type="checkbox" id="appSettingsCodexDangerouslyBypassApprovals">
+                <span class="slider"></span>
+              </label>
+              <span class="form-hint">Start new Codex sessions with --dangerously-bypass-approvals-and-sandbox</span>
             </div>
           </div>
           <!-- Models Tab -->
