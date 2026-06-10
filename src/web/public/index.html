@@ -604,17 +604,6 @@
           <div class="modal-tab-content" id="respawn-tab">
           <!-- Respawn Settings Section -->
           <div class="session-respawn-section" id="sessionRespawnSection">
-            <div class="respawn-header">
-              <div class="session-respawn-status" id="sessionRespawnStatus">
-                <span class="respawn-status-indicator"></span>
-                <span class="respawn-status-text">Not active</span>
-              </div>
-              <div class="respawn-actions">
-                <button class="btn-toolbar btn-success btn-sm" onclick="app.enableRespawnFromModal()" id="modalEnableRespawnBtn">Enable</button>
-                <button class="btn-toolbar btn-danger btn-sm" onclick="app.stopRespawnFromModal()" id="modalStopRespawnBtn" style="display: none;">Stop</button>
-              </div>
-            </div>
-
             <div class="auto-resume-box">
               <label class="checkbox-inline">
                 <input type="checkbox" id="modalAutoResumeEnabled" onchange="app.autoSaveAutoResume()">
@@ -623,6 +612,10 @@
               <span class="auto-resume-status" id="autoResumeStatus"></span>
               <span class="form-hint">If Claude pauses on a usage limit ("limit reached &middot; resets 3pm"), Codeman waits for the reset time and automatically continues the work. Independent of the respawn loop below.</span>
             </div>
+
+            <div class="respawn-loop-box">
+            <div class="respawn-loop-title">Respawn loop</div>
+            <span class="form-hint respawn-loop-hint">One autonomous work cycle: whenever Claude goes idle, Codeman sends the update prompt, optionally runs /clear + /init, and kickstarts the next round &mdash; repeating for the chosen duration. All settings below belong to this loop; configure them, then press Enable.</span>
 
             <div class="form-row">
               <label>Duration</label>
@@ -660,7 +653,7 @@
               <p class="form-hint" id="presetDescriptionHint"></p>
             </div>
 
-            <div class="form-section-header">Respawn Cycle</div>
+            <div class="form-section-header">Cycle Steps</div>
             <div class="form-row">
               <label>1. Update Prompt</label>
               <textarea id="modalRespawnPrompt" rows="1" placeholder="Prompt to send when idle" onchange="app.autoSaveRespawnConfig()" style="resize: vertical; min-height: 30px;">update all the docs and CLAUDE.md</textarea>
@@ -686,6 +679,18 @@
               <textarea id="modalRespawnKickstart" rows="1" placeholder="Optional: prompt if /init doesn't trigger work" onchange="app.autoSaveRespawnConfig()" style="resize: vertical; min-height: 30px;"></textarea>
               <span class="form-hint">Sent only when /init completes but Claude stays idle &middot; Auto-accept presses Enter for plan approvals and default options</span>
             </div>
+
+            <div class="respawn-header">
+              <div class="session-respawn-status" id="sessionRespawnStatus">
+                <span class="respawn-status-indicator"></span>
+                <span class="respawn-status-text">Not active</span>
+              </div>
+              <div class="respawn-actions">
+                <button class="btn-toolbar btn-success btn-sm" onclick="app.enableRespawnFromModal()" id="modalEnableRespawnBtn">Enable</button>
+                <button class="btn-toolbar btn-danger btn-sm" onclick="app.stopRespawnFromModal()" id="modalStopRespawnBtn" style="display: none;">Stop</button>
+              </div>
+            </div>
+            </div><!-- End respawn-loop-box -->
           </div>
           </div><!-- End respawn-tab -->
 

@@ -36,6 +36,13 @@ html.mobile-init .file-browser-panel {
   html {
     touch-action: manipulation;
   }
+
+  /* No "open in new window" (detach) on phones/tablets — popped-out browser
+     windows aren't usable there. !important beats the hover/detached reveal
+     rules in styles.css */
+  .session-tab .tab-detach {
+    display: none !important;
+  }
 }
 
 /* ============================================================================
@@ -199,6 +206,12 @@ html.mobile-init .file-browser-panel {
   }
 
   /* ---- Settings Modal: Tablet Optimizations ---- */
+
+  /* Modals must stack above the fixed tablet header (z-index 1200) so the
+     modal header with the close button stays visible */
+  .modal {
+    z-index: 1300;
+  }
 
   .modal-tabs {
     overflow-x: auto;
@@ -1215,6 +1228,13 @@ html.mobile-init .file-browser-panel {
     max-height: 35vh;
   }
 
+  /* Modals must stack above the fixed mobile header (z-index 1200), or the
+     modal header with the close button is buried underneath it and the
+     full-screen modal cannot be dismissed */
+  .modal {
+    z-index: 1300;
+  }
+
   /* Full-screen modals on phones */
   .modal-content {
     width: 100%;
@@ -1528,42 +1548,36 @@ html.mobile-init .file-browser-panel {
     border-radius: 5px;
   }
 
-  /* Duration preset buttons — grid layout, 4 columns for even spacing */
+  /* Duration preset buttons — one compact row */
   .duration-presets {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    display: flex;
+    flex-wrap: wrap;
     gap: 0.2rem;
   }
 
   .duration-preset-btn {
-    min-height: 32px;
-    padding: 0.2rem 0.25rem;
-    font-size: 0.65rem;
-    border-radius: 5px;
+    min-height: 24px;
+    padding: 0.1rem 0.4rem;
+    font-size: 0.6rem;
+    border-radius: 4px;
     text-align: center;
   }
 
-  /* Custom duration — spans full row below */
   .duration-custom {
-    grid-column: 1 / -1;
     display: flex;
-    gap: 0.25rem;
+    gap: 0.2rem;
     align-items: center;
   }
 
-  .duration-custom .duration-preset-btn {
-    flex: 0 0 auto;
-    min-width: 50px;
-  }
-
   .duration-custom-input.visible {
-    flex: 1;
+    flex: 0 1 auto;
   }
 
   .duration-custom-input input {
-    width: 100%;
-    min-height: 28px;
+    width: 64px;
+    min-height: 24px;
     font-size: 16px; /* Prevents iOS zoom */
+    padding: 0.1rem 0.3rem;
   }
 
   /* Preset selector row — full-width dropdown, buttons below */
@@ -1620,6 +1634,16 @@ html.mobile-init .file-browser-panel {
   #sessionOptionsModal .checkbox-inline input[type="checkbox"] {
     width: 18px;
     height: 18px;
+  }
+
+  /* Respawn-loop box title matches the auto-resume title; its cycle-step
+     checkboxes match the step labels */
+  #sessionOptionsModal .respawn-loop-title {
+    font-size: 0.75rem;
+  }
+
+  #sessionOptionsModal .respawn-loop-box .checkbox-inline {
+    font-size: 0.65rem;
   }
 
   /* Respawn options row — stack if needed */

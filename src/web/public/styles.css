@@ -4645,15 +4645,16 @@ body.solo-mode .btn-lifecycle-log {
   width: 60px;
 }
 
-/* Respawn header with status and actions */
+/* Respawn status + Enable/Stop row — sits at the bottom of the Respawn tab,
+   below the settings it acts on */
 .respawn-header {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 1rem;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--border);
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(34, 197, 94, 0.2);
 }
 
 .respawn-header .respawn-actions {
@@ -4690,6 +4691,39 @@ body.solo-mode .btn-lifecycle-log {
 
 .auto-resume-box .form-hint {
   margin-top: 0;
+}
+
+/* Respawn loop box — groups every setting that belongs to the autonomous
+   respawn cycle (duration, presets, cycle prompts, enable). Green like its
+   Enable button; a visual sibling of the standalone auto-resume option above */
+.respawn-loop-box {
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.75rem;
+  background: rgba(34, 197, 94, 0.05);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 6px;
+}
+
+.respawn-loop-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 0.3rem;
+}
+
+.respawn-loop-hint {
+  display: block;
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
+.respawn-loop-box .form-section-header {
+  border-bottom-color: rgba(34, 197, 94, 0.2);
+}
+
+/* Match the cycle-step checkboxes (2./3.) to the step labels (1./4.) */
+.respawn-loop-box .checkbox-inline {
+  font-size: 0.7rem;
 }
 
 .auto-resume-status {
