@@ -1,5 +1,18 @@
 # aicodeman
 
+## 0.9.13
+
+### Patch Changes
+
+- Auto-resume on usage limit ("token pause" control) plus a set of mobile-view fixes for regressions introduced in 0.9.8.
+
+  **Auto-resume on usage limit** — new opt-in checkbox at the top of the session Respawn tab (off by default). When Claude stops because a usage limit was reached, Codeman parses the reset time from the limit message, waits until the limit lifts (plus a 2-minute safety buffer), then dismisses the rate-limit dialog (Esc) and sends "continue" so the session picks its work back up automatically. All Claude Code message formats from 1.0.x through 2.1.x are recognized ("5-hour limit reached ∙ resets 8pm", "Limit reached · resets 1pm (America/Chicago) · /upgrade…", "You've hit your weekly limit · resets Mon 12:00am", weekly date forms, and the raw API `usage limit reached|<epoch>` form). Still-limited responses re-arm the scheduler (5-minute retry loop); a pending schedule persists across Codeman restarts and re-arms on boot; respawn cycles are blocked while a limit pause is active so the cycle's `/clear` cannot wipe the paused conversation. New endpoint `POST /api/sessions/:id/auto-resume`; new SSE events `session:limitPauseScheduled`, `session:limitResume`, `session:limitResumeCancelled`; toast/notification on pause and resume, plus a live "resumes at HH:MM" status line in the modal. The Respawn tab layout was also tidied: compact single-row Update/Kickstart prompt fields and a merged options row.
+
+  **Mobile fixes (0.9.8 regressions)**:
+  - **Activity-based resize arbitration** — a desktop sizing claim now only blocks a phone's resize while that desktop has actually typed within the last 90 seconds. Previously any connected desktop tab (even one abandoned hours ago) silently discarded the phone's resize with no fallback, leaving the phone rendering a desktop-width stream in a narrow terminal: mid-word wraps, tmux dot-fill rows, overdrawn garbled text, and misplaced keyboard echo. Now an idle desktop yields the pane to the phone, and the next desktop keystroke automatically restores the desktop layout ("whoever is actively using the session wins"). Phones also re-send their dimensions every 30 seconds (visible tab only, skipped while the virtual keyboard is open) so attaching under a momentarily-active desktop self-corrects.
+  - **Keyboard accessory bar and toolbar restored on iOS** — the lift offset is measured against the layout viewport (`window.innerHeight`) again instead of the keyboard-shrunken app element; on iOS the offset computed to 0, leaving both bars hidden behind the OS keyboard with a dead black gap above it.
+  - **Removed the mobile header utility ("three dots") toggle** — the header-utilities tray stays collapsed on small viewports.
+
 ## 0.9.12
 
 ### Patch Changes
