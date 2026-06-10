@@ -44,11 +44,20 @@ Object.assign(CodemanApp.prototype, {
   async _apiJson(path, opts = {}) {
     const res = await this._api(path, opts);
     if (!res || !res.ok) return null;
+    let body;
     try {
-      return await res.json();
+      body = await res.json();
     } catch {
       return null;
     }
+    // Uniform API envelope (stable HTTP contract): unwrap { success:true, data } → data;
+    // { success:false } → null (errors also surface as a non-ok HTTP status above).
+    // Legacy/bare bodies pass through unchanged.
+    if (body && typeof body === 'object') {
+      if (body.success === false) return null;
+      if (body.success === true && 'data' in body) return body.data;
+    }
+    return body;
   },
 
   /**

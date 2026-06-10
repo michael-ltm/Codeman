@@ -86,8 +86,7 @@ describe('QR Token Manager (unit)', () => {
 
     // Manually expire the token by manipulating its createdAt
     // Access the private map — this is a unit test, we need to verify the TTL logic
-    const tokenMap = (tm as unknown as { qrTokensByCode: Map<string, { createdAt: number }> })
-      .qrTokensByCode;
+    const tokenMap = (tm as unknown as { qrTokensByCode: Map<string, { createdAt: number }> }).qrTokensByCode;
     const record = tokenMap.get(code)!;
     record.createdAt = Date.now() - 91_000; // 91 seconds ago (beyond 90s grace)
 
@@ -99,8 +98,7 @@ describe('QR Token Manager (unit)', () => {
     const code = tm.getCurrentShortCode()!;
 
     // Set createdAt to 80 seconds ago (within 90s grace)
-    const tokenMap = (tm as unknown as { qrTokensByCode: Map<string, { createdAt: number }> })
-      .qrTokensByCode;
+    const tokenMap = (tm as unknown as { qrTokensByCode: Map<string, { createdAt: number }> }).qrTokensByCode;
     const record = tokenMap.get(code)!;
     record.createdAt = Date.now() - 80_000;
 
@@ -172,8 +170,7 @@ describe('QR Token Manager (unit)', () => {
 
   it('should accept token at exactly grace period (90000ms)', () => {
     const code = tm.getCurrentShortCode()!;
-    const tokenMap = (tm as unknown as { qrTokensByCode: Map<string, { createdAt: number }> })
-      .qrTokensByCode;
+    const tokenMap = (tm as unknown as { qrTokensByCode: Map<string, { createdAt: number }> }).qrTokensByCode;
     const record = tokenMap.get(code)!;
     record.createdAt = Date.now() - 90_000;
     // Condition is `> QR_TOKEN_GRACE_MS` (strict >), so exactly 90000 should pass
@@ -182,8 +179,7 @@ describe('QR Token Manager (unit)', () => {
 
   it('should reject token at grace period + 1ms (90001ms)', () => {
     const code = tm.getCurrentShortCode()!;
-    const tokenMap = (tm as unknown as { qrTokensByCode: Map<string, { createdAt: number }> })
-      .qrTokensByCode;
+    const tokenMap = (tm as unknown as { qrTokensByCode: Map<string, { createdAt: number }> }).qrTokensByCode;
     const record = tokenMap.get(code)!;
     record.createdAt = Date.now() - 90_001;
     expect(tm.consumeToken(code)).toBe(false);
@@ -308,8 +304,7 @@ describe('QR Auth Integration', () => {
   beforeEach(() => {
     // Reset QR failure counter to prevent cross-test contamination
     // (all requests come from 127.0.0.1)
-    const qrFailures = (server as unknown as { qrAuthFailures: { clear(): void } | null })
-      .qrAuthFailures;
+    const qrFailures = (server as unknown as { qrAuthFailures: { clear(): void } | null }).qrAuthFailures;
     if (qrFailures) qrFailures.clear();
   });
 
@@ -568,9 +563,11 @@ describe('QR Auth Integration', () => {
       const setCookie = res.headers.get('set-cookie')!;
       const token = setCookie.match(/codeman_session=([^;]+)/)![1];
 
-      const authSessions = (server as unknown as {
-        authSessions: { get(k: string): { method: string } | undefined } | null;
-      }).authSessions;
+      const authSessions = (
+        server as unknown as {
+          authSessions: { get(k: string): { method: string } | undefined } | null;
+        }
+      ).authSessions;
       const record = authSessions?.get(token);
       expect(record).toBeDefined();
       expect(record!.method).toBe('qr');
@@ -631,9 +628,9 @@ describe('QR SVG Endpoint (GET /api/tunnel/qr)', () => {
       });
       expect(res.status).toBe(200);
       const data = await res.json();
-      expect(data.authEnabled).toBe(true);
-      expect(data.svg).toContain('<svg');
-      expect(data.svg).toContain('</svg>');
+      expect(data.data.authEnabled).toBe(true);
+      expect(data.data.svg).toContain('<svg');
+      expect(data.data.svg).toContain('</svg>');
     } finally {
       tm.stopTokenRotation();
       simulateTunnelStopped(tm);
@@ -653,9 +650,9 @@ describe('QR SVG Endpoint (GET /api/tunnel/qr)', () => {
       });
       expect(res.status).toBe(200);
       const data = await res.json();
-      expect(data.authEnabled).toBe(false);
-      expect(data.svg).toContain('<svg');
-      expect(data.svg).toContain('</svg>');
+      expect(data.data.authEnabled).toBe(false);
+      expect(data.data.svg).toContain('<svg');
+      expect(data.data.svg).toContain('</svg>');
     } finally {
       process.env.CODEMAN_PASSWORD = savedPass;
       simulateTunnelStopped(tm);
@@ -709,8 +706,8 @@ describe('QR SVG Endpoint (GET /api/tunnel/qr)', () => {
       });
       expect(res.status).toBe(200);
       const data = await res.json();
-      expect(data.svg).toContain('<svg');
-      expect(data.authEnabled).toBe(false);
+      expect(data.data.svg).toContain('<svg');
+      expect(data.data.authEnabled).toBe(false);
     } finally {
       process.env.CODEMAN_PASSWORD = savedPass;
       simulateTunnelStopped(tm);
@@ -732,7 +729,7 @@ describe('QR SVG Endpoint (GET /api/tunnel/qr)', () => {
       });
       const data2 = await res2.json();
 
-      expect(data1.svg).toBe(data2.svg);
+      expect(data1.data.svg).toBe(data2.data.svg);
     } finally {
       tm.stopTokenRotation();
       simulateTunnelStopped(tm);
@@ -756,7 +753,7 @@ describe('QR SVG Endpoint (GET /api/tunnel/qr)', () => {
       });
       const data2 = await res2.json();
 
-      expect(data1.svg).not.toBe(data2.svg);
+      expect(data1.data.svg).not.toBe(data2.data.svg);
     } finally {
       tm.stopTokenRotation();
       simulateTunnelStopped(tm);

@@ -102,7 +102,9 @@ describe('scheduled-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      // Handler returns a bare { run } now; the uniform envelope wraps it to
+      // { success:true, data:{ run } } in production. At the route-handler layer
+      // the harness sees the bare return, so assert body.run directly.
       expect(body.run.id).toBe('new-run');
     });
 
@@ -169,7 +171,9 @@ describe('scheduled-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      // Bare { run } return (envelope-wrapped to { success:true, data:{ run } }
+      // in production; harness sees the bare return).
+      expect(body.run).toBeDefined();
       // Should default to 60 minutes
       expect(harness.ctx.startScheduledRun).toHaveBeenCalledWith('test', expect.any(String), 60);
     });
@@ -200,7 +204,9 @@ describe('scheduled-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      // Handler returns a bare {} on success; the uniform envelope wraps it to
+      // { success:true, data:{} } in production. The harness sees the bare return.
+      expect(body).toEqual({});
       expect(harness.ctx.stopScheduledRun).toHaveBeenCalledWith('run-to-delete');
     });
 

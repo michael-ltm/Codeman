@@ -22,6 +22,7 @@ export {
   execPattern,
 } from './regex-patterns.js';
 export { MAX_SESSION_TOKENS } from './token-validation.js';
+export { isSafePushEndpoint } from './push-endpoint-validation.js';
 export { stringSimilarity, fuzzyPhraseMatch, todoContentHash } from './string-similarity.js';
 export { assertNever } from './type-safety.js';
 export { wrapWithNice } from './nice-wrapper.js';

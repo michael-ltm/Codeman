@@ -15,9 +15,7 @@ describe('mux-routes', () => {
   beforeEach(async () => {
     // Add mux methods that mux-routes needs but mock-route-context doesn't provide
     harness = await createRouteTestHarness(registerMuxRoutes);
-    harness.ctx.mux.getSessionsWithStats = vi.fn(async () => [
-      { name: 'codeman-abc', pid: 1234, created: Date.now() },
-    ]);
+    harness.ctx.mux.getSessionsWithStats = vi.fn(async () => [{ name: 'codeman-abc', pid: 1234, created: Date.now() }]);
     harness.ctx.mux.isAvailable = vi.fn(() => true);
     harness.ctx.mux.reconcileSessions = vi.fn(async () => ({
       orphaned: [],
@@ -74,7 +72,7 @@ describe('mux-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      expect(body.killed).toBe(true);
       expect(harness.ctx.mux.killSession).toHaveBeenCalledWith('codeman-abc');
     });
 
@@ -87,7 +85,7 @@ describe('mux-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(false);
+      expect(body.killed).toBe(false);
     });
   });
 
@@ -119,7 +117,7 @@ describe('mux-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      expect(body).toEqual({});
       expect(harness.ctx.mux.startStatsCollection).toHaveBeenCalled();
     });
   });
@@ -134,7 +132,7 @@ describe('mux-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      expect(body).toEqual({});
       expect(harness.ctx.mux.stopStatsCollection).toHaveBeenCalled();
     });
   });

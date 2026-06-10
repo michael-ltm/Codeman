@@ -262,7 +262,7 @@ export function registerCaseRoutes(app: FastifyInstance, ctx: EventPort & Config
     const fixPlanPath = join(casePath, '@fix_plan.md');
 
     if (!existsSync(fixPlanPath)) {
-      return { success: true, exists: false, content: null, todos: [] };
+      return { exists: false, content: null, todos: [] };
     }
 
     try {
@@ -339,7 +339,6 @@ export function registerCaseRoutes(app: FastifyInstance, ctx: EventPort & Config
       const stats = { total: todos.length, pending, inProgress, completed };
 
       return {
-        success: true,
         exists: true,
         content,
         todos,

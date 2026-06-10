@@ -147,7 +147,7 @@ describe('File Link Click Tests', () => {
 
     const data = await response.json();
     expect(data.success).toBe(true);
-    createdSessions.push(data.session.id);
+    createdSessions.push(data.data.sessionId);
 
     // Wait for session to appear in UI
     await new Promise((r) => setTimeout(r, 2000));
@@ -347,7 +347,7 @@ describe('File Link Click Tests', () => {
       });
       const data = await response.json();
       expect(data.success).toBe(true);
-      sessionId = data.sessionId; // quick-start returns sessionId directly
+      sessionId = data.data.sessionId; // quick-start returns sessionId under data envelope
       createdSessions.push(sessionId);
     }
 

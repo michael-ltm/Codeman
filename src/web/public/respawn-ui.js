@@ -1041,7 +1041,7 @@ Object.assign(CodemanApp.prototype, {
         return;
       }
 
-      this.runSummaryData = data.summary;
+      this.runSummaryData = data.data.summary;
       this.renderRunSummary();
     } catch (err) {
       console.error('Failed to load run summary:', err);

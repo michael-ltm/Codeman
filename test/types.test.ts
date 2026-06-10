@@ -13,7 +13,6 @@ import {
   createInitialState,
   ApiErrorCode,
   DEFAULT_CONFIG,
-  isError,
   getErrorMessage,
 } from '../src/types.js';
 
@@ -265,33 +264,8 @@ describe('types utility functions', () => {
     });
   });
 
-  describe('isError', () => {
-    it('should return true for Error instances', () => {
-      expect(isError(new Error('test'))).toBe(true);
-      expect(isError(new TypeError('test'))).toBe(true);
-      expect(isError(new RangeError('test'))).toBe(true);
-      expect(isError(new SyntaxError('test'))).toBe(true);
-    });
-
-    it('should return false for non-Error values', () => {
-      expect(isError('error string')).toBe(false);
-      expect(isError(123)).toBe(false);
-      expect(isError(null)).toBe(false);
-      expect(isError(undefined)).toBe(false);
-      expect(isError({})).toBe(false);
-      expect(isError({ message: 'fake error' })).toBe(false);
-    });
-
-    it('should return false for arrays', () => {
-      expect(isError([])).toBe(false);
-      expect(isError([new Error('test')])).toBe(false);
-    });
-
-    it('should return false for functions', () => {
-      expect(isError(() => {})).toBe(false);
-      expect(isError(Error)).toBe(false);
-    });
-  });
+  // (isError is now an internal helper in src/types/api.ts — no longer a public
+  // export; it is covered indirectly via getErrorMessage below.)
 
   describe('getErrorMessage', () => {
     it('should extract message from Error objects', () => {
@@ -359,7 +333,12 @@ describe('types utility functions', () => {
 
     describe('TaskStatus', () => {
       it('should support all status values', () => {
-        const statuses: Array<'pending' | 'running' | 'completed' | 'failed'> = ['pending', 'running', 'completed', 'failed'];
+        const statuses: Array<'pending' | 'running' | 'completed' | 'failed'> = [
+          'pending',
+          'running',
+          'completed',
+          'failed',
+        ];
         expect(statuses).toHaveLength(4);
       });
     });
@@ -389,9 +368,9 @@ describe('types utility functions', () => {
       expect(ApiErrorCode.INTERNAL_ERROR).toBe('INTERNAL_ERROR');
     });
 
-    it('should have 6 error codes', () => {
+    it('should have 9 error codes', () => {
       const codes = Object.values(ApiErrorCode);
-      expect(codes).toHaveLength(6);
+      expect(codes).toHaveLength(9);
     });
   });
 });

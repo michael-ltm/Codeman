@@ -149,7 +149,7 @@ Object.assign(CodemanApp.prototype, {
     }
 
     const data = await resp.json();
-    return data.path;
+    return data.data.path;
   },
 
   // Decode an image File through the browser and re-encode it to a format the

@@ -29,7 +29,7 @@ describe('Scheduled Runs API', () => {
       const response = await fetch(`${baseUrl}/api/scheduled`);
       const data = await response.json();
 
-      expect(Array.isArray(data)).toBe(true);
+      expect(Array.isArray(data.data)).toBe(true);
     });
   });
 
@@ -47,16 +47,16 @@ describe('Scheduled Runs API', () => {
       const data = await response.json();
 
       expect(data.success).toBe(true);
-      expect(data.run).toBeDefined();
-      expect(data.run.id).toBeDefined();
-      expect(data.run.prompt).toBe('echo test');
-      expect(data.run.durationMinutes).toBe(1);
-      expect(data.run.status).toBe('running');
+      expect(data.data.run).toBeDefined();
+      expect(data.data.run.id).toBeDefined();
+      expect(data.data.run.prompt).toBe('echo test');
+      expect(data.data.run.durationMinutes).toBe(1);
+      expect(data.data.run.status).toBe('running');
 
-      createdRuns.push(data.run.id);
+      createdRuns.push(data.data.run.id);
 
       // Stop the run immediately to avoid resource usage
-      await fetch(`${baseUrl}/api/scheduled/${data.run.id}`, { method: 'DELETE' });
+      await fetch(`${baseUrl}/api/scheduled/${data.data.run.id}`, { method: 'DELETE' });
     });
 
     it('should set correct timestamps', async () => {
@@ -74,12 +74,12 @@ describe('Scheduled Runs API', () => {
 
       const afterCreate = Date.now();
 
-      expect(data.run.startedAt).toBeGreaterThanOrEqual(beforeCreate);
-      expect(data.run.startedAt).toBeLessThanOrEqual(afterCreate);
-      expect(data.run.endAt).toBe(data.run.startedAt + 5 * 60 * 1000);
+      expect(data.data.run.startedAt).toBeGreaterThanOrEqual(beforeCreate);
+      expect(data.data.run.startedAt).toBeLessThanOrEqual(afterCreate);
+      expect(data.data.run.endAt).toBe(data.data.run.startedAt + 5 * 60 * 1000);
 
-      createdRuns.push(data.run.id);
-      await fetch(`${baseUrl}/api/scheduled/${data.run.id}`, { method: 'DELETE' });
+      createdRuns.push(data.data.run.id);
+      await fetch(`${baseUrl}/api/scheduled/${data.data.run.id}`, { method: 'DELETE' });
     });
 
     it('should initialize with zero completed tasks and cost', async () => {
@@ -93,13 +93,13 @@ describe('Scheduled Runs API', () => {
       });
       const data = await response.json();
 
-      expect(data.run.completedTasks).toBe(0);
-      expect(data.run.totalCost).toBe(0);
+      expect(data.data.run.completedTasks).toBe(0);
+      expect(data.data.run.totalCost).toBe(0);
       // Logs may have 1 or more entries depending on timing
-      expect(data.run.logs.length).toBeGreaterThanOrEqual(1);
+      expect(data.data.run.logs.length).toBeGreaterThanOrEqual(1);
 
-      createdRuns.push(data.run.id);
-      await fetch(`${baseUrl}/api/scheduled/${data.run.id}`, { method: 'DELETE' });
+      createdRuns.push(data.data.run.id);
+      await fetch(`${baseUrl}/api/scheduled/${data.data.run.id}`, { method: 'DELETE' });
     });
   });
 
@@ -115,15 +115,15 @@ describe('Scheduled Runs API', () => {
         }),
       });
       const createData = await createRes.json();
-      const runId = createData.run.id;
+      const runId = createData.data.run.id;
       createdRuns.push(runId);
 
       // Get the run
       const response = await fetch(`${baseUrl}/api/scheduled/${runId}`);
       const data = await response.json();
 
-      expect(data.id).toBe(runId);
-      expect(data.prompt).toBe('test get');
+      expect(data.data.id).toBe(runId);
+      expect(data.data.prompt).toBe('test get');
 
       await fetch(`${baseUrl}/api/scheduled/${runId}`, { method: 'DELETE' });
     });
@@ -148,7 +148,7 @@ describe('Scheduled Runs API', () => {
         }),
       });
       const createData = await createRes.json();
-      const runId = createData.run.id;
+      const runId = createData.data.run.id;
 
       // Delete/stop the run
       const response = await fetch(`${baseUrl}/api/scheduled/${runId}`, {
@@ -161,7 +161,7 @@ describe('Scheduled Runs API', () => {
       // Verify it's stopped
       const getRes = await fetch(`${baseUrl}/api/scheduled/${runId}`);
       const runData = await getRes.json();
-      expect(runData.status).toBe('stopped');
+      expect(runData.data.status).toBe('stopped');
     });
 
     it('should return error for non-existent run', async () => {
@@ -204,7 +204,15 @@ describe('Quick Run API', () => {
       });
       const data = await response.json();
 
-      expect(data.sessionId).toBeDefined();
+      // On success the payload is wrapped ({ success:true, data:{ sessionId, ... } });
+      // on failure the handler returns the standard error envelope
+      // ({ success:false, error, errorCode }) with the dead session id in the message.
+      if (data.success) {
+        expect(data.data?.sessionId).toBeDefined();
+      } else {
+        expect(data.errorCode).toBeDefined();
+        expect(data.error).toMatch(/session /);
+      }
       // Note: success/failure depends on Claude actually running
     });
 

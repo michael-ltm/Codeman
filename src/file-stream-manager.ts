@@ -395,8 +395,12 @@ export class FileStreamManager extends EventEmitter {
     // Normalize the working directory
     const normalizedWorkingDir = resolve(workingDir);
 
-    // Check if the resolved path is within the working directory
-    // or common log directories (/tmp intentionally excluded — world-writable)
+    // Allowed read roots for log tailing: the session working dir plus the
+    // INTENTIONAL log directories (/var/log, ~/logs). This is wider than the
+    // per-session boundary used by validateSessionFilePath — a deliberate,
+    // tested design choice for tailing system/app logs, documented as such in
+    // docs/security-architecture.md (security review M5). /tmp is excluded
+    // (world-writable).
     const allowedPaths = [normalizedWorkingDir, '/var/log', resolve(homedir(), 'logs')];
 
     const isAllowed = allowedPaths.some((allowed) => {

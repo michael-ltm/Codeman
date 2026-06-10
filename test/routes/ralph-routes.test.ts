@@ -62,7 +62,7 @@ describe('ralph-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      expect(body).toEqual({});
     });
 
     it('enables ralph tracker', async () => {
@@ -230,7 +230,7 @@ describe('ralph-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      expect(body).toEqual({});
       expect(tracker.resetCircuitBreaker).toHaveBeenCalled();
     });
 

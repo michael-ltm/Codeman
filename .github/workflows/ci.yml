@@ -31,6 +31,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Frontend JS syntax check
+        run: npm run check:frontend-syntax
+
       - name: Format check
         run: npm run format:check
 
@@ -60,6 +63,34 @@ jobs:
           cat /tmp/boot.log
           exit 1
 
-# Note: The test suite is intentionally excluded from CI.
-# Tests spawn real tmux sessions and require a full system environment.
-# Run tests locally with: npx vitest run test/<file>.test.ts
+  test:
+    name: Unit & integration tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install tmux
+        run: |
+          if ! command -v tmux >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y tmux
+          fi
+
+      - name: Run unit & integration tests
+        # Excludes the browser-driven mobile suite (test/mobile/**); see config/vitest.ci.config.ts.
+        # Safe in CI: TmuxManager no-ops all shell commands under VITEST (test/setup.ts).
+        run: npm run test:ci
+
+# Note: The browser-driven mobile suite (test/mobile/**) is excluded from CI —
+# it needs a live server + chromium + environment-specific PNG baselines.
+# Run it locally/manually. All other tests run via the `test` job above.

@@ -996,14 +996,14 @@ Object.assign(CodemanApp.prototype, {
         return;
       }
 
-      const history = data.history || [];
+      const history = data.data.history || [];
       if (history.length === 0) {
         this.showToast('No plan history available', 'info');
         return;
       }
 
       // Show history dropdown modal
-      this.showPlanHistoryModal(history, data.currentVersion);
+      this.showPlanHistoryModal(history, data.data.currentVersion);
     } catch (err) {
       this.showToast('Failed to load plan history: ' + err.message, 'error');
     }
@@ -1035,7 +1035,7 @@ Object.assign(CodemanApp.prototype, {
                    onclick="app.rollbackToPlanVersion(${item.version})">
                 <div>
                   <span class="plan-history-version">v${item.version}</span>
-                  <span class="plan-history-tasks">${item.taskCount || 0} tasks</span>
+                  <span class="plan-history-tasks">${item.stats?.total ?? 0} tasks</span>
                 </div>
                 <span class="plan-history-time">${this.formatRelativeTime(item.timestamp)}</span>
               </div>

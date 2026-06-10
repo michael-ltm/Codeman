@@ -8,7 +8,7 @@
  */
 
 import { z } from 'zod';
-import { SAFE_PATH_PATTERN } from '../utils/index.js';
+import { SAFE_PATH_PATTERN, isSafePushEndpoint } from '../utils/index.js';
 
 // ========== Path Validation ==========
 
@@ -531,7 +531,11 @@ export const RespawnEnableSchema = z.object({
 
 /** POST /api/push/subscribe */
 export const PushSubscribeSchema = z.object({
-  endpoint: z.string().url().max(2000),
+  endpoint: z
+    .string()
+    .url()
+    .max(2000)
+    .refine(isSafePushEndpoint, { message: 'endpoint must be an https URL to a public (non-internal) host' }),
   keys: z.object({
     p256dh: z.string().min(1).max(500),
     auth: z.string().min(1).max(500),

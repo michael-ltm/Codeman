@@ -363,11 +363,11 @@ describe('file-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      expect(body.closed).toBe(true);
       expect(mockedFileStreamManager.closeStream).toHaveBeenCalledWith('stream-1');
     });
 
-    it('returns false for unknown stream', async () => {
+    it('returns closed: false for unknown stream', async () => {
       mockedFileStreamManager.closeStream.mockReturnValue(false);
 
       const res = await harness.app.inject({
@@ -376,7 +376,7 @@ describe('file-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(false);
+      expect(body.closed).toBe(false);
     });
   });
 

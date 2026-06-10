@@ -16,7 +16,6 @@ import {
   createErrorResponse,
   getErrorMessage,
   type ApiResponse,
-  type QuickStartResponse,
   type SessionColor,
 } from '../../types.js';
 import { Session } from '../../session.js';
@@ -211,7 +210,7 @@ export function registerSessionRoutes(
       ctx.authSessions?.delete(sessionToken);
     }
     reply.clearCookie(AUTH_COOKIE_NAME, { path: '/' });
-    return { success: true };
+    return {};
   });
 
   // ═══════════════════════════════════════════════════════════════
@@ -349,7 +348,7 @@ export function registerSessionRoutes(
     // Avoids serializing 2-3MB of terminal+text buffers per session creation.
     const lightState = ctx.getSessionStateWithRespawn(session);
     ctx.broadcast(SseEvent.SessionCreated, lightState);
-    return { success: true, session: lightState };
+    return { session: lightState };
   });
 
   // ========== Rename Session ==========
@@ -364,7 +363,7 @@ export function registerSessionRoutes(
     // Also update the mux session name if applicable
     ctx.mux.updateSessionName(id, session.name);
     persistAndBroadcastSession(ctx, session);
-    return { success: true, name: session.name };
+    return { name: session.name };
   });
 
   // ========== Set Session Color ==========
@@ -381,12 +380,12 @@ export function registerSessionRoutes(
 
     session.setColor(body.color as SessionColor);
     persistAndBroadcastSession(ctx, session);
-    return { success: true, color: session.color };
+    return { color: session.color };
   });
 
   // ========== Delete Session ==========
 
-  app.delete('/api/sessions/:id', async (req): Promise<ApiResponse> => {
+  app.delete('/api/sessions/:id', async (req) => {
     const { id } = req.params as { id: string };
     const query = req.query as { killMux?: string };
     const killMux = query.killMux !== 'false'; // Default to true
@@ -396,7 +395,7 @@ export function registerSessionRoutes(
     }
 
     await ctx.cleanupSession(id, killMux, 'user_delete');
-    return { success: true };
+    return {};
   });
 
   // ========== Delete All Sessions ==========
@@ -473,13 +472,13 @@ export function registerSessionRoutes(
       // Create a fresh tracker if one doesn't exist (shouldn't happen normally)
       const newTracker = new RunSummaryTracker(id, session.name);
       ctx.runSummaryTrackers.set(id, newTracker);
-      return { success: true, summary: newTracker.getSummary() };
+      return { summary: newTracker.getSummary() };
     }
 
     // Update session name in case it changed
     tracker.setSessionName(session.name);
 
-    return { success: true, summary: tracker.getSummary() };
+    return { summary: tracker.getSummary() };
   });
 
   // ========== Get Active Tools ==========
@@ -502,7 +501,7 @@ export function registerSessionRoutes(
 
   // ========== Run Prompt ==========
 
-  app.post('/api/sessions/:id/run', async (req): Promise<ApiResponse> => {
+  app.post('/api/sessions/:id/run', async (req) => {
     const { id } = req.params as { id: string };
     const { prompt } = parseBody(RunPromptSchema, req.body);
     const session = findSessionOrFail(ctx, id);
@@ -517,12 +516,12 @@ export function registerSessionRoutes(
     });
 
     ctx.broadcast(SseEvent.SessionRunning, { id, prompt });
-    return { success: true };
+    return {};
   });
 
   // ========== Start Interactive Mode ==========
 
-  app.post('/api/sessions/:id/interactive', async (req): Promise<ApiResponse> => {
+  app.post('/api/sessions/:id/interactive', async (req) => {
     const { id } = req.params as { id: string };
     const session = findSessionOrFail(ctx, id);
 
@@ -554,7 +553,7 @@ export function registerSessionRoutes(
       ctx.broadcast(SseEvent.SessionInteractive, { id });
       ctx.broadcast(SseEvent.SessionUpdated, { session: ctx.getSessionStateWithRespawn(session) });
 
-      return { success: true };
+      return {};
     } catch (err) {
       return createErrorResponse(ApiErrorCode.OPERATION_FAILED, getErrorMessage(err));
     }
@@ -562,7 +561,7 @@ export function registerSessionRoutes(
 
   // ========== Start Shell Mode ==========
 
-  app.post('/api/sessions/:id/shell', async (req): Promise<ApiResponse> => {
+  app.post('/api/sessions/:id/shell', async (req) => {
     const { id } = req.params as { id: string };
     const session = findSessionOrFail(ctx, id);
 
@@ -580,7 +579,7 @@ export function registerSessionRoutes(
       });
       ctx.broadcast(SseEvent.SessionInteractive, { id, mode: 'shell' });
       ctx.broadcast(SseEvent.SessionUpdated, { session: ctx.getSessionStateWithRespawn(session) });
-      return { success: true };
+      return {};
     } catch (err) {
       return createErrorResponse(ApiErrorCode.OPERATION_FAILED, getErrorMessage(err));
     }
@@ -592,7 +591,7 @@ export function registerSessionRoutes(
 
   // ========== Send Input ==========
 
-  app.post('/api/sessions/:id/input', async (req): Promise<ApiResponse> => {
+  app.post('/api/sessions/:id/input', async (req) => {
     const { id } = req.params as { id: string };
     const { input, useMux } = parseBody(SessionInputWithLimitSchema, req.body);
     const session = findSessionOrFail(ctx, id);
@@ -624,7 +623,7 @@ export function registerSessionRoutes(
     } else {
       session.write(inputStr);
     }
-    return { success: true };
+    return {};
   });
 
   // ========== Send Named Key (tmux send-keys -H) ==========
@@ -632,7 +631,7 @@ export function registerSessionRoutes(
   // Uses send-keys -H (hex) to inject 0x0a (line feed) which Claude Code's
   // Ink input recognizes as "insert newline" vs 0x0d (carriage return = submit).
 
-  app.post('/api/sessions/:id/send-key', async (req): Promise<ApiResponse> => {
+  app.post('/api/sessions/:id/send-key', async (req) => {
     const { id } = req.params as { id: string };
     const body = req.body as Record<string, unknown>;
     const key = typeof body?.key === 'string' ? body.key : '';
@@ -671,18 +670,18 @@ export function registerSessionRoutes(
       console.error('[Server] send-key failed:', err);
       return createErrorResponse(ApiErrorCode.INTERNAL_ERROR, 'tmux send-keys failed');
     }
-    return { success: true };
+    return {};
   });
 
   // ========== Resize Terminal ==========
 
-  app.post('/api/sessions/:id/resize', async (req): Promise<ApiResponse> => {
+  app.post('/api/sessions/:id/resize', async (req) => {
     const { id } = req.params as { id: string };
     const { cols, rows } = parseBody(ResizeSchema, req.body);
     const session = findSessionOrFail(ctx, id);
 
     session.resize(cols, rows);
-    return { success: true };
+    return {};
   });
 
   // ========== Get Last Response (from transcript JSONL) ==========
@@ -1085,17 +1084,18 @@ export function registerSessionRoutes(
       const result = await session.runPrompt(prompt);
       // Clean up session after completion to prevent memory leak
       await ctx.cleanupSession(session.id, true, 'run_prompt_complete');
-      return { success: true, sessionId: session.id, ...result };
+      return { sessionId: session.id, ...result };
     } catch (err) {
-      // Clean up session on error too
+      // Clean up session on error too. The session is destroyed here, so its id
+      // is only useful for log correlation — carry it in the error message.
       await ctx.cleanupSession(session.id, true, 'run_prompt_error');
-      return { success: false, sessionId: session.id, error: getErrorMessage(err) };
+      return createErrorResponse(ApiErrorCode.OPERATION_FAILED, `${getErrorMessage(err)} (session ${session.id})`);
     }
   });
 
   // ========== Quick Start ==========
 
-  app.post('/api/quick-start', async (req): Promise<QuickStartResponse> => {
+  app.post('/api/quick-start', async (req) => {
     // Prevent unbounded session creation
     if (ctx.sessions.size >= MAX_CONCURRENT_SESSIONS) {
       return createErrorResponse(
@@ -1264,7 +1264,6 @@ export function registerSessionRoutes(
       }
 
       return {
-        success: true,
         sessionId: session.id,
         casePath,
         caseName,
@@ -1726,6 +1725,6 @@ export function registerSessionRoutes(
       await fh.close();
     }
 
-    return { success: true, path: filepath, filename };
+    return { path: filepath, filename };
   });
 }

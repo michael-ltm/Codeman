@@ -47,14 +47,14 @@ describe('Quick Start API', () => {
       const data = await response.json();
 
       expect(data.success).toBe(true);
-      expect(data.sessionId).toBeDefined();
-      expect(data.caseName).toBe(testCaseName);
-      expect(data.casePath).toBe(join(CASES_DIR, testCaseName));
+      expect(data.data.sessionId).toBeDefined();
+      expect(data.data.caseName).toBe(testCaseName);
+      expect(data.data.casePath).toBe(join(CASES_DIR, testCaseName));
 
       // Verify case folder was created
-      expect(existsSync(data.casePath)).toBe(true);
-      expect(existsSync(join(data.casePath, 'CLAUDE.md'))).toBe(true);
-      expect(existsSync(join(data.casePath, 'src'))).toBe(true);
+      expect(existsSync(data.data.casePath)).toBe(true);
+      expect(existsSync(join(data.data.casePath, 'CLAUDE.md'))).toBe(true);
+      expect(existsSync(join(data.data.casePath, 'src'))).toBe(true);
     });
 
     it('should use existing case without recreating it', async () => {
@@ -74,7 +74,7 @@ describe('Quick Start API', () => {
       const data = await response.json();
 
       expect(data.success).toBe(true);
-      expect(data.caseName).toBe(testCaseName);
+      expect(data.data.caseName).toBe(testCaseName);
       // Case should exist but CLAUDE.md won't be created since case already exists
       expect(existsSync(casePath)).toBe(true);
     });
@@ -118,7 +118,7 @@ describe('Quick Start API', () => {
       const data = await response.json();
 
       expect(data.success).toBe(true);
-      expect(data.caseName).toBe(testCaseName);
+      expect(data.data.caseName).toBe(testCaseName);
     });
 
     it('should default to "testcase" when no caseName provided', async () => {
@@ -137,7 +137,7 @@ describe('Quick Start API', () => {
       const data = await response.json();
 
       expect(data.success).toBe(true);
-      expect(data.caseName).toBe('testcase');
+      expect(data.data.caseName).toBe('testcase');
     });
   });
 });
@@ -167,10 +167,10 @@ describe('Session Management', () => {
       const data = await response.json();
 
       expect(data.success).toBe(true);
-      expect(data.session).toBeDefined();
-      expect(data.session.id).toBeDefined();
-      expect(data.session.workingDir).toBe('/tmp');
-      expect(data.session.status).toBe('idle');
+      expect(data.data.session).toBeDefined();
+      expect(data.data.session.id).toBeDefined();
+      expect(data.data.session.workingDir).toBe('/tmp');
+      expect(data.data.session.status).toBe('idle');
     });
   });
 
@@ -179,7 +179,8 @@ describe('Session Management', () => {
       const response = await fetch(`${baseUrl}/api/sessions`);
       const data = await response.json();
 
-      expect(Array.isArray(data)).toBe(true);
+      expect(data.success).toBe(true);
+      expect(Array.isArray(data.data)).toBe(true);
     });
   });
 
@@ -188,12 +189,13 @@ describe('Session Management', () => {
       const response = await fetch(`${baseUrl}/api/status`);
       const data = await response.json();
 
-      expect(data).toHaveProperty('sessions');
-      expect(data).toHaveProperty('scheduledRuns');
-      expect(data).toHaveProperty('respawnStatus');
-      expect(data).toHaveProperty('timestamp');
-      expect(Array.isArray(data.sessions)).toBe(true);
-      expect(Array.isArray(data.scheduledRuns)).toBe(true);
+      expect(data.success).toBe(true);
+      expect(data.data).toHaveProperty('sessions');
+      expect(data.data).toHaveProperty('scheduledRuns');
+      expect(data.data).toHaveProperty('respawnStatus');
+      expect(data.data).toHaveProperty('timestamp');
+      expect(Array.isArray(data.data.sessions)).toBe(true);
+      expect(Array.isArray(data.data.scheduledRuns)).toBe(true);
     });
   });
 });
@@ -224,7 +226,8 @@ describe('Case Management', () => {
       const response = await fetch(`${baseUrl}/api/cases`);
       const data = await response.json();
 
-      expect(Array.isArray(data)).toBe(true);
+      expect(data.success).toBe(true);
+      expect(Array.isArray(data.data)).toBe(true);
     });
   });
 
@@ -298,9 +301,10 @@ describe('Case Management', () => {
       const response = await fetch(`${baseUrl}/api/cases/${testCaseName}`);
       const data = await response.json();
 
-      expect(data.name).toBe(testCaseName);
-      expect(data.path).toBeDefined();
-      expect(data.hasClaudeMd).toBe(true);
+      expect(data.success).toBe(true);
+      expect(data.data.name).toBe(testCaseName);
+      expect(data.data.path).toBeDefined();
+      expect(data.data.hasClaudeMd).toBe(true);
     });
 
     it('should return error for non-existent case', async () => {

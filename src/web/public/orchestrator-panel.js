@@ -182,7 +182,7 @@ Object.assign(CodemanApp.prototype, {
         body: JSON.stringify({ goal, config }),
       });
       const data = await res.json();
-      if (data.ok) {
+      if (data.data?.ok) {
         this.orchestratorState = { state: 'planning', plan: null };
         this.showOrchestratorPanel();
         this.renderOrchestratorPanel();
@@ -259,8 +259,8 @@ Object.assign(CodemanApp.prototype, {
     try {
       const res = await fetch('/api/orchestrator/status');
       const data = await res.json();
-      if (data.ok) {
-        this.orchestratorState = data;
+      if (data.data?.ok) {
+        this.orchestratorState = data.data;
         this.renderOrchestratorPanel();
       }
     } catch (err) {

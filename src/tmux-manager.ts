@@ -1201,6 +1201,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
 
   private sessionExists(muxName: string): boolean {
     if (IS_TEST_MODE) return false;
+    if (!isValidMuxName(muxName)) return false;
 
     try {
       execSync(`${this.tmux()} has-session -t "${muxName}" 2>/dev/null`, {
@@ -1341,13 +1342,15 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       }
     }
 
-    // Strategy 3: Kill tmux session by name
-    try {
-      execSync(`${this.tmux()} kill-session -t "${session.muxName}" 2>/dev/null`, {
-        timeout: EXEC_TIMEOUT_MS,
-      });
-    } catch {
-      // Session may already be dead
+    // Strategy 3: Kill tmux session by name (guard the name before it reaches the shell)
+    if (isValidMuxName(session.muxName)) {
+      try {
+        execSync(`${this.tmux()} kill-session -t "${session.muxName}" 2>/dev/null`, {
+          timeout: EXEC_TIMEOUT_MS,
+        });
+      } catch {
+        // Session may already be dead
+      }
     }
 
     // Strategy 4: Direct kill by PID as final fallback
@@ -1447,6 +1450,14 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
 
     for (const [sessionName, pid] of active) {
       if (!sessionName.startsWith('codeman-') && !sessionName.startsWith('claudeman-')) continue;
+      // Only admit names that pass the safe-name pattern. A foreign process on the
+      // shared `tmux -L codeman` socket could create a `codeman-…` session whose name
+      // contains shell metacharacters; rejecting it here keeps it out of this.sessions
+      // and away from the name-interpolating tmux call sites (M1).
+      if (!isValidMuxName(sessionName)) {
+        console.warn(`[TmuxManager] Skipping discovered tmux session with unsafe name: ${sessionName}`);
+        continue;
+      }
       if (knownMuxNames.has(sessionName)) continue;
 
       const fragment = sessionName.replace(/^(?:codeman|claudeman)-/, '');

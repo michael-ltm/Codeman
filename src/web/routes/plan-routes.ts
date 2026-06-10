@@ -408,7 +408,7 @@ NOW: Generate the implementation plan for the task above. Think step by step.`;
       return createErrorResponse(ApiErrorCode.OPERATION_FAILED, 'Ralph tracker not available');
     }
 
-    return { success: true, data: tracker.getPlanHistory() };
+    return { success: true, data: { history: tracker.getPlanHistory(), currentVersion: tracker.planVersion } };
   });
 
   // ========== Rollback to Version ==========

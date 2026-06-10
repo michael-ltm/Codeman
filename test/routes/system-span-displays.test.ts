@@ -65,7 +65,10 @@ describe('POST /api/system/span-displays', () => {
       headers: { host: 'localhost:5000' },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ success: true, url: 'http://localhost:5000' });
+    // Handler returns a bare { url } on success; the uniform envelope wraps it to
+    // { success:true, data:{ url } } in production. At the route-handler layer the
+    // harness sees the bare return, so we assert on body.url directly.
+    expect(res.json()).toMatchObject({ url: 'http://localhost:5000' });
     expect(spawnMock).toHaveBeenCalledTimes(1);
     const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
     expect(cmd).toBe('bash');

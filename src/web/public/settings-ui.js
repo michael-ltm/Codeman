@@ -185,9 +185,9 @@ Object.assign(CodemanApp.prototype, {
     try {
       // Get VAPID public key from server
       const keyData = await this._apiJson('/api/push/vapid-key');
-      if (!keyData?.success) throw new Error('Failed to get VAPID key');
+      if (!keyData) throw new Error('Failed to get VAPID key');
 
-      const applicationServerKey = urlBase64ToUint8Array(keyData.data.publicKey);
+      const applicationServerKey = urlBase64ToUint8Array(keyData.publicKey);
       const subscription = await this._swRegistration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey,
@@ -204,11 +204,11 @@ Object.assign(CodemanApp.prototype, {
           pushPreferences: this._buildPushPreferences(),
         },
       });
-      if (!data?.success) throw new Error('Failed to register subscription');
+      if (!data) throw new Error('Failed to register subscription');
 
       this._pushSubscription = subscription;
-      this._pushSubscriptionId = data.data.id;
-      localStorage.setItem('codeman-push-subscription-id', data.data.id);
+      this._pushSubscriptionId = data.id;
+      localStorage.setItem('codeman-push-subscription-id', data.id);
       this._updatePushUI(true);
       this.showToast('Push notifications enabled', 'success');
     } catch (err) {
@@ -569,7 +569,7 @@ Object.assign(CodemanApp.prototype, {
     const res = await this._apiPost('/api/system/update', {});
     if (!res || !res.ok) {
       let msg = 'Failed to start the update.';
-      try { const j = await res.json(); if (j?.error?.message) msg = j.error.message; } catch {}
+      try { const j = await res.json(); if (typeof j?.error === 'string' && j.error) msg = j.error; } catch {}
       this._setUpdateProgress(`<span style="color:var(--danger,#e5534b)">${escapeHtml(msg)}</span>`);
       if (btn) { btn.disabled = false; btn.textContent = 'Update now'; }
       return;
@@ -598,7 +598,10 @@ Object.assign(CodemanApp.prototype, {
       let data = null;
       try {
         const res = await fetch('/api/system/update/status');
-        if (res.ok) data = await res.json();
+        if (res.ok) {
+          const env = await res.json();
+          data = env && env.success === true ? env.data : env;
+        }
       } catch { /* server restarting — keep polling */ }
 
       if (!data) {
@@ -652,7 +655,8 @@ Object.assign(CodemanApp.prototype, {
   async loadTunnelStatus() {
     try {
       const res = await fetch('/api/tunnel/status');
-      const status = await res.json();
+      const env = await res.json();
+      const status = env?.success === true ? env.data : env;
       const active = status.running && status.url;
       this._tunnelUrl = active ? status.url : null;
       this._updateTunnelUrlDisplay(this._tunnelUrl);
@@ -721,7 +725,8 @@ Object.assign(CodemanApp.prototype, {
         if (!res.ok) throw new Error('Tunnel not running');
         return res.json();
       })
-      .then(data => {
+      .then(env => {
+        const data = env?.success === true ? env.data : env;
         const container = document.getElementById('tunnelQrContainer');
         if (container && data.svg) container.innerHTML = data.svg;
         // Show auth badge, countdown, and regenerate button when auth is enabled
@@ -754,7 +759,8 @@ Object.assign(CodemanApp.prototype, {
     // Fetch URL for display
     fetch('/api/tunnel/status')
       .then(r => r.json())
-      .then(status => {
+      .then(env => {
+        const status = env?.success === true ? env.data : env;
         const urlEl = document.getElementById('tunnelQrUrl');
         if (urlEl && status.url) {
           urlEl.textContent = status.url;
@@ -786,7 +792,8 @@ Object.assign(CodemanApp.prototype, {
   _refreshTunnelQrFromApi() {
     fetch('/api/tunnel/qr')
       .then(res => res.ok ? res.json() : null)
-      .then(data => {
+      .then(env => {
+        const data = env?.success === true ? env.data : env;
         if (!data?.svg) return;
         const container = document.getElementById('tunnelQrContainer');
         if (container) container.innerHTML = data.svg;
@@ -901,7 +908,8 @@ Object.assign(CodemanApp.prototype, {
     this._tunnelPollTimer = setTimeout(async () => {
       try {
         const res = await fetch('/api/tunnel/status');
-        const status = await res.json();
+        const env = await res.json();
+        const status = env?.success === true ? env.data : env;
         if (status.running && status.url) {
           // Tunnel is up — update UI
           this._dismissTunnelConnecting();
@@ -960,7 +968,7 @@ Object.assign(CodemanApp.prototype, {
       }
       fetch('/api/tunnel/qr')
         .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-        .then(data => { if (data.svg) qrInner.innerHTML = data.svg; })
+        .then(env => { const data = env?.success === true ? env.data : env; if (data.svg) qrInner.innerHTML = data.svg; })
         .catch(() => { qrInner.innerHTML = '<div style="color:#999;font-size:11px;padding:20px">QR unavailable</div>'; });
     } else {
       clearTimeout(this._welcomeQrShrinkTimer);
@@ -1032,7 +1040,8 @@ Object.assign(CodemanApp.prototype, {
     // Fetch tunnel info
     try {
       const res = await fetch('/api/tunnel/info');
-      const info = await res.json();
+      const env = await res.json();
+      const info = env?.success === true ? env.data : env;
       this._renderTunnelPanel(info);
     } catch {
       const body = document.getElementById('tunnelPanelBody');
@@ -1166,7 +1175,8 @@ Object.assign(CodemanApp.prototype, {
       this.showToast('All sessions revoked', 'success');
       // Refresh panel
       const res = await fetch('/api/tunnel/info');
-      const info = await res.json();
+      const env = await res.json();
+      const info = env?.success === true ? env.data : env;
       this._renderTunnelPanel(info);
     } catch {
       this.showToast('Failed to revoke sessions', 'error');
@@ -1261,7 +1271,8 @@ Object.assign(CodemanApp.prototype, {
 
     try {
       const res = await fetch(`/api/session-lifecycle?${params}`);
-      const data = await res.json();
+      const env = await res.json();
+      const data = env?.success === true ? env.data : env;
       const tbody = document.getElementById('lifecycleTableBody');
       const empty = document.getElementById('lifecycleEmpty');
 
@@ -1850,7 +1861,7 @@ Object.assign(CodemanApp.prototype, {
 
   async loadAppSettingsFromServer(settingsPromise = null) {
     try {
-      const settings = settingsPromise ? await settingsPromise : await fetch('/api/settings').then(r => r.ok ? r.json() : null);
+      const settings = settingsPromise ? await settingsPromise : await fetch('/api/settings').then(r => r.ok ? r.json() : null).then(env => env?.success === true ? env.data : env);
       if (settings) {
         // Extract notification prefs before merging app settings
         const { notificationPreferences, voiceSettings, respawnPresets, runMode, ...appSettings } = settings;
@@ -1942,7 +1953,8 @@ Object.assign(CodemanApp.prototype, {
     try {
       const res = await fetch('/api/subagent-window-states');
       if (res.ok) {
-        states = await res.json();
+        const env = await res.json();
+        states = env?.success === true ? env.data : env;
         // Also update localStorage
         localStorage.setItem('codeman-subagent-window-states', JSON.stringify(states));
       }
@@ -2009,7 +2021,8 @@ Object.assign(CodemanApp.prototype, {
     try {
       const res = await fetch('/api/subagent-parents');
       if (res.ok) {
-        mapData = await res.json();
+        const env = await res.json();
+        mapData = env?.success === true ? env.data : env;
         // Update localStorage as cache
         localStorage.setItem('codeman-subagent-parents', JSON.stringify(mapData));
       }

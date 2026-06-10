@@ -5,11 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import {
-  ApiErrorCode,
-  createErrorResponse,
-  createSuccessResponse,
-} from '../src/types.js';
+import { ApiErrorCode, createErrorResponse } from '../src/types.js';
 
 describe('API Response Structures', () => {
   describe('SessionState Structure', () => {
@@ -480,34 +476,9 @@ describe('API Response Structures', () => {
   });
 
   describe('Response Validation', () => {
-    describe('SessionResponse', () => {
-      it('should have success property', () => {
-        const response = createSuccessResponse({ id: 'session-1' });
-        expect(response).toHaveProperty('success');
-        expect(response.success).toBe(true);
-      });
-
-      it('should have data property on success', () => {
-        const response = createSuccessResponse({ id: 'session-1', status: 'idle' });
-        expect(response).toHaveProperty('data');
-        expect(response.data?.id).toBe('session-1');
-      });
-    });
-
-    describe('QuickStartResponse', () => {
-      it('should include session and case info on success', () => {
-        const response = createSuccessResponse({
-          sessionId: 'session-1',
-          casePath: '/path/to/case',
-          caseName: 'test-case',
-        });
-
-        expect(response.success).toBe(true);
-        expect(response.data?.sessionId).toBeDefined();
-        expect(response.data?.casePath).toBeDefined();
-        expect(response.data?.caseName).toBeDefined();
-      });
-    });
+    // (SessionResponse / QuickStartResponse success-envelope tests removed — the
+    // createSuccessResponse helper they exercised no longer exists. Error-envelope
+    // coverage remains below.)
 
     describe('Error Responses', () => {
       it('should include error code', () => {

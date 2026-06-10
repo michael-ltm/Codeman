@@ -15,7 +15,7 @@ export function registerScheduledRoutes(app: FastifyInstance, ctx: SessionPort &
     return Array.from(ctx.scheduledRuns.values());
   });
 
-  app.post('/api/scheduled', async (req): Promise<{ success: boolean; run: ScheduledRun } | ApiResponse<never>> => {
+  app.post('/api/scheduled', async (req): Promise<{ run: ScheduledRun } | ApiResponse<never>> => {
     const { prompt, workingDir, durationMinutes } = parseBody(ScheduledRunSchema, req.body, 'Invalid request body');
 
     // Validate workingDir exists and is a directory
@@ -31,7 +31,7 @@ export function registerScheduledRoutes(app: FastifyInstance, ctx: SessionPort &
     }
 
     const run = await ctx.startScheduledRun(prompt, workingDir || process.cwd(), durationMinutes ?? 60);
-    return { success: true, run };
+    return { run };
   });
 
   app.delete('/api/scheduled/:id', async (req) => {
@@ -43,7 +43,7 @@ export function registerScheduledRoutes(app: FastifyInstance, ctx: SessionPort &
     }
 
     await ctx.stopScheduledRun(id);
-    return { success: true };
+    return {};
   });
 
   app.get('/api/scheduled/:id', async (req) => {

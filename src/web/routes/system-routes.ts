@@ -238,7 +238,7 @@ export function registerSystemRoutes(
 
   app.post('/api/tunnel/qr/regenerate', async () => {
     ctx.tunnelManager.regenerateQrToken();
-    return { success: true };
+    return {};
   });
 
   // ========== Auth Session Revocation ==========
@@ -251,7 +251,7 @@ export function registerSystemRoutes(
       // Revoke all sessions (nuclear option)
       ctx.authSessions?.clear();
     }
-    return { success: true };
+    return {};
   });
 
   // ═══════════════════════════════════════════════════════════════
@@ -288,7 +288,7 @@ export function registerSystemRoutes(
       const child = spawn('bash', [scriptPath, url], { detached: true, stdio: 'ignore' });
       child.on('error', (err) => app.log.error({ err }, 'span-displays launch failed'));
       child.unref();
-      return { success: true, url };
+      return { url };
     } catch (err) {
       return reply.code(500).send(createErrorResponse(ApiErrorCode.INTERNAL_ERROR, getErrorMessage(err)));
     }
@@ -313,7 +313,7 @@ export function registerSystemRoutes(
   app.post('/api/system/update', async (_req, reply) => {
     const result = await startUpdate();
     if (result.ok) {
-      return { success: true, updateId: result.updateId, toTag: result.toTag, toVersion: result.toVersion };
+      return { updateId: result.updateId, toTag: result.toTag, toVersion: result.toVersion };
     }
     const map = {
       'in-flight': { http: 409, api: ApiErrorCode.ALREADY_EXISTS },
@@ -354,7 +354,7 @@ export function registerSystemRoutes(
     for (const s of result.cleaned) {
       lifecycleLog.log({ event: 'stale_cleaned', sessionId: s.id, name: s.name });
     }
-    return { success: true, cleanedSessions: result.count };
+    return { cleanedSessions: result.count };
   });
 
   app.get('/api/session-lifecycle', async (req) => {
@@ -371,7 +371,7 @@ export function registerSystemRoutes(
       since: query.since ? Number(query.since) : undefined,
       limit: query.limit ? Math.min(Number(query.limit), 1000) : 200,
     });
-    return { success: true, entries };
+    return { entries };
   });
 
   // ========== Stats ==========
@@ -391,7 +391,6 @@ export function registerSystemRoutes(
   app.get('/api/stats', async () => {
     const activeSessionTokens = collectActiveTokens();
     return {
-      success: true,
       stats: ctx.store.getAggregateStats(activeSessionTokens),
       raw: ctx.store.getGlobalStats(),
     };
@@ -400,7 +399,6 @@ export function registerSystemRoutes(
   app.get('/api/token-stats', async () => {
     const activeSessionTokens = collectActiveTokens();
     return {
-      success: true,
       daily: ctx.store.getDailyStats(30),
       totals: ctx.store.getAggregateStats(activeSessionTokens),
     };
@@ -413,13 +411,13 @@ export function registerSystemRoutes(
   // ========== Config ==========
 
   app.get('/api/config', async () => {
-    return { success: true, config: ctx.store.getConfig() };
+    return { config: ctx.store.getConfig() };
   });
 
   app.put('/api/config', async (req) => {
     const configData = parseBody(ConfigUpdateSchema, req.body, 'Invalid config');
     ctx.store.setConfig(configData as Partial<ReturnType<typeof ctx.store.getConfig>>);
-    return { success: true, config: ctx.store.getConfig() };
+    return { config: ctx.store.getConfig() };
   });
 
   // ========== Debug/Memory ==========
@@ -535,7 +533,7 @@ export function registerSystemRoutes(
         }
       }
 
-      return { success: true };
+      return {};
     } catch (err) {
       return createErrorResponse(ApiErrorCode.OPERATION_FAILED, getErrorMessage(err));
     }
@@ -568,7 +566,7 @@ export function registerSystemRoutes(
       }
       await fs.writeFile(SETTINGS_PATH, JSON.stringify(existingSettings, null, 2));
 
-      return { success: true };
+      return {};
     } catch (err) {
       return createErrorResponse(ApiErrorCode.OPERATION_FAILED, getErrorMessage(err));
     }
@@ -580,7 +578,6 @@ export function registerSystemRoutes(
     const { id } = req.params as { id: string };
     const session = findSessionOrFail(ctx, id);
     return {
-      success: true,
       nice: session.niceConfig,
     };
   });
@@ -596,7 +593,6 @@ export function registerSystemRoutes(
     ctx.broadcast(SseEvent.SessionUpdated, { session: ctx.getSessionStateWithRespawn(session) });
 
     return {
-      success: true,
       nice: session.niceConfig,
       note: 'Nice priority only affects newly created mux sessions, not currently running ones.',
     };
@@ -620,7 +616,7 @@ export function registerSystemRoutes(
         mkdirSync(dir, { recursive: true });
       }
       await fs.writeFile(windowStatesPath, JSON.stringify(states, null, 2));
-      return { success: true };
+      return {};
     } catch (err) {
       return createErrorResponse(ApiErrorCode.OPERATION_FAILED, getErrorMessage(err));
     }
@@ -640,7 +636,7 @@ export function registerSystemRoutes(
         mkdirSync(dir, { recursive: true });
       }
       await fs.writeFile(parentMapPath, JSON.stringify(parentMap, null, 2));
-      return { success: true };
+      return {};
     } catch (err) {
       return createErrorResponse(ApiErrorCode.OPERATION_FAILED, getErrorMessage(err));
     }
@@ -799,7 +795,7 @@ export function registerSystemRoutes(
     const filepath = join(SCREENSHOTS_DIR, filename);
     await fs.writeFile(filepath, filePart.data);
 
-    return { success: true, path: filepath, filename };
+    return { path: filepath, filename };
   });
 
   app.get('/api/screenshots', async () => {

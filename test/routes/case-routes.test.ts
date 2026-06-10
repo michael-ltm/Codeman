@@ -3,10 +3,22 @@
  *
  * Uses app.inject() — no real HTTP ports needed.
  * Port: N/A (app.inject doesn't open ports)
+ *
+ * Responses follow the uniform envelope contract:
+ *   SUCCESS -> HTTP 2xx, body = { success: true, data: <payload> }
+ *   ERROR   -> HTTP 4xx/5xx, body = { success: false, error, errorCode }
+ * Bare handler returns are wrapped into { success:true, data } and returned
+ * error envelopes are mapped to their conventional HTTP status by the same
+ * preSerialization hook the production server installs (mirrored below so test
+ * behavior matches production exactly).
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createRouteTestHarness, type RouteTestHarness } from './_route-test-utils.js';
+import Fastify, { type FastifyInstance } from 'fastify';
+import fastifyCookie from '@fastify/cookie';
+import { createMockRouteContext, type MockRouteContext } from '../mocks/index.js';
+import { installRouteErrorHandler } from '../../src/web/route-error-handler.js';
+import { ApiErrorCode, httpStatusForErrorCode } from '../../src/types.js';
 import { registerCaseRoutes } from '../../src/web/routes/case-routes.js';
 
 // Mock filesystem modules
@@ -51,11 +63,52 @@ const mockedReaddirSync = vi.mocked(readdirSync);
 const mockedReaddir = vi.mocked(fs.readdir);
 const mockedReadFile = vi.mocked(fs.readFile);
 
+interface CaseRouteHarness {
+  app: FastifyInstance;
+  ctx: MockRouteContext;
+}
+
+/**
+ * Build a route harness that mirrors production: cookie plugin, the shared
+ * route error handler, AND the uniform-envelope preSerialization hook (copied
+ * from src/web/server.ts) so bare handler returns become { success:true, data }
+ * and returned error envelopes get mapped to a conventional HTTP status.
+ */
+async function createEnvelopeHarness(): Promise<CaseRouteHarness> {
+  const app = Fastify({ logger: false });
+  await app.register(fastifyCookie);
+
+  // Uniform response envelope (matches src/web/server.ts preSerialization hook).
+  app.addHook('preSerialization', (req, reply, payload: unknown, done) => {
+    if (!req.url.startsWith('/api')) return done(null, payload);
+    if (payload === null || typeof payload !== 'object') return done(null, payload);
+    if (Buffer.isBuffer(payload) || typeof (payload as { pipe?: unknown }).pipe === 'function') {
+      return done(null, payload);
+    }
+    const p = payload as { success?: unknown; errorCode?: unknown };
+    if (p.success === false) {
+      if (reply.statusCode === 200 && typeof p.errorCode === 'string') {
+        reply.code(httpStatusForErrorCode(p.errorCode as ApiErrorCode));
+      }
+      return done(null, payload);
+    }
+    if (p.success === true) return done(null, payload);
+    return done(null, { success: true, data: payload });
+  });
+
+  const ctx = createMockRouteContext();
+  registerCaseRoutes(app, ctx as never);
+  installRouteErrorHandler(app);
+  await app.ready();
+
+  return { app, ctx };
+}
+
 describe('case-routes', () => {
-  let harness: RouteTestHarness;
+  let harness: CaseRouteHarness;
 
   beforeEach(async () => {
-    harness = await createRouteTestHarness(registerCaseRoutes);
+    harness = await createEnvelopeHarness();
     vi.clearAllMocks();
 
     // Default: existsSync returns false, readFile throws ENOENT
@@ -79,7 +132,8 @@ describe('case-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body).toEqual([]);
+      expect(body.success).toBe(true);
+      expect(body.data).toEqual([]);
     });
 
     it('returns cases from CASES_DIR', async () => {
@@ -97,10 +151,10 @@ describe('case-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body).toHaveLength(2);
-      expect(body[0].name).toBe('my-case');
-      expect(body[1].name).toBe('other-case');
-      expect(body[0].hasClaudeMd).toBe(false);
+      expect(body.data).toHaveLength(2);
+      expect(body.data[0].name).toBe('my-case');
+      expect(body.data[1].name).toBe('other-case');
+      expect(body.data[0].hasClaudeMd).toBe(false);
     });
 
     it('includes hasClaudeMd flag', async () => {
@@ -113,7 +167,7 @@ describe('case-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body[0].hasClaudeMd).toBe(true);
+      expect(body.data[0].hasClaudeMd).toBe(true);
     });
 
     it('includes linked cases from linked-cases.json', async () => {
@@ -141,7 +195,7 @@ describe('case-routes', () => {
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
       // Should have both regular and linked cases
-      expect(body.length).toBeGreaterThanOrEqual(1);
+      expect(body.data.length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -189,7 +243,7 @@ describe('case-routes', () => {
         url: '/api/cases',
         payload: { name: 'existing-case' },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(409);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
       expect(body.error).toContain('already exists');
@@ -250,7 +304,7 @@ describe('case-routes', () => {
         url: '/api/cases/link',
         payload: { name: 'my-project', path: '/nonexistent/path' },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(404);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
       expect(body.error).toContain('not found');
@@ -265,7 +319,7 @@ describe('case-routes', () => {
         url: '/api/cases/link',
         payload: { name: 'existing-case', path: '/home/user/project' },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(409);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
       expect(body.error).toContain('already exists');
@@ -310,8 +364,9 @@ describe('case-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.name).toBe('my-case');
-      expect(body.linked).toBe(true);
+      expect(body.success).toBe(true);
+      expect(body.data.name).toBe('my-case');
+      expect(body.data.linked).toBe(true);
     });
 
     it('returns CASES_DIR case when no linked case found', async () => {
@@ -326,7 +381,8 @@ describe('case-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.name).toBe('regular-case');
+      expect(body.success).toBe(true);
+      expect(body.data.name).toBe('regular-case');
     });
 
     it('returns error when case not found anywhere', async () => {
@@ -337,7 +393,7 @@ describe('case-routes', () => {
         method: 'GET',
         url: '/api/cases/nonexistent',
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(404);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
       expect(body.error).toContain('not found');
@@ -358,9 +414,9 @@ describe('case-routes', () => {
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(true);
-      expect(body.exists).toBe(false);
-      expect(body.content).toBeNull();
-      expect(body.todos).toEqual([]);
+      expect(body.data.exists).toBe(false);
+      expect(body.data.content).toBeNull();
+      expect(body.data.todos).toEqual([]);
     });
 
     it('parses fix plan with todos and stats', async () => {
@@ -397,9 +453,9 @@ describe('case-routes', () => {
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(true);
-      expect(body.exists).toBe(true);
-      expect(body.todos.length).toBeGreaterThan(0);
-      expect(body.stats.total).toBeGreaterThan(0);
+      expect(body.data.exists).toBe(true);
+      expect(body.data.todos.length).toBeGreaterThan(0);
+      expect(body.data.stats.total).toBeGreaterThan(0);
     });
   });
 
@@ -413,7 +469,7 @@ describe('case-routes', () => {
         method: 'GET',
         url: '/api/cases/my-case/ralph-wizard/files',
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(404);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
       expect(body.error).toContain('not found');
@@ -424,7 +480,7 @@ describe('case-routes', () => {
         method: 'GET',
         url: '/api/cases/..%2F..%2Fetc/ralph-wizard/files',
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -464,7 +520,7 @@ describe('case-routes', () => {
         method: 'GET',
         url: '/api/cases/my-case/ralph-wizard/file/research%2Fprompt.md',
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(404);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });

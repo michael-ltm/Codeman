@@ -3,17 +3,73 @@
  *
  * Uses app.inject() — no real HTTP ports needed.
  * Port: N/A (app.inject doesn't open ports)
+ *
+ * These tests assert the UNIFORM response envelope (stable HTTP contract):
+ *   success -> 2xx, { success: true, data: <payload> }
+ *   error   -> 4xx/5xx, { success: false, error, errorCode }
+ * The production server applies this via a preSerialization hook (server.ts).
+ * The shared route harness doesn't install it, so we build a local harness here
+ * that mirrors production: the same preSerialization envelope hook + the shared
+ * route error handler, so assertions match the real wire format.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createRouteTestHarness, type RouteTestHarness } from './_route-test-utils.js';
+import Fastify, { type FastifyInstance } from 'fastify';
+import fastifyCookie from '@fastify/cookie';
+import { createMockRouteContext, type MockRouteContext } from '../mocks/index.js';
+import { installRouteErrorHandler } from '../../src/web/route-error-handler.js';
+import { ApiErrorCode, httpStatusForErrorCode } from '../../src/types.js';
 import { registerHookEventRoutes } from '../../src/web/routes/hook-event-routes.js';
 
+interface LocalHarness {
+  app: FastifyInstance;
+  ctx: MockRouteContext;
+}
+
+/**
+ * Build a Fastify instance that mirrors production's uniform-envelope behavior
+ * (server.ts preSerialization hook) so the test wire format matches the contract:
+ * bare payloads become { success: true, data }, and { success:false } error
+ * envelopes get the conventional HTTP status from their errorCode.
+ */
+async function createEnvelopeHarness(
+  registerFn: (app: FastifyInstance, ctx: MockRouteContext) => void
+): Promise<LocalHarness> {
+  const app = Fastify({ logger: false });
+  await app.register(fastifyCookie);
+
+  const ctx = createMockRouteContext();
+  registerFn(app, ctx);
+
+  // Mirror production uniform response envelope (server.ts).
+  app.addHook('preSerialization', (req, reply, payload: unknown, done) => {
+    if (!req.url.startsWith('/api')) return done(null, payload);
+    if (payload === null || typeof payload !== 'object') return done(null, payload);
+    if (Buffer.isBuffer(payload) || typeof (payload as { pipe?: unknown }).pipe === 'function') {
+      return done(null, payload);
+    }
+    const p = payload as { success?: unknown; errorCode?: unknown };
+    if (p.success === false) {
+      if (reply.statusCode === 200 && typeof p.errorCode === 'string') {
+        reply.code(httpStatusForErrorCode(p.errorCode as ApiErrorCode));
+      }
+      return done(null, payload);
+    }
+    if (p.success === true) return done(null, payload);
+    return done(null, { success: true, data: payload });
+  });
+
+  installRouteErrorHandler(app);
+  await app.ready();
+
+  return { app, ctx };
+}
+
 describe('hook-event-routes', () => {
-  let harness: RouteTestHarness;
+  let harness: LocalHarness;
 
   beforeEach(async () => {
-    harness = await createRouteTestHarness(registerHookEventRoutes);
+    harness = await createEnvelopeHarness(registerHookEventRoutes);
   });
 
   afterEach(async () => {
@@ -69,7 +125,7 @@ describe('hook-event-routes', () => {
           data: null,
         },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(404);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
       expect(body.error).toBeDefined();

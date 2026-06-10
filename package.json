@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "aicodeman": "./dist/index.js"
+    "aicodeman": "./dist/index.js",
+    "codeman": "./dist/index.js"
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.js",
@@ -19,6 +20,8 @@
     "test": "vitest run --config config/vitest.config.ts",
     "test:watch": "vitest --config config/vitest.config.ts",
     "test:coverage": "vitest run --config config/vitest.config.ts --coverage",
+    "test:ci": "vitest run --config config/vitest.ci.config.ts",
+    "check:frontend-syntax": "node scripts/check-frontend-syntax.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --config config/eslint.config.js 'src/**/*.ts'",
     "lint:fix": "eslint --config config/eslint.config.js 'src/**/*.ts' --fix",
@@ -117,7 +120,7 @@
     }
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "repository": {
     "type": "git",

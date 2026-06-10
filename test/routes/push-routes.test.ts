@@ -131,7 +131,11 @@ describe('push-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      // Handler returns a bare {} on success; the uniform envelope wraps it to
+      // { success:true, data:{} } in production. At the route-handler layer the
+      // harness sees the bare return, so the meaningful check is the empty body
+      // plus the pushStore call below.
+      expect(body).toEqual({});
       expect(harness.ctx.pushStore.updatePreferences).toHaveBeenCalledWith('sub-123', {
         'session:idle': true,
         'session:error': true,
@@ -176,7 +180,11 @@ describe('push-routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(true);
+      // Handler returns a bare {} on success; the uniform envelope wraps it to
+      // { success:true, data:{} } in production. At the route-handler layer the
+      // harness sees the bare return, so the meaningful check is the empty body
+      // plus the pushStore call below.
+      expect(body).toEqual({});
       expect(harness.ctx.pushStore.removeSubscription).toHaveBeenCalledWith('sub-123');
     });
 

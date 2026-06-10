@@ -90,14 +90,34 @@ import { reconcileUpdateOnBoot } from './self-update.js';
 // Load version from package.json
 const require = createRequire(import.meta.url);
 const { version: APP_VERSION } = require('../../package.json');
+
+/**
+ * `/api/v1/*` is the versioned public alias of the (unversioned) `/api/*` routes.
+ * Rewriting at the server level lets external clients pin to a stable surface while
+ * the bundled frontend keeps using `/api/*`. See docs/api-reference.md.
+ */
+function rewriteApiV1Url(url: string): string {
+  if (url === '/api/v1') return '/api';
+  if (url.startsWith('/api/v1/')) return '/api/' + url.slice('/api/v1/'.length);
+  return url;
+}
 import {
   getErrorMessage,
+  httpStatusForErrorCode,
+  createErrorResponse,
+  ApiErrorCode,
   type PersistedRespawnConfig,
   type NiceConfig,
   type ImageDetectedEvent,
   DEFAULT_NICE_CONFIG,
 } from '../types.js';
-import { CleanupManager, KeyedDebouncer, StaleExpirationMap, startEventLoopMonitor } from '../utils/index.js';
+import {
+  CleanupManager,
+  KeyedDebouncer,
+  StaleExpirationMap,
+  startEventLoopMonitor,
+  isSafePushEndpoint,
+} from '../utils/index.js';
 import type { EventLoopMonitorHandle } from '../utils/index.js';
 import { MAX_CONCURRENT_SESSIONS, MAX_SSE_CLIENTS } from '../config/map-limits.js';
 import { SseEvent } from './sse-events.js';
@@ -268,11 +288,12 @@ export class WebServer extends EventEmitter {
     this.windowTitle = `codeman:${this.titleHostname}`;
     this.indexHtmlTemplate = readFileSync(join(__dirname, 'public', 'index.html'), 'utf-8');
 
+    const rewriteUrl = (req: { url?: string }): string => rewriteApiV1Url(req.url || '');
     if (https) {
       const { key, cert } = getOrCreateSelfSignedCert();
-      this.app = Fastify({ logger: false, https: { key, cert } });
+      this.app = Fastify({ logger: false, https: { key, cert }, rewriteUrl });
     } else {
-      this.app = Fastify({ logger: false });
+      this.app = Fastify({ logger: false, rewriteUrl });
     }
     this.mux = createMultiplexer();
     this.sse = new SseStreamManager(
@@ -555,6 +576,27 @@ export class WebServer extends EventEmitter {
     // Cookie plugin (needed for auth session tokens)
     await this.app.register(fastifyCookie);
 
+    // Uniform response envelope (stable HTTP contract — docs/api-reference.md):
+    // wrap bare JSON payloads as { success:true, data } and map { success:false }
+    // error envelopes to a conventional HTTP status (instead of 200). Skips
+    // non-JSON responses (buffers/streams) and non-/api routes.
+    this.app.addHook('preSerialization', (req, reply, payload: unknown, done) => {
+      if (!req.url.startsWith('/api')) return done(null, payload);
+      if (payload === null || typeof payload !== 'object') return done(null, payload);
+      if (Buffer.isBuffer(payload) || typeof (payload as { pipe?: unknown }).pipe === 'function') {
+        return done(null, payload);
+      }
+      const p = payload as { success?: unknown; errorCode?: unknown };
+      if (p.success === false) {
+        if (reply.statusCode === 200 && typeof p.errorCode === 'string') {
+          reply.code(httpStatusForErrorCode(p.errorCode as ApiErrorCode));
+        }
+        return done(null, payload);
+      }
+      if (p.success === true) return done(null, payload);
+      return done(null, { success: true, data: payload });
+    });
+
     // Anti-DNS-rebinding Host allowlist + cross-site (CSRF) Origin guard. Registered
     // before auth so forged cross-site / rebound requests are rejected up front, even
     // on the default no-password install. See docs/reports/security-review-2026-06-09.md.
@@ -697,7 +739,7 @@ export class WebServer extends EventEmitter {
     this.app.post('/api/events/subscribe', (req, reply) => {
       const body = (req.body || {}) as { clientId?: string; sessions?: string[] | null };
       if (typeof body.clientId !== 'string' || !SSE_CLIENT_ID_RE.test(body.clientId)) {
-        reply.code(400).send({ error: 'clientId required' });
+        reply.code(400).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'clientId required'));
         return;
       }
       const sessions = Array.isArray(body.sessions)
@@ -710,6 +752,18 @@ export class WebServer extends EventEmitter {
     // Global error handler for structured errors thrown by findSessionOrFail /
     // parseBody. Shared with the route test harness so test behavior matches prod.
     installRouteErrorHandler(this.app);
+
+    // Stable-contract 404 for unknown /api routes — without this, Fastify's
+    // default not-found payload {message,error,statusCode} would be wrapped by
+    // the envelope hook into a contradictory HTTP 404 {success:true,...}.
+    this.app.setNotFoundHandler((req, reply) => {
+      const notFound = `Route ${req.method}:${req.url} not found`;
+      if (req.url.startsWith('/api')) {
+        reply.code(404).send(createErrorResponse(ApiErrorCode.NOT_FOUND, notFound));
+        return;
+      }
+      reply.code(404).send({ message: notFound, error: 'Not Found', statusCode: 404 });
+    });
 
     // Crash diagnostics beacon — frontend POSTs breadcrumbs, GET to read them.
     // text/plain is used ONLY by this beacon (navigator.sendBeacon sends text/plain).
@@ -1638,6 +1692,14 @@ export class WebServer extends EventEmitter {
     for (const sub of subscriptions) {
       // Check per-subscription preferences
       if (sub.pushPreferences[event] === false) continue;
+
+      // Re-validate the stored endpoint before fetching it server-side (SSRF, M7).
+      // Defense-in-depth: subscribe-time validation already rejects unsafe URLs.
+      if (!isSafePushEndpoint(sub.endpoint)) {
+        console.warn('[push] skipping notification to unsafe endpoint:', sub.endpoint);
+        this.pushStore.removeByEndpoint(sub.endpoint);
+        continue;
+      }
 
       const pushSub = {
         endpoint: sub.endpoint,
