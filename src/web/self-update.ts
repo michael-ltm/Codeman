@@ -161,7 +161,9 @@ export function parseGitHubRepo(remoteUrl: string): { owner: string; repo: strin
  * persist — or null to leave it untouched.
  *
  * Rules (see plan "Hardening"):
- * - Terminal phases → untouched.
+ * - Terminal phases → untouched, EXCEPT `completed-needs-manual-restart`: once we
+ *   boot into the staged target version the manual restart evidently happened, so
+ *   it flips to `completed` (otherwise the stale instruction lingers in the UI).
  * - Only the `restarting` marker (written right before the updater triggers our
  *   restart) flips to completed/failed by comparing running version vs. target.
  * - Other in-flight phases are owned by the still-running updater scope — leave
@@ -174,6 +176,17 @@ export function reconcileStatusDecision(
   now: number
 ): UpdateStatus | null {
   if (!status) return null;
+
+  // A staged update that asked for a manual restart: if we're now running the
+  // target version, the user (or supervisor) did restart — mark it completed so
+  // the UI stops showing the stale "restart Codeman to apply" instruction.
+  if (status.phase === 'completed-needs-manual-restart') {
+    if (status.toVersion && runningVersion === status.toVersion) {
+      return { ...status, phase: 'completed', message: `Updated to v${runningVersion}`, updatedAt: now };
+    }
+    return null;
+  }
+
   if (!IN_FLIGHT_PHASES.has(status.phase)) return null;
 
   if (status.phase === 'restarting') {
@@ -275,6 +288,16 @@ function detectInstallKind(dir: string): InstallKind {
 export function detectSupervisor(): SupervisorKind {
   if (process.platform === 'darwin') {
     if (existsSync(join(homedir(), 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`))) return 'launchd';
+    // Headless Macs (no GUI login → no gui domain) run Codeman as a system-level
+    // LaunchDaemon instead. Restarting one needs no root IF it has KeepAlive: the
+    // updater just kills the server and launchd respawns it on the new build. Only
+    // claim this supervisor when the daemon is actually bootstrapped and KeepAlive.
+    const daemonPlist = join('/Library/LaunchDaemons', `${LAUNCHD_LABEL}.plist`);
+    if (existsSync(daemonPlist)) {
+      const loaded = tryExec('launchctl', ['print', `system/${LAUNCHD_LABEL}`]) !== null;
+      const keepAlive = tryExec('plutil', ['-extract', 'KeepAlive', 'raw', '-o', '-', daemonPlist]);
+      if (loaded && keepAlive === 'true') return 'launchd-daemon';
+    }
     return 'none';
   }
   if (process.platform === 'linux') {
@@ -535,6 +558,10 @@ export async function startUpdate(): Promise<StartUpdateResult> {
     process.execPath,
     '--log',
     logFile,
+    // For the launchd-daemon restart path: the updater kills this PID and the
+    // KeepAlive daemon respawns the server on the freshly built dist/.
+    '--server-pid',
+    String(process.pid),
   ];
   if (prevSha) args.push('--prev-sha', prevSha);
   if (info.dirty) args.push('--stash');

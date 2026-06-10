@@ -31,6 +31,7 @@ export PUPPETEER_SKIP_DOWNLOAD="${PUPPETEER_SKIP_DOWNLOAD:-1}"
 REPO=""
 TAG=""
 SUPERVISOR="none"
+SERVER_PID=""
 STATUS_FILE=""
 UPDATE_ID=""
 FROM_VERSION=""
@@ -50,6 +51,7 @@ while [[ $# -gt 0 ]]; do
     --node) NODE="$2"; shift 2 ;;
     --log) LOG="$2"; shift 2 ;;
     --prev-sha) PREV_SHA="$2"; shift 2 ;;
+    --server-pid) SERVER_PID="$2"; shift 2 ;;
     --stash) DO_STASH=1; shift ;;
     *) shift ;;
   esac
@@ -197,6 +199,19 @@ case "$SUPERVISOR" in
       launchctl load "$PLIST" 2>/dev/null \
         || fail "Build succeeded but launchd restart failed" "launchctl"
     }
+    ;;
+  launchd-daemon)
+    # System-level KeepAlive LaunchDaemon (headless Mac): kickstarting the system
+    # domain needs root, but we don't need it — kill the server and launchd
+    # respawns it on the new dist/ within ThrottleInterval seconds.
+    if [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null; then
+      : # respawn is launchd's job from here
+    else
+      MANUAL_CMD="sudo launchctl kickstart -k system/com.codeman.web"
+      write_status "completed-needs-manual-restart" "Update staged — restart Codeman to apply v$TO_VERSION."
+      echo "[self-update] launchd-daemon: could not signal server pid '$SERVER_PID' — manual restart required"
+      exit 0
+    fi
     ;;
   *)
     MANUAL_CMD="pkill -f 'codeman.*web'; codeman web &"

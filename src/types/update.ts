@@ -13,8 +13,12 @@
  * @module types/update
  */
 
-/** Which init system supervises the running server (decides how we restart it). */
-export type SupervisorKind = 'systemd' | 'launchd' | 'none';
+/**
+ * Which init system supervises the running server (decides how we restart it).
+ * `launchd-daemon` = a KeepAlive system-level LaunchDaemon (headless Macs, no GUI
+ * login): restart works by killing the server and letting launchd respawn it.
+ */
+export type SupervisorKind = 'systemd' | 'launchd' | 'launchd-daemon' | 'none';
 
 /** How Codeman was installed — only `git` installs can self-update in place. */
 export type InstallKind = 'git' | 'npm' | 'unknown';

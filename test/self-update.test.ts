@@ -153,4 +153,17 @@ describe('reconcileStatusDecision (boot handoff state machine)', () => {
     expect(out?.phase).toBe('failed');
     expect(out?.error).toContain('building');
   });
+
+  it('needs-manual-restart + now running the target version → completed', () => {
+    const out = reconcileStatusDecision(base({ phase: 'completed-needs-manual-restart' }), '0.9.4', NOW);
+    expect(out?.phase).toBe('completed');
+    expect(out?.message).toContain('0.9.4');
+    expect(out?.updatedAt).toBe(NOW);
+  });
+
+  it('needs-manual-restart + still on the old version → untouched (restart pending)', () => {
+    expect(reconcileStatusDecision(base({ phase: 'completed-needs-manual-restart' }), '0.9.3', NOW)).toBeNull();
+    const noTarget = base({ phase: 'completed-needs-manual-restart', toVersion: undefined });
+    expect(reconcileStatusDecision(noTarget, '0.9.4', NOW)).toBeNull();
+  });
 });
