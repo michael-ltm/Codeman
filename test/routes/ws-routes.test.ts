@@ -307,6 +307,33 @@ describe('ws-routes', () => {
       }
     });
 
+    it('claims desktop sizing on a desktop resize and releases it on close', async () => {
+      const ws = await connectWs('/ws/sessions/ws-test-session/terminal');
+      const session = ctx._session;
+      try {
+        ws.send(JSON.stringify({ t: 'z', c: 160, r: 48, v: 'desktop' }));
+
+        await vi.waitFor(() => {
+          expect(session.claimDesktopSizing).toHaveBeenCalledTimes(1);
+        });
+        const token = session.claimDesktopSizing.mock.calls[0][0];
+
+        // A later small-viewport resize on the SAME connection drops the claim
+        // (window narrowed past the breakpoint).
+        ws.send(JSON.stringify({ t: 'z', c: 48, r: 28, v: 'tablet' }));
+        await vi.waitFor(() => {
+          expect(session.releaseDesktopSizing).toHaveBeenCalledWith(token);
+        });
+      } finally {
+        ws.close();
+      }
+
+      // Socket close releases the claim again (idempotent set delete).
+      await vi.waitFor(() => {
+        expect(session.releaseDesktopSizing.mock.calls.length).toBeGreaterThanOrEqual(2);
+      });
+    });
+
     it('accepts resize at minimum bounds (1x1)', async () => {
       const ws = await connectWs('/ws/sessions/ws-test-session/terminal');
       try {

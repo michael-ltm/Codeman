@@ -81,10 +81,6 @@ vi.mock('../src/session.js', () => {
       return undefined;
     }
 
-    getAttachmentHistoryForPersist() {
-      return undefined;
-    }
-
     getOutput() {
       return 'mock output';
     }

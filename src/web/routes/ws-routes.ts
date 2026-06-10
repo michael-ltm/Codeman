@@ -109,6 +109,12 @@ export function registerWsRoutes(app: FastifyInstance, ctx: SessionPort, getHost
       socket.send(`{"t":"o","d":${JSON.stringify(DEC_2026_START + data + DEC_2026_END)}}`);
     };
 
+    // Per-connection desktop sizing claim — registered on the first
+    // desktop-typed resize and released on socket close, so Session.resize()
+    // can ignore small-viewport resizes only while a desktop is actually
+    // connected (see Session._desktopSizeClaims).
+    const sizingToken = Symbol('ws-desktop-sizing');
+
     // Attach message handler synchronously BEFORE any async work
     // (@fastify/websocket requirement to avoid dropped messages).
     socket.on('message', (raw) => {
@@ -127,6 +133,13 @@ export function registerWsRoutes(app: FastifyInstance, ctx: SessionPort, getHost
           msg.r <= 200
         ) {
           const viewportType = msg.v === 'mobile' || msg.v === 'tablet' || msg.v === 'desktop' ? msg.v : undefined;
+          if (viewportType === 'desktop') {
+            session.claimDesktopSizing(sizingToken);
+          } else if (viewportType) {
+            // The connection's viewport can change (e.g. browser window
+            // narrowed past the tablet breakpoint) — drop a stale claim.
+            session.releaseDesktopSizing(sizingToken);
+          }
           if (viewportType) {
             session.resize(msg.c, msg.r, { viewportType });
           } else {
@@ -210,6 +223,7 @@ export function registerWsRoutes(app: FastifyInstance, ctx: SessionPort, getHost
       session.off('clearTerminal', onClearTerminal);
       session.off('needsRefresh', onNeedsRefresh);
       session.off('exit', onSessionExit);
+      session.releaseDesktopSizing(sizingToken);
 
       // Decrement per-session connection count
       const count = sessionWsCount.get(id) ?? 1;

@@ -2053,16 +2053,42 @@ export class Session extends EventEmitter {
   private _ptyRows = 40;
 
   /**
+   * Live WebSocket connections that have announced a desktop viewport for this
+   * session. While at least one is registered, small-viewport (mobile/tablet)
+   * resizes are ignored so a phone glancing at the session can't reflow the
+   * PTY under an active desktop view. Claims are connection-scoped: ws-routes
+   * registers them on a desktop-typed resize and releases them on socket
+   * close, so a mobile-only session (no desktop connected) keeps full control
+   * of its own size — including narrowing below the spawn default.
+   */
+  private _desktopSizeClaims = new Set<symbol>();
+
+  /** Register a live desktop sizing claim (see _desktopSizeClaims). */
+  claimDesktopSizing(token: symbol): void {
+    this._desktopSizeClaims.add(token);
+  }
+
+  /** Release a desktop sizing claim when its connection goes away. */
+  releaseDesktopSizing(token: symbol): void {
+    this._desktopSizeClaims.delete(token);
+  }
+
+  /**
    * Resizes the PTY terminal dimensions.
    * Skips the resize if dimensions haven't changed to avoid triggering
    * unnecessary Ink full-screen redraws (visible flicker on tab switch).
+   *
+   * Arbitration: while a desktop connection holds a sizing claim, resizes from
+   * small viewports (mobile/tablet) are ignored entirely — shrink AND grow
+   * would both reflow the desktop view. Without a desktop connected, small
+   * viewports control the PTY size freely.
    *
    * @param cols - Number of columns (width in characters)
    * @param rows - Number of rows (height in lines)
    */
   resize(cols: number, rows: number, options: { viewportType?: ResizeViewportType } = {}): void {
     const isSmallViewport = options.viewportType === 'mobile' || options.viewportType === 'tablet';
-    if (isSmallViewport && cols < this._ptyCols) {
+    if (isSmallViewport && this._desktopSizeClaims.size > 0) {
       return;
     }
     if (this.ptyProcess && (cols !== this._ptyCols || rows !== this._ptyRows)) {

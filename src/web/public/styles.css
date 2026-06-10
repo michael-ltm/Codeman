@@ -190,6 +190,12 @@ body {
   filter: brightness(1.1);
 }
 
+/* Mobile-only header utility toggle — hidden by default; the mobile/tablet
+   media queries in mobile.css (max-width: 768px) re-enable it as flex. */
+.mobile-header-utility-toggle {
+  display: none;
+}
+
 /* Session Tabs */
 .session-tabs {
   display: flex;

@@ -434,10 +434,13 @@ const KeyboardHandler = {
         const cols = Math.max(dims.cols, 40);
         const rows = Math.max(dims.rows, 10);
         app._lastResizeDims = { cols, rows };
+        // Declare the viewport type so resize arbitration can ignore this
+        // while a desktop connection is sizing the same session.
+        const viewportType = MobileDetection.getDeviceType ? MobileDetection.getDeviceType() : 'mobile';
         fetch(`/api/sessions/${app.activeSessionId}/resize`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cols, rows }),
+          body: JSON.stringify({ cols, rows, viewportType }),
         }).catch(() => {});
       }
     } catch {}
