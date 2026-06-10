@@ -308,6 +308,7 @@ Object.assign(CodemanApp.prototype, {
     document.getElementById('appSettingsShowTokenCount').checked = settings.showTokenCount ?? defaults.showTokenCount ?? true;
     document.getElementById('appSettingsShowCost').checked = settings.showCost ?? defaults.showCost ?? false;
     document.getElementById('appSettingsShowLifecycleLog').checked = settings.showLifecycleLog ?? defaults.showLifecycleLog ?? true;
+    document.getElementById('appSettingsShowResponseViewer').checked = settings.showResponseViewer ?? defaults.showResponseViewer ?? true;
     document.getElementById('appSettingsShowMonitor').checked = settings.showMonitor ?? defaults.showMonitor ?? false;
     document.getElementById('appSettingsShowProjectInsights').checked = settings.showProjectInsights ?? defaults.showProjectInsights ?? false;
     document.getElementById('appSettingsShowFileBrowser').checked = settings.showFileBrowser ?? defaults.showFileBrowser ?? false;
@@ -1323,6 +1324,7 @@ Object.assign(CodemanApp.prototype, {
       showTokenCount: document.getElementById('appSettingsShowTokenCount').checked,
       showCost: document.getElementById('appSettingsShowCost').checked,
       showLifecycleLog: document.getElementById('appSettingsShowLifecycleLog').checked,
+      showResponseViewer: document.getElementById('appSettingsShowResponseViewer').checked,
       showMonitor: document.getElementById('appSettingsShowMonitor').checked,
       showProjectInsights: document.getElementById('appSettingsShowProjectInsights').checked,
       showFileBrowser: document.getElementById('appSettingsShowFileBrowser').checked,
@@ -1670,6 +1672,14 @@ Object.assign(CodemanApp.prototype, {
       lifecycleBtn.style.display = showLifecycleLog ? '' : 'none';
     }
 
+    // Hide the response viewer (eye) button when setting is disabled.
+    // Marker class, not inline style — the base rule is display:inline-flex !important.
+    const showResponseViewer = settings.showResponseViewer ?? defaults.showResponseViewer ?? true;
+    const responseViewerBtn = document.querySelector('.btn-response-viewer-header');
+    if (responseViewerBtn) {
+      responseViewerBtn.classList.toggle('btn-response-viewer-header--hidden', !showResponseViewer);
+    }
+
     // Multi-monitor button — hidden by default (App Settings → Display → "Header
     // Displays"). The server renders the correct initial state on every reload;
     // this handles a live toggle from a settings save (no reload). Toggle the
@@ -1937,6 +1947,7 @@ Object.assign(CodemanApp.prototype, {
         // are NOT display keys — they control server-side behavior and must sync from server.
         const displayKeys = new Set([
           'showFontControls', 'showSystemStats', 'showTokenCount', 'showCost',
+          'showLifecycleLog', 'showResponseViewer',
           'showMonitor', 'showProjectInsights', 'showFileBrowser', 'showSubagents',
           'subagentActiveTabOnly', 'tabTwoRows', 'localEchoEnabled', 'cjkInputEnabled', 'extendedKeyboardBar',
         ]);

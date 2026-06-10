@@ -8115,6 +8115,12 @@ kbd {
   display: inline-flex !important;
 }
 
+/* "Response Viewer" header toggle (App Settings → Display) — must out-specify
+   the inline-flex !important above */
+.btn-response-viewer-header.btn-response-viewer-header--hidden {
+  display: none !important;
+}
+
 .response-viewer {
   display: none;
   position: fixed;
