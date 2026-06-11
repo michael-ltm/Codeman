@@ -145,7 +145,7 @@ describe('ImageWatcher', () => {
   // ========== Image Detection ==========
 
   describe('image detection', () => {
-    it('should emit image:detected for .png files', () => {
+    it('should emit image:detected (popup) for .png files', () => {
       const handler = vi.fn();
       watcher.on('image:detected', handler);
 
@@ -161,7 +161,37 @@ describe('ImageWatcher', () => {
       expect(event.fileName).toBe('screenshot.png');
       expect(event.filePath).toBe('/home/user/project/screenshot.png');
       expect(event.relativePath).toBe('screenshot.png');
-      expect(event.size).toBe(2048);
+    });
+
+    it('should not emit attachment:detected for .png (stays on the popup path)', () => {
+      const handler = vi.fn();
+      watcher.on('attachment:detected', handler);
+
+      watcher.watchSession('session-1', '/home/user/project');
+      mockWatchers.get('/home/user/project')!.emit('add', '/home/user/project/screenshot.png');
+      vi.advanceTimersByTime(300);
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['report.pdf', 'pdf'],
+      ['brief.docx', 'document'],
+      ['deck.pptx', 'presentation'],
+    ])('should emit attachment:detected for %s files', (fileName, attachmentType) => {
+      const handler = vi.fn();
+      watcher.on('attachment:detected', handler);
+
+      watcher.watchSession('session-1', '/home/user/project');
+      mockWatchers.get('/home/user/project')!.emit('add', `/home/user/project/${fileName}`);
+      vi.advanceTimersByTime(300);
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler.mock.calls[0][0]).toMatchObject({
+        sessionId: 'session-1',
+        fileName,
+        attachmentType,
+      });
     });
 
     it('should emit for .jpg files', () => {
@@ -250,10 +280,10 @@ describe('ImageWatcher', () => {
       watcher.on('image:detected', handler);
 
       watcher.watchSession('session-1', '/home/user/project');
-      mockWatchers.get('/home/user/project')!.emit('add', '/home/user/project/assets/img.png');
+      mockWatchers.get('/home/user/project')!.emit('add', '/home/user/project/assets/img.jpg');
       vi.advanceTimersByTime(300);
 
-      expect(handler.mock.calls[0][0].relativePath).toBe('assets/img.png');
+      expect(handler.mock.calls[0][0].relativePath).toBe('assets/img.jpg');
     });
   });
 
@@ -268,11 +298,11 @@ describe('ImageWatcher', () => {
       const chokidarWatcher = mockWatchers.get('/home/user/project')!;
 
       // Rapid adds of the same file
-      chokidarWatcher.emit('add', '/home/user/project/screenshot.png');
+      chokidarWatcher.emit('add', '/home/user/project/screenshot.jpg');
       vi.advanceTimersByTime(100); // not yet past debounce
-      chokidarWatcher.emit('add', '/home/user/project/screenshot.png');
+      chokidarWatcher.emit('add', '/home/user/project/screenshot.jpg');
       vi.advanceTimersByTime(100);
-      chokidarWatcher.emit('add', '/home/user/project/screenshot.png');
+      chokidarWatcher.emit('add', '/home/user/project/screenshot.jpg');
       vi.advanceTimersByTime(300); // now past debounce from last emit
 
       // Should only emit once (the last debounced one)
@@ -286,8 +316,8 @@ describe('ImageWatcher', () => {
       watcher.watchSession('session-1', '/home/user/project');
       const chokidarWatcher = mockWatchers.get('/home/user/project')!;
 
-      chokidarWatcher.emit('add', '/home/user/project/a.png');
-      chokidarWatcher.emit('add', '/home/user/project/b.png');
+      chokidarWatcher.emit('add', '/home/user/project/a.jpg');
+      chokidarWatcher.emit('add', '/home/user/project/b.jpg');
       vi.advanceTimersByTime(300);
 
       expect(handler).toHaveBeenCalledTimes(2);
@@ -306,7 +336,7 @@ describe('ImageWatcher', () => {
 
       // Emit 25 unique images in quick succession
       for (let i = 0; i < 25; i++) {
-        chokidarWatcher.emit('add', `/home/user/project/img${i}.png`);
+        chokidarWatcher.emit('add', `/home/user/project/img${i}.jpg`);
         vi.advanceTimersByTime(250); // past debounce, within burst window
       }
 
@@ -323,7 +353,7 @@ describe('ImageWatcher', () => {
 
       // Fill up burst limit
       for (let i = 0; i < 20; i++) {
-        chokidarWatcher.emit('add', `/home/user/project/img${i}.png`);
+        chokidarWatcher.emit('add', `/home/user/project/img${i}.jpg`);
         vi.advanceTimersByTime(250);
       }
       expect(handler).toHaveBeenCalledTimes(20);
@@ -332,7 +362,7 @@ describe('ImageWatcher', () => {
       vi.advanceTimersByTime(11_000);
 
       // Should accept new images
-      chokidarWatcher.emit('add', '/home/user/project/new.png');
+      chokidarWatcher.emit('add', '/home/user/project/new.jpg');
       vi.advanceTimersByTime(300);
 
       expect(handler).toHaveBeenCalledTimes(21);

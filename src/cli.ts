@@ -10,11 +10,17 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { createRequire } from 'module';
+import http from 'node:http';
+import https from 'node:https';
+import { readFileSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
+import { dataPath } from './config/instance.js';
 import { getSessionManager } from './session-manager.js';
 import { getTaskQueue } from './task-queue.js';
 import { getRalphLoop } from './ralph-loop.js';
 import { getStore } from './state-store.js';
 import { getErrorMessage } from './types.js';
+import { isSupportedAttachmentExtension } from './attachment-registry.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -22,6 +28,93 @@ const pkg = require('../package.json') as { version: string };
 const program = new Command();
 
 program.name('codeman').description('Claude Code session manager with autonomous Ralph Loop').version(pkg.version);
+
+function makeAttachmentMagicLink(filePath: string): string {
+  return `codeman://attach?path=${encodeURIComponent(filePath)}`;
+}
+
+function readCodemanEnv(): Record<string, string> {
+  const envPath = dataPath('.env');
+  try {
+    const text = readFileSync(envPath, 'utf-8');
+    const result: Record<string, string> = {};
+    for (const rawLine of text.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+      const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+      if (!match) continue;
+      let value = match[2].trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      result[match[1]] = value;
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+async function postAttachment(apiUrl: string, sessionId: string, filePath: string): Promise<boolean> {
+  const envFile = readCodemanEnv();
+  const username = process.env.CODEMAN_USERNAME || envFile.CODEMAN_USERNAME || 'admin';
+  const password = process.env.CODEMAN_PASSWORD || envFile.CODEMAN_PASSWORD;
+  const url = new URL(`/api/sessions/${encodeURIComponent(sessionId)}/attachments`, apiUrl);
+  const body = JSON.stringify({ path: filePath });
+  const transport = url.protocol === 'https:' ? https : http;
+
+  return new Promise((resolve) => {
+    const headers: Record<string, string | number> = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body),
+    };
+    if (password) {
+      headers.Authorization = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
+    }
+
+    const req = transport.request(
+      {
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port,
+        method: 'POST',
+        path: `${url.pathname}${url.search}`,
+        rejectUnauthorized: false,
+        headers,
+      },
+      (res) => {
+        res.resume();
+        res.on('end', () => resolve(Boolean(res.statusCode && res.statusCode >= 200 && res.statusCode < 300)));
+      }
+    );
+    req.on('error', () => resolve(false));
+    req.write(body);
+    req.end();
+  });
+}
+
+program
+  .command('attach <path>')
+  .description('Show an attachment card for a local file')
+  .option('-s, --session <id>', 'Codeman session ID (defaults to CODEMAN_SESSION_ID)')
+  .option('--url <url>', 'Codeman API URL (defaults to CODEMAN_API_URL or https://127.0.0.1:3000)')
+  .action(async (filePath, options) => {
+    const extension = String(filePath).split('.').pop()?.toLowerCase() || '';
+    if (!isAbsolute(filePath) || !isSupportedAttachmentExtension(extension)) {
+      console.error(chalk.red('✗ attach requires an absolute path to a png, pdf, docx, pptx, md, or txt file'));
+      process.exit(1);
+    }
+
+    const sessionId = options.session || process.env.CODEMAN_SESSION_ID;
+    const apiUrl = options.url || process.env.CODEMAN_API_URL || 'https://127.0.0.1:3000';
+    if (sessionId && (await postAttachment(apiUrl, sessionId, filePath))) {
+      console.log(chalk.green('✓ Attachment card requested'));
+      return;
+    }
+
+    console.log(makeAttachmentMagicLink(filePath));
+  });
 
 // ============ Session Commands ============
 

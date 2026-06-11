@@ -284,6 +284,8 @@ export const TunnelQrAuthUsed = 'tunnel:qrAuthUsed' as const;
 
 /** New image file detected (e.g. screenshot upload). */
 export const ImageDetected = 'image:detected' as const;
+/** New document/image attachment detected in a session working directory. */
+export const AttachmentDetected = 'attachment:detected' as const;
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────
 
@@ -479,6 +481,7 @@ export const SseEvent = {
 
   // Image
   ImageDetected,
+  AttachmentDetected,
 
   // Hooks
   HookIdlePrompt,

@@ -58,6 +58,7 @@ export interface SessionListenerRefs {
   bashToolStart: (tool: ActiveBashTool) => void;
   bashToolEnd: (tool: ActiveBashTool) => void;
   bashToolsUpdate: (tools: ActiveBashTool[]) => void;
+  attachmentRequested: (event: { path: string }) => void;
 }
 
 /** Dependencies injected by WebServer — keeps listener creation decoupled from server internals. */
@@ -77,10 +78,11 @@ interface SessionListenerDeps {
   removeSessionListenerRefs(sessionId: string): void;
   cleanupRespawnOnExit(sessionId: string): void;
   getStore(): import('../state-store.js').StateStore;
+  registerAttachment(sessionId: string, filePath: string): Promise<void>;
 }
 
 /**
- * Creates all 25 session listener handlers, capturing dependencies via closure.
+ * Creates all 26 session listener handlers, capturing dependencies via closure.
  * Call `attachSessionListeners()` after to wire them to the session.
  */
 export function createSessionListeners(session: Session, deps: SessionListenerDeps): SessionListenerRefs {
@@ -355,6 +357,13 @@ export function createSessionListeners(session: Session, deps: SessionListenerDe
     bashToolsUpdate: (tools: ActiveBashTool[]) => {
       deps.broadcast(SseEvent.SessionBashToolsUpdate, { sessionId: session.id, tools });
     },
+
+    /** Registers an explicit attachment card requested by terminal magic text. */
+    attachmentRequested: (event: { path: string }) => {
+      deps.registerAttachment(session.id, event.path).catch((err) => {
+        console.error(`[Attachment] Failed to register ${event.path} for ${session.id}:`, err);
+      });
+    },
   };
 }
 
@@ -388,6 +397,7 @@ export function attachSessionListeners(session: Session, refs: SessionListenerRe
   session.on('bashToolStart', refs.bashToolStart);
   session.on('bashToolEnd', refs.bashToolEnd);
   session.on('bashToolsUpdate', refs.bashToolsUpdate);
+  session.on('attachmentRequested', refs.attachmentRequested);
 }
 
 /** Detach all listeners from a session (prevents memory leaks from closure references). */
@@ -420,4 +430,5 @@ export function detachSessionListeners(session: Session, refs: SessionListenerRe
   session.off('bashToolStart', refs.bashToolStart);
   session.off('bashToolEnd', refs.bashToolEnd);
   session.off('bashToolsUpdate', refs.bashToolsUpdate);
+  session.off('attachmentRequested', refs.attachmentRequested);
 }

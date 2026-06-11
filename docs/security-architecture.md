@@ -320,7 +320,37 @@ injected from API JSON (`innerHTML`), not via `file-raw`, so they are unaffected
 `/api/download` additionally refuses a blocklist of sensitive paths
 (`/etc/shadow`, `~/.ssh/`, `.env`, `*credentials*`, `.aws/credentials`, …). This
 is **defense‑in‑depth, not the primary boundary** — the realpath containment is
-the control.
+the control. The blocklist patterns are shared (`src/web/sensitive-path.ts`) with
+the attachment guard below.
+
+### External attachments (registry) & the magic‑link trust boundary
+
+Live external attachments (`src/attachment-registry.ts`) mint an `att_<uuid>` id
+for a host file so browser requests carry the id, never an absolute path. Serving
+is by id (`GET /api/sessions/:id/attachments/:attachmentId/raw`, 50 MB cap,
+`nosniff`) and re‑resolves the symlink + re‑checks the **attachment guard**
+(`src/config/attachment-guard.ts`: the shared sensitive‑path blocklist **plus**
+the `/root` and `/etc` trees, extendable via `attachmentBlockedPaths` /
+`CODEMAN_ATTACHMENT_BLOCKED_PATHS`) on every request. Unlike the workspace file
+routes, attachments are intentionally **cross‑workspace** — so the effective gate
+is the blocklist + a 6‑extension allowlist (`png/pdf/docx/pptx/md/txt`), not
+realpath containment.
+
+Two registration paths, with **different trust**:
+
+- **Explicit `POST /api/sessions/:id/attachments`** (and `codeman attach`, which
+  POSTs directly inside a managed session) — a deliberate, Origin‑guarded HTTP
+  request. Allowed cross‑workspace (subject to the guard). This is the supported
+  path for codeman‑publish and the `~/.codeman` review‑card loop.
+- **Terminal `codeman://attach?path=…` magic links** — scanned passively from
+  session output. Terminal output is **attacker‑influenceable** (a prompt‑injected
+  session can print an arbitrary path), and registration here is server‑side with
+  no Origin gate and broadcasts the `rawUrl` over SSE to all clients. This path is
+  therefore **force‑confined to the session workspace** (`forceWorkspaceConfinement`
+  in `registerExternalAttachment`, wired in `WebServer.registerAttachment`),
+  regardless of the global confine setting — a passive magic link cannot expose a
+  file outside the session's own workspace. Cross‑workspace attach must go through
+  the explicit POST path above.
 
 ### SSE log‑tail route — intentional extra read roots
 
