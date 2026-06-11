@@ -3,16 +3,146 @@
  * Provides directory listing, file content preview, raw file serving, and tail streaming.
  */
 
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, type FastifyReply } from 'fastify';
 import { basename as pathBasename, join } from 'node:path';
-import { homedir } from 'node:os';
+import { createReadStream, realpathSync, type ReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import { ApiErrorCode, createErrorResponse, getErrorMessage } from '../../types.js';
 import { fileStreamManager } from '../../file-stream-manager.js';
+import {
+  AttachmentRegistrationError,
+  attachmentRegistry,
+  registerExternalAttachment,
+  type AttachmentRecord,
+} from '../../attachment-registry.js';
+import { isBlockedAttachmentPath, loadAttachmentGuardConfig } from '../../config/attachment-guard.js';
 import { findSessionOrFail, validateSessionFilePath } from '../route-helpers.js';
-import type { SessionPort } from '../ports/index.js';
+import { isSensitivePath } from '../sensitive-path.js';
+import { SseEvent } from '../sse-events.js';
+import type { EventPort, SessionPort } from '../ports/index.js';
 
-export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort): void {
+const MIME_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  ico: 'image/x-icon',
+  bmp: 'image/bmp',
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  json: 'application/json',
+  md: 'text/markdown',
+  txt: 'text/plain',
+};
+
+function sanitizeDownloadName(fileName: string): string {
+  return fileName.replace(/["\\\r\n]/g, '_');
+}
+
+function sendRawStream(reply: FastifyReply, content: ReadStream): void {
+  const headers = reply.getHeaders();
+  reply.hijack();
+
+  for (const [name, value] of Object.entries(headers)) {
+    if (value !== undefined) {
+      reply.raw.setHeader(name, value);
+    }
+  }
+
+  content.on('error', (err) => {
+    if (reply.raw.headersSent) {
+      reply.raw.destroy(err);
+      return;
+    }
+
+    reply.raw.statusCode = 500;
+    reply.raw.end('Failed to read file');
+  });
+  content.pipe(reply.raw);
+}
+
+async function serveRawFile(
+  reply: FastifyReply,
+  resolvedPath: string,
+  fileName: string,
+  extension: string,
+  download?: boolean
+): Promise<void> {
+  const stat = await fs.stat(resolvedPath);
+  const content = createReadStream(resolvedPath);
+  const safeName = sanitizeDownloadName(fileName);
+  if (download || extension === 'svg') {
+    reply.header(
+      'Content-Type',
+      extension === 'svg' ? 'application/octet-stream' : MIME_TYPES[extension] || 'application/octet-stream'
+    );
+    reply.header('Content-Disposition', `attachment; filename="${safeName}"`);
+    reply.header('Content-Length', stat.size);
+    reply.header('X-Content-Type-Options', 'nosniff');
+    sendRawStream(reply, content);
+    return;
+  }
+
+  reply.header('Content-Type', MIME_TYPES[extension] || 'application/octet-stream');
+  reply.header('Content-Disposition', `inline; filename="${safeName}"`);
+  reply.header('Content-Length', stat.size);
+  reply.header('X-Content-Type-Options', 'nosniff');
+  sendRawStream(reply, content);
+}
+
+function getAttachmentOr404(
+  reply: FastifyReply,
+  sessionId: string,
+  attachmentId: string
+): AttachmentRecord | undefined {
+  const record = attachmentRegistry.get(sessionId, attachmentId);
+  if (!record) {
+    reply.code(404).send(createErrorResponse(ApiErrorCode.NOT_FOUND, 'Attachment not found'));
+    return undefined;
+  }
+  return record;
+}
+
+/**
+ * COD-53 defense-in-depth: refuse to stream a record whose underlying path is
+ * blocked by the active attachment-guard policy, even though registration
+ * already blocks them. Guards against records that predate the guard or were
+ * crafted to point at a sensitive file. Resolves symlinks before the check so a
+ * record pointing at a symlink that now resolves to a sensitive target is also
+ * caught; if the path can't be resolved (deleted/unreadable) the check still
+ * runs on the stored path. When workspace confinement is enabled it additionally
+ * rejects any record outside the session workspace. Returns true (and sends a
+ * 403) when blocked.
+ */
+async function rejectIfSensitiveRecord(
+  reply: FastifyReply,
+  record: AttachmentRecord,
+  sessionWorkingDir?: string
+): Promise<boolean> {
+  let pathToCheck = record.filePath;
+  try {
+    pathToCheck = realpathSync(record.filePath);
+  } catch {
+    // Fall back to the stored (already realpath-resolved at registration) path.
+  }
+
+  const guard = await loadAttachmentGuardConfig();
+
+  const blocked =
+    isBlockedAttachmentPath(pathToCheck, guard.blockedTrees) ||
+    isBlockedAttachmentPath(record.filePath, guard.blockedTrees) ||
+    (guard.confineToWorkspace && (!sessionWorkingDir || !validateSessionFilePath(sessionWorkingDir, pathToCheck)));
+
+  if (blocked) {
+    reply.code(403).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Access to this file is blocked'));
+    return true;
+  }
+  return false;
+}
+
+export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort & EventPort): void {
   // File tree listing
   app.get('/api/sessions/:id/files', async (req) => {
     const { id } = req.params as { id: string };
@@ -315,6 +445,58 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort): void
     }
   });
 
+  // ===== Live external attachments =====
+  // Register an explicit, live external file (absolute host path) as an
+  // attachment with a stable id so browser requests never carry arbitrary
+  // paths. Registration enforces the COD-53 attachment-guard policy. Serving is
+  // by id via the /raw route below; document previews/thumbnails and the
+  // attachment-history list are layered on separately.
+  app.post('/api/sessions/:id/attachments', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const session = findSessionOrFail(ctx, id);
+    const body = (req.body || {}) as { path?: string };
+
+    if (!body.path || typeof body.path !== 'string') {
+      reply.code(400).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Missing attachment path'));
+      return;
+    }
+
+    try {
+      const event = await registerExternalAttachment(id, body.path, { sessionWorkingDir: session.workingDir });
+      ctx.broadcast(SseEvent.AttachmentDetected, event);
+      return { success: true, data: event };
+    } catch (err) {
+      if (err instanceof AttachmentRegistrationError) {
+        reply.code(err.statusCode).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, err.message));
+        return;
+      }
+      return reply
+        .code(500)
+        .send(
+          createErrorResponse(ApiErrorCode.OPERATION_FAILED, `Failed to register attachment: ${getErrorMessage(err)}`)
+        );
+    }
+  });
+
+  // Serve the raw bytes of a registered attachment by id. Re-checks the
+  // attachment-guard policy on every request (defense-in-depth) before streaming.
+  app.get('/api/sessions/:id/attachments/:attachmentId/raw', async (req, reply) => {
+    const { id, attachmentId } = req.params as { id: string; attachmentId: string };
+    const { download } = req.query as { download?: string };
+    const session = findSessionOrFail(ctx, id);
+    const record = getAttachmentOr404(reply, id, attachmentId);
+    if (!record) return;
+    if (await rejectIfSensitiveRecord(reply, record, session.workingDir)) return;
+
+    try {
+      await serveRawFile(reply, record.filePath, record.fileName, record.extension, download === 'true');
+    } catch (err) {
+      reply
+        .code(500)
+        .send(createErrorResponse(ApiErrorCode.OPERATION_FAILED, `Failed to read file: ${getErrorMessage(err)}`));
+    }
+  });
+
   // Stream file content via tail -f (SSE endpoint)
   app.get('/api/sessions/:id/tail-file', async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -387,24 +569,8 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort): void
   });
   // Session-scoped file download.
   // Uses the same realpath-based workspace boundary as file preview/raw routes;
-  // the sensitive-path blocklist remains defense-in-depth, not the primary boundary.
-  const SENSITIVE_PATTERNS: RegExp[] = [
-    /^\/etc\/shadow$/,
-    /^\/etc\/gshadow$/,
-    /^\/etc\/master\.passwd$/,
-    new RegExp(`^${homedir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/\\.ssh\\/`),
-    /\/\.env$/,
-    /\/\.env\./,
-    /\/credentials(\.json|\.yml|\.yaml|\.xml)?$/i,
-    /\/\.aws\/credentials$/,
-    /\/\.gcloud\/credentials\.db$/,
-    /\/\.docker\/config\.json$/,
-  ];
-
-  function isSensitivePath(absPath: string): boolean {
-    return SENSITIVE_PATTERNS.some((pattern) => pattern.test(absPath));
-  }
-
+  // the shared sensitive-path blocklist (../sensitive-path.js, also used by the
+  // attachment guard) remains defense-in-depth, not the primary boundary.
   app.get('/api/download', async (req, reply) => {
     const { path: filePath, sessionId } = req.query as { path?: string; sessionId?: string };
 

@@ -12,7 +12,7 @@ import { EventEmitter } from 'node:events';
 import { watch, type FSWatcher } from 'chokidar';
 import { basename, extname, relative } from 'node:path';
 import { statSync } from 'node:fs';
-import type { ImageDetectedEvent } from './types.js';
+import type { AttachmentDetectedEvent, AttachmentDetectedType, ImageDetectedEvent } from './types.js';
 import { KeyedDebouncer } from './utils/index.js';
 
 // ========== Types ==========
@@ -20,7 +20,9 @@ import { KeyedDebouncer } from './utils/index.js';
 // ========== Constants ==========
 
 /** Supported image file extensions (lowercase) */
-const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']);
+const IMAGE_POPUP_EXTENSIONS = new Set(['.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']);
+const ATTACHMENT_EXTENSIONS = new Set(['.png', '.pdf', '.docx', '.pptx']);
+const DETECTED_FILE_EXTENSIONS = new Set([...IMAGE_POPUP_EXTENSIONS, ...ATTACHMENT_EXTENSIONS]);
 
 /** Time to wait for file writes to stabilize (ms) */
 const STABILITY_THRESHOLD_MS = 500;
@@ -166,8 +168,8 @@ export class ImageWatcher extends EventEmitter {
           }
           const ext = extname(path).toLowerCase();
           // Don't ignore directories (needed for watching to work)
-          // Ignore files that aren't images
-          return ext !== '' && !IMAGE_EXTENSIONS.has(ext);
+          // Ignore files that aren't previewable images/documents
+          return ext !== '' && !DETECTED_FILE_EXTENSIONS.has(ext);
         },
       });
 
@@ -229,15 +231,16 @@ export class ImageWatcher extends EventEmitter {
 
   /**
    * Handle a new file being detected.
-   * Verifies it's an image and emits the detection event.
+   * Verifies it's a previewable image/document and emits the detection event.
    */
   private handleNewFile(sessionId: string, filePath: string): void {
     const ext = extname(filePath).toLowerCase();
 
-    // Double-check it's an image extension
-    if (!IMAGE_EXTENSIONS.has(ext)) {
+    // Double-check it's a supported extension
+    if (!DETECTED_FILE_EXTENSIONS.has(ext)) {
       return;
     }
+    const isAttachment = ATTACHMENT_EXTENSIONS.has(ext);
 
     // Burst limit: skip if too many images detected for this session in a short window
     const now = Date.now();
@@ -259,7 +262,11 @@ export class ImageWatcher extends EventEmitter {
     // Debounce rapid file creation (e.g., multiple screenshots quickly)
     this.fileDeb.schedule(filePath, () => {
       this.fileToSession.delete(filePath);
-      this.emitImageDetected(sessionId, filePath);
+      if (isAttachment) {
+        this.emitAttachmentDetected(sessionId, filePath);
+      } else {
+        this.emitImageDetected(sessionId, filePath);
+      }
       // Increment burst count on actual emission (not on detection)
       const b = this.burstTrackers.get(sessionId);
       if (b) b.count++;
@@ -293,6 +300,42 @@ export class ImageWatcher extends EventEmitter {
       // File may have been deleted between detection and stat
       this.emit('image:error', error instanceof Error ? error : new Error(String(error)), sessionId);
     }
+  }
+
+  /**
+   * Emit the attachment:detected event with file metadata.
+   */
+  private emitAttachmentDetected(sessionId: string, filePath: string): void {
+    try {
+      const stat = statSync(filePath);
+      const fileName = basename(filePath);
+      const workingDir = this.sessionDirs.get(sessionId);
+      const relativePath = workingDir ? relative(workingDir, filePath) : fileName;
+      const extension = extname(fileName).toLowerCase().replace(/^\./, '');
+
+      const event: AttachmentDetectedEvent = {
+        sessionId,
+        filePath,
+        relativePath,
+        fileName,
+        extension,
+        attachmentType: this.getAttachmentType(extension),
+        timestamp: Date.now(),
+        size: stat.size,
+      };
+
+      this.emit('attachment:detected', event);
+    } catch (error) {
+      this.emit('image:error', error instanceof Error ? error : new Error(String(error)), sessionId);
+    }
+  }
+
+  private getAttachmentType(extension: string): AttachmentDetectedType {
+    if (extension === 'png') return 'image';
+    if (extension === 'pdf') return 'pdf';
+    if (extension === 'docx') return 'document';
+    if (extension === 'pptx') return 'presentation';
+    return 'document';
   }
 }
 

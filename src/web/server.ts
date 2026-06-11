@@ -60,6 +60,7 @@ import {
   type SubagentToolResult,
 } from '../subagent-watcher.js';
 import { imageWatcher } from '../image-watcher.js';
+import { attachmentRegistry, registerExternalAttachment } from '../attachment-registry.js';
 import { TranscriptWatcher } from '../transcript-watcher.js';
 import { TeamWatcher } from '../team-watcher.js';
 import { TunnelManager } from '../tunnel-manager.js';
@@ -110,6 +111,7 @@ import {
   type PersistedRespawnConfig,
   type NiceConfig,
   type ImageDetectedEvent,
+  type AttachmentDetectedEvent,
   DEFAULT_NICE_CONFIG,
 } from '../types.js';
 import {
@@ -248,6 +250,7 @@ export class WebServer extends EventEmitter {
   } | null = null;
   private imageWatcherHandlers: {
     detected: (event: ImageDetectedEvent) => void;
+    attachmentDetected: (event: AttachmentDetectedEvent) => void;
     error: (error: Error, sessionId?: string) => void;
   } | null = null;
   private tunnelManager: TunnelManager = new TunnelManager();
@@ -436,12 +439,15 @@ export class WebServer extends EventEmitter {
     // Store handlers for cleanup on shutdown
     this.imageWatcherHandlers = {
       detected: (event: ImageDetectedEvent) => this.broadcast(SseEvent.ImageDetected, event),
+      attachmentDetected: (event: AttachmentDetectedEvent) =>
+        this.broadcast(SseEvent.AttachmentDetected, { ...event, source: event.source || 'detected' }),
       error: (error: Error, sessionId?: string) => {
         console.error(`[ImageWatcher] Error${sessionId ? ` for ${sessionId}` : ''}:`, error.message);
       },
     };
 
     imageWatcher.on('image:detected', this.imageWatcherHandlers.detected);
+    imageWatcher.on('attachment:detected', this.imageWatcherHandlers.attachmentDetected);
     imageWatcher.on('image:error', this.imageWatcherHandlers.error);
   }
 
@@ -451,6 +457,7 @@ export class WebServer extends EventEmitter {
   private cleanupImageWatcherListeners(): void {
     if (this.imageWatcherHandlers) {
       imageWatcher.off('image:detected', this.imageWatcherHandlers.detected);
+      imageWatcher.off('attachment:detected', this.imageWatcherHandlers.attachmentDetected);
       imageWatcher.off('image:error', this.imageWatcherHandlers.error);
       this.imageWatcherHandlers = null;
     }
@@ -1067,6 +1074,8 @@ export class WebServer extends EventEmitter {
       session.removeAllListeners();
       // Close any active file streams for this session
       fileStreamManager.closeSessionStreams(sessionId);
+      // Drop live external attachment registrations for this session
+      attachmentRegistry.clearSession(sessionId);
       // Stop watching for images in this session's directory
       imageWatcher.unwatchSession(sessionId);
       // Clean up pasted images directory for this session
@@ -1252,7 +1261,21 @@ export class WebServer extends EventEmitter {
         }
       },
       getStore: () => this.store,
+      registerAttachment: (id: string, filePath: string) => this.registerAttachment(id, filePath),
     };
+  }
+
+  /**
+   * Register a terminal-requested external file as a live attachment and
+   * broadcast it. Triggered by the session's `attachmentRequested` event
+   * (codeman://attach magic links). Registration enforces the COD-53
+   * attachment-guard policy.
+   */
+  private async registerAttachment(sessionId: string, filePath: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    const event = await registerExternalAttachment(sessionId, filePath, { sessionWorkingDir: session.workingDir });
+    this.broadcast(SseEvent.AttachmentDetected, event);
   }
 
   private setupRespawnListeners(sessionId: string, controller: RespawnController): void {
