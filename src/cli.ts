@@ -13,8 +13,8 @@ import { createRequire } from 'module';
 import http from 'node:http';
 import https from 'node:https';
 import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute } from 'node:path';
+import { dataPath } from './config/instance.js';
 import { getSessionManager } from './session-manager.js';
 import { getTaskQueue } from './task-queue.js';
 import { getRalphLoop } from './ralph-loop.js';
@@ -34,7 +34,7 @@ function makeAttachmentMagicLink(filePath: string): string {
 }
 
 function readCodemanEnv(): Record<string, string> {
-  const envPath = join(homedir(), '.codeman', '.env');
+  const envPath = dataPath('.env');
   try {
     const text = readFileSync(envPath, 'utf-8');
     const result: Record<string, string> = {};

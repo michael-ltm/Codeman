@@ -71,6 +71,18 @@ async function serveRawFile(
   download?: boolean
 ): Promise<void> {
   const stat = await fs.stat(resolvedPath);
+  const MAX_RAW_ATTACHMENT_SIZE = 50 * 1024 * 1024; // 50MB, matching file-raw / download
+  if (stat.size > MAX_RAW_ATTACHMENT_SIZE) {
+    reply
+      .code(413)
+      .send(
+        createErrorResponse(
+          ApiErrorCode.INVALID_INPUT,
+          `File too large (${Math.round(stat.size / 1024 / 1024)}MB > ${MAX_RAW_ATTACHMENT_SIZE / 1024 / 1024}MB limit)`
+        )
+      );
+    return;
+  }
   const content = createReadStream(resolvedPath);
   const safeName = sanitizeDownloadName(fileName);
   if (download || extension === 'svg') {
@@ -116,14 +128,16 @@ function getAttachmentOr404(
  * rejects any record outside the session workspace. Returns true (and sends a
  * 403) when blocked.
  */
-async function rejectIfSensitiveRecord(
+async function resolveServableAttachmentPath(
   reply: FastifyReply,
   record: AttachmentRecord,
   sessionWorkingDir?: string
-): Promise<boolean> {
+): Promise<string | null> {
   let pathToCheck = record.filePath;
+  let resolved = false;
   try {
     pathToCheck = realpathSync(record.filePath);
+    resolved = true;
   } catch {
     // Fall back to the stored (already realpath-resolved at registration) path.
   }
@@ -137,9 +151,12 @@ async function rejectIfSensitiveRecord(
 
   if (blocked) {
     reply.code(403).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Access to this file is blocked'));
-    return true;
+    return null;
   }
-  return false;
+  // Serve the freshly-resolved path, not the stored one: if a path component
+  // became a symlink after registration, the guard checked the resolved target
+  // but streaming record.filePath would follow the symlink to a swapped file.
+  return resolved ? pathToCheck : record.filePath;
 }
 
 export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort & EventPort): void {
@@ -486,10 +503,11 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort & Even
     const session = findSessionOrFail(ctx, id);
     const record = getAttachmentOr404(reply, id, attachmentId);
     if (!record) return;
-    if (await rejectIfSensitiveRecord(reply, record, session.workingDir)) return;
+    const servePath = await resolveServableAttachmentPath(reply, record, session.workingDir);
+    if (!servePath) return;
 
     try {
-      await serveRawFile(reply, record.filePath, record.fileName, record.extension, download === 'true');
+      await serveRawFile(reply, servePath, record.fileName, record.extension, download === 'true');
     } catch (err) {
       reply
         .code(500)

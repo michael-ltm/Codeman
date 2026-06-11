@@ -48,6 +48,10 @@ export class AttachmentRegistrationError extends Error {
   }
 }
 
+/** Per-session attachment cap. Bounds memory against a client (or a
+ *  prompt-injected magic-link flood) registering unbounded distinct paths. */
+const MAX_ATTACHMENTS_PER_SESSION = 200;
+
 class AttachmentRegistry {
   private recordsBySession = new Map<string, Map<string, AttachmentRecord>>();
 
@@ -58,6 +62,12 @@ class AttachmentRegistry {
       this.recordsBySession.set(record.sessionId, records);
     }
     records.set(record.attachmentId, record);
+    // Evict oldest (insertion-order) entries beyond the cap.
+    while (records.size > MAX_ATTACHMENTS_PER_SESSION) {
+      const oldest = records.keys().next().value;
+      if (oldest === undefined) break;
+      records.delete(oldest);
+    }
   }
 
   get(sessionId: string, attachmentId: string): AttachmentRecord | undefined {
@@ -134,12 +144,22 @@ export function attachmentRecordToEvent(record: AttachmentRecord): AttachmentReg
 /** Options for {@link registerExternalAttachment}. */
 export interface RegisterExternalAttachmentOptions {
   /**
-   * The registering session's working directory. Required only to enforce
-   * workspace confinement when that mode is enabled
-   * (`attachmentConfineToWorkspace` / `CODEMAN_ATTACHMENT_CONFINE`); ignored in
-   * the default blocklist mode.
+   * The registering session's working directory. Required to enforce workspace
+   * confinement — either when the global mode is enabled
+   * (`attachmentConfineToWorkspace` / `CODEMAN_ATTACHMENT_CONFINE`) or when
+   * {@link forceWorkspaceConfinement} is set for this call.
    */
   sessionWorkingDir?: string;
+  /**
+   * Force workspace confinement for THIS registration regardless of the global
+   * setting. Used by the terminal-output `codeman://attach` magic-link scanner:
+   * terminal output is attacker-influenceable (a prompt-injected session can
+   * print an arbitrary path), so passive magic links may only reference files
+   * inside the session workspace. Deliberate cross-workspace attachment still
+   * works through the explicit, Origin-guarded `POST /attachments` route and the
+   * `codeman attach` CLI (which POSTs directly when a session id is known).
+   */
+  forceWorkspaceConfinement?: boolean;
 }
 
 export async function registerExternalAttachment(
@@ -162,10 +182,11 @@ export async function registerExternalAttachment(
   // path before doing anything else.
   const guard = await loadAttachmentGuardConfig();
 
-  if (guard.confineToWorkspace) {
-    // Strict mode (opt-in, default OFF): the file MUST resolve inside the
-    // session's workspace. Strictly more restrictive than the blocklist —
-    // breaks cross-workspace attachment, which is why it is off by default.
+  if (guard.confineToWorkspace || options.forceWorkspaceConfinement) {
+    // Workspace-confined: the file MUST resolve inside the session's workspace.
+    // Applies when the global strict mode is on (opt-in, default OFF) OR when
+    // the caller forces it for this registration (the magic-link scanner — see
+    // forceWorkspaceConfinement). Strictly more restrictive than the blocklist.
     const workingDir = options.sessionWorkingDir;
     if (!workingDir || !validateSessionFilePath(workingDir, resolvedPath)) {
       throw new AttachmentRegistrationError('Access to this file is blocked', 403);

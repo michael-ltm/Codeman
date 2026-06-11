@@ -1268,13 +1268,22 @@ export class WebServer extends EventEmitter {
   /**
    * Register a terminal-requested external file as a live attachment and
    * broadcast it. Triggered by the session's `attachmentRequested` event
-   * (codeman://attach magic links). Registration enforces the COD-53
-   * attachment-guard policy.
+   * (codeman://attach magic links). Because terminal output is
+   * attacker-influenceable (a prompt-injected session can print an arbitrary
+   * `codeman://attach?path=` link), the scanned path is FORCE-confined to the
+   * session workspace — passive magic links can't expose arbitrary host files.
+   * Deliberate cross-workspace attachment goes through the explicit,
+   * Origin-guarded `POST /attachments` route (and `codeman attach`, which POSTs
+   * directly inside a managed session). Registration also enforces the COD-53
+   * blocklist as defense-in-depth.
    */
   private async registerAttachment(sessionId: string, filePath: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    const event = await registerExternalAttachment(sessionId, filePath, { sessionWorkingDir: session.workingDir });
+    const event = await registerExternalAttachment(sessionId, filePath, {
+      sessionWorkingDir: session.workingDir,
+      forceWorkspaceConfinement: true,
+    });
     this.broadcast(SseEvent.AttachmentDetected, event);
   }
 

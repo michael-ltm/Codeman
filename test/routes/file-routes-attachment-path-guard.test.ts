@@ -51,7 +51,11 @@ vi.mock('../../src/file-stream-manager.js', () => ({
 
 import fs from 'node:fs/promises';
 import { createReadStream, realpathSync } from 'node:fs';
-import { attachmentRegistry, type AttachmentRecord } from '../../src/attachment-registry.js';
+import {
+  attachmentRegistry,
+  registerExternalAttachment,
+  type AttachmentRecord,
+} from '../../src/attachment-registry.js';
 
 const mockedStat = vi.mocked(fs.stat);
 const mockedRealpathSync = vi.mocked(realpathSync);
@@ -320,5 +324,35 @@ describe('file-routes attachment path guard (COD-53)', () => {
     const body = JSON.parse(res.body);
     expect(body.success).toBe(true);
     expect(body.data.fileName).toBe('jira-autoloop-questions.md');
+  });
+
+  // ===== Magic-link scan path: FORCED workspace confinement =====
+  // The terminal-output `codeman://attach` scanner registers with
+  // forceWorkspaceConfinement: true so a prompt-injected session printing an
+  // arbitrary path can't expose a host file, even though global confine is OFF.
+  describe('forced workspace confinement (magic-link scan path)', () => {
+    it('rejects an out-of-workspace path even when global confinement is OFF', async () => {
+      mockedRealpathSync.mockImplementation((p: string) => p as never);
+      mockedStat.mockResolvedValue({ size: 10, isFile: () => true, mtimeMs: 1 } as never);
+      await expect(
+        registerExternalAttachment('test-session-mlc', '/home/someone/secret/report.pdf', {
+          sessionWorkingDir: '/tmp/test-workdir',
+          forceWorkspaceConfinement: true,
+        })
+      ).rejects.toMatchObject({ statusCode: 403 });
+      attachmentRegistry.clearSession('test-session-mlc');
+    });
+
+    it('allows an in-workspace path on the forced path', async () => {
+      const inside = '/tmp/test-workdir/sub/report.pdf';
+      mockedRealpathSync.mockReturnValue(inside as never);
+      mockedStat.mockResolvedValue({ size: 10, isFile: () => true, mtimeMs: 1 } as never);
+      const event = await registerExternalAttachment('test-session-mlc', inside, {
+        sessionWorkingDir: '/tmp/test-workdir',
+        forceWorkspaceConfinement: true,
+      });
+      expect(event.fileName).toBe('report.pdf');
+      attachmentRegistry.clearSession('test-session-mlc');
+    });
   });
 });
