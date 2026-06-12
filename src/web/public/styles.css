@@ -9057,3 +9057,172 @@ body.touch-device.cjk-input-visible .main {
   pointer-events: none;
   z-index: 100;
 }
+
+.attachment-card-stack {
+  position: fixed;
+  right: 18px;
+  bottom: calc(var(--toolbar-height) + 18px);
+  z-index: 1900;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(540px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.attachment-clear-all {
+  align-self: flex-end;
+  padding: 3px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 5px;
+  background: rgba(19, 19, 22, 0.96);
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+}
+
+.attachment-clear-all:hover {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+.attachment-clear-all[hidden] {
+  display: none;
+}
+
+.attachment-card {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 24px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(19, 19, 22, 0.96);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+}
+
+.attachment-thumbnail {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #f8f8fb;
+  border: 1px solid var(--border-light);
+}
+
+.attachment-thumbnail-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  display: block;
+}
+
+.attachment-thumbnail-fallback {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  inset: 0;
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #20202a;
+}
+
+.attachment-thumbnail-fallback.visible {
+  display: flex;
+}
+
+.attachment-type-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  background: #20202a;
+  color: var(--text);
+  border: 1px solid var(--border-light);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.attachment-card-main {
+  min-width: 0;
+}
+
+.attachment-file-name {
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-file-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+}
+
+.attachment-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.attachment-actions button,
+.attachment-actions a {
+  padding: 3px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 5px;
+  background: var(--bg-input);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.attachment-actions button:hover,
+.attachment-actions a:hover {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+.attachment-close-btn {
+  align-self: start;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.attachment-close-btn:hover {
+  color: var(--text);
+}
+
+/* PDF/Office previews render in an iframe inside the preview body. */
+.file-preview-body iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}

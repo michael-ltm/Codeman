@@ -222,6 +222,7 @@ const _SSE_HANDLER_MAP = [
 
   // Images
   [SSE_EVENTS.IMAGE_DETECTED, '_onImageDetected'],
+  [SSE_EVENTS.ATTACHMENT_DETECTED, '_onAttachmentDetected'],
 
   // Tunnel
   [SSE_EVENTS.TUNNEL_STARTED, '_onTunnelStarted'],
@@ -386,6 +387,8 @@ class CodemanApp {
     // Image popup windows (auto-open for detected screenshots/images)
     this.imagePopups = new Map(); // Map<imageId, { element, sessionId, filePath }>
     this.imagePopupZIndex = ZINDEX_IMAGE_POPUP_BASE;
+    this.attachmentCards = new Map(); // Map<attachmentId, { element, sessionId, filePath }>
+    this.attachmentCardStack = null;
 
     // File browser state (methods in panels-ui.js)
     this.fileBrowserData = null;
@@ -3536,6 +3539,7 @@ class CodemanApp {
     this.clearCountdownTimers(sessionId);
     this.closeSessionLogViewerWindows(sessionId);
     this.closeSessionImagePopups(sessionId);
+    this.closeSessionAttachmentCards(sessionId);
     this.closeSessionSubagentWindows(sessionId, true);
 
     // Clean up idle timer

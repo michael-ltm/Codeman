@@ -145,9 +145,9 @@ describe('ImageWatcher', () => {
   // ========== Image Detection ==========
 
   describe('image detection', () => {
-    it('should emit image:detected (popup) for .png files', () => {
+    it('should emit attachment:detected for .png files', () => {
       const handler = vi.fn();
-      watcher.on('image:detected', handler);
+      watcher.on('attachment:detected', handler);
 
       watcher.watchSession('session-1', '/home/user/project');
       const chokidarWatcher = mockWatchers.get('/home/user/project')!;
@@ -161,11 +161,14 @@ describe('ImageWatcher', () => {
       expect(event.fileName).toBe('screenshot.png');
       expect(event.filePath).toBe('/home/user/project/screenshot.png');
       expect(event.relativePath).toBe('screenshot.png');
+      expect(event.extension).toBe('png');
+      expect(event.attachmentType).toBe('image');
+      expect(event.size).toBe(2048);
     });
 
-    it('should not emit attachment:detected for .png (stays on the popup path)', () => {
+    it('should not emit legacy image:detected for .png attachment cards', () => {
       const handler = vi.fn();
-      watcher.on('attachment:detected', handler);
+      watcher.on('image:detected', handler);
 
       watcher.watchSession('session-1', '/home/user/project');
       mockWatchers.get('/home/user/project')!.emit('add', '/home/user/project/screenshot.png');
