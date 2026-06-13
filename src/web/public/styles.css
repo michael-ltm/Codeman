@@ -1,36 +1,65 @@
 /* Codeman - Terminal-First UI */
 
+/* Self-hosted UI + mono fonts (Carbon Aurora · Daylight) — served from /fonts,
+   no external CDN, CSP-safe (font-src 'self'). Variable woff2 cover all weights. */
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 800;
+  src: url('fonts/manrope-variable.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 700;
+  src: url('fonts/jetbrains-mono-variable.woff2') format('woff2');
+}
+
 :root {
-  --bg-dark: #09090b;
-  --bg-card: #131316;
-  --bg-input: #1a1a1f;
-  --bg-hover: #1f1f26;
-  --border: #232329;
-  --border-light: #2e2e38;
-  --text: #ececf0;
-  --text-dim: #8b8b97;
-  --text-muted: #52525e;
-  --accent: #3b82f6;
-  --accent-hover: #60a5fa;
-  --green: #22c55e;
-  --yellow: #eab308;
-  --red: #ef4444;
+  /* Carbon Aurora · Daylight — deep-but-not-black slate, surfaces step UP into the light */
+  --bg-dark: #11151c;
+  --bg-card: #1b222c;
+  --bg-input: #202833;
+  --bg-hover: #2a323d;
+  --border: #2b333f;
+  --border-light: #3a4350;
+  --text: #f3f6fa;
+  --text-dim: #98a2b1;
+  --text-muted: #717b8c;
+  /* SINGLE cohesive accent — optimistic emerald → teal (replaces the old blue) */
+  --accent: #38b6f0;
+  --accent-hover: #3ec8ee;
+  /* calmer secondary green for non-primary pills/dots so Run + ring stay focal */
+  --green: #44b993;
+  /* warm, quiet "working" amber (no second saturated hue) */
+  --yellow: #f0c25a;
+  --red: #e06363;
+  /* Daylight accent extras — referenced by the v1.0 override block at end of file */
+  --accent-d: #2487c9;
+  --emerald: #3ec8ee;
+  --teal: #2b8fd9;
+  --accent-soft: #44b993;
+  --accent-ink: #04223a;
+  --warm: #e8c79a;
+  --ring-glow: 0 0 12px -2px rgba(56, 182, 240, 0.55);
   --header-height: 36px;
   --toolbar-height: 42px;
-  --glass-bg: rgba(19, 19, 22, 0.85);
-  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-bg: rgba(31, 38, 48, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.08);
   --subtle-shadow: 0 -1px 3px rgba(0, 0, 0, 0.3), 0 -4px 16px rgba(0, 0, 0, 0.15);
   --btn-radius: 6px;
   --transition-smooth: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* Session color palette */
-  --session-red: #ef4444;
-  --session-orange: #f97316;
-  --session-yellow: #eab308;
-  --session-green: #22c55e;
-  --session-blue: #3b82f6;
-  --session-purple: #a855f7;
-  --session-pink: #ec4899;
+  /* Session color palette — retoned toward the Daylight system */
+  --session-red: #e06363;
+  --session-orange: #e8a45c;
+  --session-yellow: #f0c25a;
+  --session-green: #44b993;
+  --session-blue: #2b8fd9;
+  --session-purple: #a98fe0;
+  --session-pink: #e07db0;
 
   /* Safe area insets for notched devices (iPhone X+, Dynamic Island) */
   --safe-area-top: env(safe-area-inset-top, 0px);
@@ -40,6 +69,78 @@
 
   /* Touch target minimum (iOS Human Interface Guidelines) */
   --touch-target-min: 44px;
+
+  /* UI font + accent/gradient/hover tokens referenced by the v1.0 override block.
+     These :root values equal the daylight-blue palette so the no-attribute fallback
+     matches current behavior. */
+  --ui-font: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --accent-rgb: 56, 182, 240;
+  --accent-grad-a: #3ec8ee;
+  --accent-grad-b: #2b8fd9;
+  --run-hover-a: #5cc4f5;
+  --run-hover-b: #3aa3e2;
+  --gear-hover: #2a93d0;
+}
+
+/* ===== Skin: Daylight Blue (current default) ===== */
+html[data-skin="daylight-blue"] {
+  --bg-dark: #11151c; --bg-card: #1b222c; --bg-input: #202833; --bg-hover: #2a323d;
+  --border: #2b333f; --border-light: #3a4350;
+  --text: #f3f6fa; --text-dim: #98a2b1; --text-muted: #717b8c;
+  --accent: #38b6f0; --accent-hover: #3ec8ee;
+  --term-bg: #161b23;
+  --green: #44b993; --yellow: #f0c25a; --red: #e06363;
+  --glass-bg: rgba(31, 38, 48, 0.85); --glass-border: rgba(255, 255, 255, 0.08);
+  --accent-d: #2487c9; --emerald: #3ec8ee; --teal: #2b8fd9;
+  --accent-soft: #44b993; --accent-ink: #04223a;
+  --accent-rgb: 56, 182, 240;
+  --accent-grad-a: #3ec8ee; --accent-grad-b: #2b8fd9;
+  --run-hover-a: #5cc4f5; --run-hover-b: #3aa3e2; --gear-hover: #2a93d0;
+  --ring-glow: 0 0 12px -2px rgba(56, 182, 240, 0.55);
+  --session-red: #e06363; --session-orange: #e8a45c; --session-yellow: #f0c25a;
+  --session-green: #44b993; --session-blue: #2b8fd9; --session-purple: #a98fe0; --session-pink: #e07db0;
+  --ui-font: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ===== Skin: Daylight Green ===== */
+html[data-skin="daylight-green"] {
+  --bg-dark: #11151c; --bg-card: #1b222c; --bg-input: #202833; --bg-hover: #2a323d;
+  --border: #2b333f; --border-light: #3a4350;
+  --text: #f3f6fa; --text-dim: #98a2b1; --text-muted: #717b8c;
+  --accent: #2fd3aa; --accent-hover: #34d8a0;
+  --term-bg: #161b23;
+  --green: #44b993; --yellow: #f0c25a; --red: #e06363;
+  --glass-bg: rgba(31, 38, 48, 0.85); --glass-border: rgba(255, 255, 255, 0.08);
+  --accent-d: #19a987; --emerald: #34d8a0; --teal: #2bcbbb;
+  --accent-soft: #44b993; --accent-ink: #062019;
+  --accent-rgb: 47, 211, 170;
+  --accent-grad-a: #34d8a0; --accent-grad-b: #2bcbbb;
+  --run-hover-a: #3ee0aa; --run-hover-b: #34d4c4; --gear-hover: #1cbd97;
+  --ring-glow: 0 0 12px -2px rgba(47, 211, 170, 0.55);
+  --session-red: #e06363; --session-orange: #e8a45c; --session-yellow: #f0c25a;
+  --session-green: #44b993; --session-blue: #2bcbbb; --session-purple: #a98fe0; --session-pink: #e07db0;
+  --ui-font: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ===== Skin: OG Codeman (original look — no Daylight polish, system font) ===== */
+html[data-skin="og"] {
+  --bg-dark: #09090b; --bg-card: #131316; --bg-input: #1a1a1f; --bg-hover: #1f1f26;
+  --border: #232329; --border-light: #2e2e38;
+  --text: #ececf0; --text-dim: #8b8b97; --text-muted: #52525e;
+  --accent: #3b82f6; --accent-hover: #60a5fa;
+  --term-bg: #0d0d0d;
+  --green: #22c55e; --yellow: #eab308; --red: #ef4444;
+  --glass-bg: rgba(19, 19, 22, 0.85); --glass-border: rgba(255, 255, 255, 0.06);
+  /* daylight-only extras left at sane neutral defaults (unused — override block does not apply to og) */
+  --accent-d: #3b82f6; --emerald: #3b82f6; --teal: #2563eb;
+  --accent-soft: #22c55e; --accent-ink: #0b1220;
+  --accent-rgb: 59, 130, 246;
+  --accent-grad-a: #3b82f6; --accent-grad-b: #2563eb;
+  --run-hover-a: #60a5fa; --run-hover-b: #3b82f6; --gear-hover: #2563eb;
+  --ring-glow: 0 0 12px -2px rgba(59, 130, 246, 0.55);
+  --session-red: #ef4444; --session-orange: #f97316; --session-yellow: #eab308;
+  --session-green: #22c55e; --session-blue: #3b82f6; --session-purple: #a855f7; --session-pink: #ec4899;
+  --ui-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -129,7 +230,7 @@ textarea:focus-visible {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--ui-font);
   background: var(--bg-dark);
   color: var(--text);
   height: 100vh;
@@ -2097,7 +2198,7 @@ body.solo-mode .btn-lifecycle-log {
 
 .terminal-container {
   flex: 1;
-  background: #0d0d0d;
+  background: var(--term-bg, #161b23);
   overflow: hidden;
   position: relative;
   /* Performance: isolate layout and paint operations.
@@ -3826,6 +3927,22 @@ body.solo-mode .btn-lifecycle-log {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Skin picker: full-width row (not squeezed into a half-width grid cell) with an
+   auto-width select, so the "Skin" label keeps its space instead of truncating. */
+.settings-item-skin {
+  grid-column: 1 / -1;
+  gap: 0.75rem;
+}
+.settings-item-skin .settings-item-label {
+  flex: 0 0 auto;
+}
+.settings-item-skin .form-select {
+  width: auto;
+  min-width: 220px;
+  max-width: 320px;
+  flex: 0 1 auto;
 }
 
 .settings-item-multiline {
@@ -9056,4 +9173,234 @@ body.touch-device.cjk-input-visible .main {
   font-size: 1.2rem;
   pointer-events: none;
   z-index: 100;
+}
+
+/* ============================================================
+   === v1.0 Carbon Aurora · Daylight overrides ===
+   Single appended block — trivially removable. Retones the hardcoded
+   component colors that don't flow through :root: the active session
+   tab (#00FF66), the banners' literal gradients, the Ralph Material
+   palette, the Run/welcome/stop gradient buttons, the panels' glass,
+   and the welcome title. Calms heavy glows; the ONLY real saturation/
+   glow is reserved for the Run button + the progress ring.
+   ============================================================ */
+
+html:not([data-skin="og"]) {
+/* ---- Brand wordmark: emerald, calm (kill the blue glow) ---- */
+.logo:hover {
+  color: var(--accent-hover);
+  text-shadow: none;
+  filter: brightness(1.06);
+}
+
+/* ---- Active session tab: crisp emerald (replaces neon #00FF66) ---- */
+.session-tab.active {
+  background: rgba(var(--accent-rgb), 0.13) !important;
+  border: 1px solid var(--accent) !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+}
+.session-tab:hover {
+  background: rgba(var(--accent-rgb), 0.06);
+  border-color: rgba(var(--accent-rgb), 0.2);
+  box-shadow: none;
+}
+.session-tab .tab-number {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--text-dim);
+}
+.session-tab.active .tab-number {
+  background: rgba(var(--accent-rgb), 0.2) !important;
+  border-color: rgba(var(--accent-rgb), 0.45) !important;
+  color: var(--accent-hover) !important;
+}
+/* per-color active tints: calm the glow, keep the identity hue as a quiet border */
+.session-tab.active[data-color] {
+  box-shadow: none;
+}
+/* tab status dots: quiet, no halo */
+.session-tab .tab-status.idle,
+.session-tab .tab-status.busy {
+  box-shadow: none;
+}
+.tab-glow { animation: none; box-shadow: none; }
+
+/* ---- Timer banner: emerald-teal, flat ---- */
+.timer-banner {
+  background: linear-gradient(90deg, rgba(31, 38, 48, 0.92), rgba(22, 27, 35, 0.92));
+  border-bottom: 1px solid var(--glass-border);
+}
+.timer-value { color: var(--accent); }
+.timer-progress-fill { background: linear-gradient(90deg, var(--accent-grad-a), var(--accent-grad-b)); }
+
+/* ---- Respawn banner: lifted slate, calm green hairline ---- */
+.respawn-banner {
+  background: linear-gradient(90deg, rgba(31, 38, 48, 0.9), rgba(22, 27, 35, 0.9));
+  border-bottom: 1px solid var(--glass-border);
+}
+.respawn-countdown-timer .respawn-timer-value,
+.action-type { color: var(--accent); }
+.respawn-timer-progress { background: var(--accent); }
+.respawn-action-log { border-left-color: rgba(var(--accent-rgb), 0.18); }
+.respawn-action-log::-webkit-scrollbar-thumb { background: rgba(var(--accent-rgb), 0.28); }
+
+/* ---- Ralph panel: replace the blue->green ring gradient + Material badges ---- */
+.ralph-ring-text {
+  background: linear-gradient(135deg, var(--accent-grad-a), var(--accent-grad-b));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.ralph-ring-bg, .ralph-ring-track { stroke: rgba(255, 255, 255, 0.1); }
+/* Ralph status badges: collapse the off-token Material palette onto the system */
+.ralph-status-badge { color: var(--text-dim); }
+.ralph-status-dot { box-shadow: none; }
+.ralph-info { background: rgba(var(--accent-rgb), 0.05); }
+
+/* ---- Bottom toolbar + neutral buttons ---- */
+.toolbar { box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.22), 0 -4px 14px rgba(0, 0, 0, 0.14); }
+.btn-toolbar {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.09);
+  color: var(--text-dim);
+}
+.btn-toolbar:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+  box-shadow: none;
+}
+
+/* ---- RUN button: THE focal saturated accent (flat emerald->teal fill) ---- */
+.btn-toolbar.btn-run,
+.btn-toolbar.btn-run.mode-claude {
+  background: linear-gradient(135deg, var(--accent-grad-a), var(--accent-grad-b));
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  text-shadow: none;
+}
+.btn-toolbar.btn-run:hover,
+.btn-toolbar.btn-run.mode-claude:hover {
+  background: linear-gradient(135deg, var(--run-hover-a), var(--run-hover-b));
+  box-shadow: 0 0 14px -2px rgba(var(--accent-rgb), 0.5);
+}
+.btn-toolbar.btn-run.mode-opencode {
+  background: linear-gradient(135deg, var(--accent-d), var(--accent-grad-b));
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.btn-toolbar.btn-run.mode-opencode:hover { box-shadow: 0 0 14px -2px rgba(var(--accent-rgb), 0.45); }
+.btn-toolbar.btn-run.mode-codex {
+  background: linear-gradient(135deg, var(--accent-grad-b), #5cc6e8);
+  border-color: var(--accent-grad-b);
+  color: #061c20;
+}
+.btn-toolbar.btn-run.mode-codex:hover { box-shadow: 0 0 14px -2px rgba(43, 203, 187, 0.45); }
+.btn-toolbar.btn-run-gear {
+  background: var(--accent-d);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.btn-toolbar.btn-run-gear:hover { background: var(--gear-hover); box-shadow: none; }
+.run-mode-dot.claude { background: var(--accent); }
+.run-mode-dot.opencode { background: var(--accent-soft); }
+.run-mode-dot.codex { background: var(--accent-grad-b); }
+
+/* ---- Shell button: quiet neutral with a calm green tint ---- */
+.btn-toolbar.btn-shell {
+  background: rgba(68, 185, 147, 0.1);
+  border: 1px solid rgba(68, 185, 147, 0.28);
+  color: var(--green);
+  text-shadow: none;
+}
+.btn-toolbar.btn-shell:hover {
+  background: rgba(68, 185, 147, 0.16);
+  border-color: rgba(68, 185, 147, 0.4);
+  box-shadow: none;
+}
+
+/* ---- Stop button: quiet neutral control (no rose glow) ---- */
+.btn-toolbar.btn-stop {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-dim);
+  text-shadow: none;
+}
+.btn-toolbar.btn-stop:hover {
+  background: rgba(224, 99, 99, 0.14);
+  border-color: rgba(224, 99, 99, 0.4);
+  color: #f0a0a0;
+  box-shadow: none;
+}
+.btn-toolbar.btn-stop.confirming {
+  background: linear-gradient(135deg, #5a4a1a, #6b5620);
+  border-color: rgba(240, 194, 90, 0.6);
+  color: var(--yellow);
+}
+
+/* ---- Case selector + add ---- */
+.toolbar-select {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.09);
+  color: var(--text-dim);
+}
+.toolbar-select:hover { background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.14); }
+.toolbar-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.25);
+}
+.btn-case-add { color: var(--accent-soft); }
+
+/* ---- Header system stats: cohesive accent meters ---- */
+.stat-bar-mem { background: linear-gradient(90deg, var(--accent), var(--accent-hover)); }
+.header-tokens.clickable:hover { background: rgba(var(--accent-rgb), 0.16); }
+
+/* ---- Monitor + Subagents panels: lifted frosted slate ---- */
+.monitor-panel,
+.subagents-panel {
+  background: rgba(31, 38, 48, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ---- Subagent progress ring: emerald, calm glow ---- */
+.subagent-ring-progress,
+.subagent-ring circle.progress { stroke: var(--accent); }
+
+/* ---- PROGRESS RING (Ralph large): the one place a soft glow lives ---- */
+.ralph-ring-fill { filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), 0.45)); }
+
+/* ---- Welcome overlay: emerald title + Daylight buttons ---- */
+.welcome-title {
+  background: linear-gradient(135deg, var(--accent-grad-a) 0%, var(--accent-grad-b) 50%, var(--accent-grad-a) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.welcome-btn-claude {
+  background: linear-gradient(135deg, var(--accent-grad-a), var(--accent-grad-b));
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.welcome-btn-claude:hover { box-shadow: 0 0 28px -4px rgba(var(--accent-rgb), 0.3); }
+.welcome-btn-opencode {
+  background: linear-gradient(135deg, var(--accent-d), var(--accent-grad-b));
+  border-color: rgba(var(--accent-rgb), 0.4);
+  color: var(--accent-ink);
+}
+.welcome-btn-opencode:hover { box-shadow: 0 0 28px -4px rgba(var(--accent-rgb), 0.25); }
+.welcome-btn-tunnel {
+  background: linear-gradient(135deg, rgba(46, 55, 67, 0.9), rgba(56, 66, 79, 0.9));
+  border-color: var(--border-light);
+  color: var(--text);
+}
+.welcome-btn-tunnel:hover { box-shadow: none; }
+.welcome-btn-tunnel.active {
+  background: linear-gradient(135deg, var(--accent-d), var(--accent-grad-a));
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* ---- Focus rings (driven by --accent, now emerald) stay accessible ---- */
+:focus-visible { outline-color: var(--accent); }
 }

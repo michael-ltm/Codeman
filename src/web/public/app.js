@@ -580,6 +580,7 @@ class CodemanApp {
     const _kbSettings = this.loadAppSettingsFromStorage();
     if (_kbSettings.extendedKeyboardBar) KeyboardAccessoryBar.setMode('extended');
     this.applyHeaderVisibilitySettings();
+    this.applySkin();
     this.applyTabWrapSettings();
     this.applyMonitorVisibility();
     // Remove mobile-init class now that JS has applied visibility settings.
@@ -637,6 +638,7 @@ class CodemanApp {
     // Load server-stored settings (async, re-applies visibility after load)
     this.loadAppSettingsFromServer(settingsPromise).then(() => {
       this.applyHeaderVisibilitySettings();
+      this.applySkin();
       this.applyTabWrapSettings();
       this.applyMonitorVisibility();
     });
