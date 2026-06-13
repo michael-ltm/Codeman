@@ -333,6 +333,7 @@ const SSE_EVENTS = {
   SUBAGENT_MESSAGE: 'subagent:message',
   SUBAGENT_TOOL_RESULT: 'subagent:tool_result',
   SUBAGENT_COMPLETED: 'subagent:completed',
+  AGENT_ARTIFACT: 'agent:artifact',
 
   // Images
   IMAGE_DETECTED: 'image:detected',

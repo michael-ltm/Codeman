@@ -212,6 +212,8 @@ export const SubagentProgress = 'subagent:progress' as const;
 export const SubagentMessage = 'subagent:message' as const;
 /** Subagent finished. */
 export const SubagentCompleted = 'subagent:completed' as const;
+/** A file artifact was attributed to a subagent (newly added or re-written). Powers the Agent Gallery. */
+export const AgentArtifact = 'agent:artifact' as const;
 
 // ─── Scheduled Runs ──────────────────────────────────────────────────────────
 
@@ -442,6 +444,7 @@ export const SseEvent = {
   SubagentProgress,
   SubagentMessage,
   SubagentCompleted,
+  AgentArtifact,
 
   // Scheduled runs
   ScheduledCreated,

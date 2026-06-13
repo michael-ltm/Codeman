@@ -59,6 +59,7 @@ import {
   type SubagentMessage,
   type SubagentToolResult,
 } from '../subagent-watcher.js';
+import { agentArtifactIndex, type AgentArtifact } from '../agent-artifact-index.js';
 import { imageWatcher } from '../image-watcher.js';
 import { attachmentRegistry, registerExternalAttachment } from '../attachment-registry.js';
 import { TranscriptWatcher } from '../transcript-watcher.js';
@@ -248,6 +249,11 @@ export class WebServer extends EventEmitter {
     completed: (info: SubagentInfo) => void;
     error: (error: Error, agentId?: string) => void;
   } | null = null;
+  private artifactIndexHandlers: {
+    added: (artifact: AgentArtifact) => void;
+    updated: (artifact: AgentArtifact) => void;
+    error: (error: Error) => void;
+  } | null = null;
   private imageWatcherHandlers: {
     detected: (event: ImageDetectedEvent) => void;
     attachmentDetected: (event: AttachmentDetectedEvent) => void;
@@ -412,6 +418,18 @@ export class WebServer extends EventEmitter {
     subagentWatcher.on('subagent:message', this.subagentWatcherHandlers.message);
     subagentWatcher.on('subagent:completed', this.subagentWatcherHandlers.completed);
     subagentWatcher.on('subagent:error', this.subagentWatcherHandlers.error);
+
+    // Agent artifact index: attribute the files each subagent writes (from subagentWatcher's
+    // tool-call stream) and broadcast them as `agent:artifact` for the Agent Gallery view.
+    agentArtifactIndex.start(subagentWatcher);
+    this.artifactIndexHandlers = {
+      added: (artifact: AgentArtifact) => this.broadcast(SseEvent.AgentArtifact, artifact),
+      updated: (artifact: AgentArtifact) => this.broadcast(SseEvent.AgentArtifact, artifact),
+      error: (error: Error) => console.error('[AgentArtifactIndex] Error:', error.message),
+    };
+    agentArtifactIndex.on('artifact:added', this.artifactIndexHandlers.added);
+    agentArtifactIndex.on('artifact:updated', this.artifactIndexHandlers.updated);
+    agentArtifactIndex.on('artifact:error', this.artifactIndexHandlers.error);
   }
 
   /**
@@ -429,6 +447,13 @@ export class WebServer extends EventEmitter {
       subagentWatcher.off('subagent:error', this.subagentWatcherHandlers.error);
       this.subagentWatcherHandlers = null;
     }
+    if (this.artifactIndexHandlers) {
+      agentArtifactIndex.off('artifact:added', this.artifactIndexHandlers.added);
+      agentArtifactIndex.off('artifact:updated', this.artifactIndexHandlers.updated);
+      agentArtifactIndex.off('artifact:error', this.artifactIndexHandlers.error);
+      this.artifactIndexHandlers = null;
+    }
+    agentArtifactIndex.stop();
   }
 
   /**
