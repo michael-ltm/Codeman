@@ -63,6 +63,12 @@ export const MAX_TRACKED_AGENTS = 500;
 export const MAX_PENDING_TOOL_CALLS = 100;
 
 /**
+ * Maximum distinct file artifacts tracked per subagent in the artifact index.
+ * Bounds memory for agents that write many files (FIFO eviction when exceeded).
+ */
+export const MAX_ARTIFACTS_PER_AGENT = 200;
+
+/**
  * TTL for orphaned pending tool calls (5 minutes).
  * If no tool_result received, entry is cleaned up.
  */
