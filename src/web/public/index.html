@@ -8,7 +8,7 @@
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="description" content="Claude Code session manager with web interface">
-  <meta name="theme-color" content="#0a0a0a">
+  <meta name="theme-color" content="#11151c">
   <meta name="google" content="notranslate">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -41,15 +41,17 @@
   <script defer src="vendor/marked.min.js"></script>
   <!-- Synchronous mobile detection — runs before first paint to prevent panel flash -->
   <script>if(window.innerWidth<768||(('ontouchstart' in window||navigator.maxTouchPoints>0)&&window.innerWidth<1024))document.documentElement.classList.add('mobile-init');</script>
+  <!-- Synchronous skin selection — runs before first paint to prevent theme flash -->
+  <script>try{var s=localStorage.getItem('codeman:skin');if(s!=='og'&&s!=='daylight-green'&&s!=='daylight-blue')s='daylight-blue';document.documentElement.dataset.skin=s;window.__codemanSkin=s;}catch(e){document.documentElement.dataset.skin='daylight-blue';window.__codemanSkin='daylight-blue';}</script>
   <!-- Inline critical CSS for instant skeleton paint (before styles.css loads) -->
   <style>
-    .loading-skeleton{display:flex;flex-direction:column;height:100vh;height:100dvh;background:#09090b}
-    .skeleton-header{height:40px;background:rgba(19,19,22,0.85);border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;padding:0 12px}
-    .skeleton-brand{color:#60a5fa;font-size:14px;font-weight:700;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;opacity:.7}
+    .loading-skeleton{display:flex;flex-direction:column;height:100vh;height:100dvh;background:#11151c}
+    .skeleton-header{height:40px;background:rgba(31,38,48,0.85);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;padding:0 12px}
+    .skeleton-brand{color:#38b6f0;font-size:14px;font-weight:700;font-family:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;opacity:.85}
     .skeleton-tabs{display:flex;gap:4px;margin-left:16px}
     .skeleton-tab{width:80px;height:24px;background:rgba(255,255,255,0.04);border-radius:6px}
-    .skeleton-terminal{flex:1;background:#0d0d0d}
-    .skeleton-toolbar{height:42px;background:rgba(19,19,22,0.85);border-top:1px solid rgba(255,255,255,0.06)}
+    .skeleton-terminal{flex:1;background:#161b23}
+    .skeleton-toolbar{height:42px;background:rgba(31,38,48,0.85);border-top:1px solid rgba(255,255,255,0.08)}
     .app-loaded .loading-skeleton{display:none}
   </style>
 </head>
@@ -178,8 +180,8 @@
             <svg viewBox="0 0 36 36" class="ralph-ring-svg">
               <defs>
                 <linearGradient id="ralphGradientMini" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stop-color="#3b82f6" />
-                  <stop offset="100%" stop-color="#22c55e" />
+                  <stop offset="0%" stop-color="#3ec8ee" />
+                  <stop offset="100%" stop-color="#2b8fd9" />
                 </linearGradient>
               </defs>
               <circle class="ralph-ring-bg" cx="18" cy="18" r="15.9" />
@@ -224,8 +226,8 @@
             <svg viewBox="0 0 100 100" class="ralph-ring-svg-large">
               <defs>
                 <linearGradient id="ralphGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stop-color="#3b82f6" />
-                  <stop offset="100%" stop-color="#22c55e" />
+                  <stop offset="0%" stop-color="#3ec8ee" />
+                  <stop offset="100%" stop-color="#2b8fd9" />
                 </linearGradient>
               </defs>
               <circle class="ralph-ring-track" cx="50" cy="50" r="42" />
@@ -918,6 +920,16 @@
           <!-- Display Tab -->
           <div class="modal-tab-content" id="settings-display">
             <div class="settings-grid">
+              <!-- Appearance Section -->
+              <div class="settings-section-header">Appearance</div>
+              <div class="settings-item settings-item-skin" title="Visual theme for this device (not synced)">
+                <span class="settings-item-label">Skin</span>
+                <select id="appSettingsSkin" class="form-select">
+                  <option value="daylight-blue">Daylight Blue</option>
+                  <option value="daylight-green">Daylight Green</option>
+                  <option value="og">OG Codeman</option>
+                </select>
+              </div>
               <!-- Input Section -->
               <div class="settings-section-header">Input</div>
               <div class="settings-item settings-item-multiline" title="Shows typed characters instantly via overlay while forwarding keystrokes to the server in the background. Enables Tab completion, preserves input across tab switches, and protects against session crashes. Recommended for mobile and high-latency connections.">

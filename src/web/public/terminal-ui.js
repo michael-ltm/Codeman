@@ -28,11 +28,27 @@
     return isTerminalQueryResponse(data);
   }
 
+  // Per-skin xterm.js palettes. The 'daylight-blue' object equals the legacy hardcoded
+  // theme, so default behavior is unchanged. Shared at module scope and exported on the
+  // global so both terminal-ui.js (main terminal) and panels-ui.js (teammate terminals,
+  // a separate IIFE) can read the current skin's palette.
+  const CODEMAN_XTERM_THEMES = {
+    og: { background: '#0d0d0d', foreground: '#e0e0e0', cursor: '#e0e0e0', cursorAccent: '#0d0d0d', selection: 'rgba(255,255,255,0.3)', black: '#0d0d0d', red: '#ff6b6b', green: '#51cf66', yellow: '#ffd43b', blue: '#339af0', magenta: '#cc5de8', cyan: '#22b8cf', white: '#e0e0e0', brightBlack: '#495057', brightRed: '#ff8787', brightGreen: '#69db7c', brightYellow: '#ffe066', brightBlue: '#5c7cfa', brightMagenta: '#da77f2', brightCyan: '#66d9e8', brightWhite: '#ffffff' },
+    'daylight-green': { background: '#161b23', foreground: '#dfe6ef', cursor: '#2fd3aa', cursorAccent: '#161b23', selection: 'rgba(47,211,170,0.22)', black: '#161b23', red: '#ff8585', green: '#34d8a0', yellow: '#f0c25a', blue: '#5cc6e8', magenta: '#c79af2', cyan: '#2bcbbb', white: '#dfe6ef', brightBlack: '#5b6675', brightRed: '#ffa0a0', brightGreen: '#5fe6b8', brightYellow: '#ffd884', brightBlue: '#82d4ee', brightMagenta: '#d6b3f7', brightCyan: '#5ee0d4', brightWhite: '#f3f6fa' },
+    'daylight-blue': { background: '#161b23', foreground: '#dfe6ef', cursor: '#38b6f0', cursorAccent: '#161b23', selection: 'rgba(56,182,240,0.22)', black: '#161b23', red: '#ff8585', green: '#34d8a0', yellow: '#f0c25a', blue: '#5cc6e8', magenta: '#c79af2', cyan: '#2bcbbb', white: '#dfe6ef', brightBlack: '#5b6675', brightRed: '#ffa0a0', brightGreen: '#5fe6b8', brightYellow: '#ffd884', brightBlue: '#82d4ee', brightMagenta: '#d6b3f7', brightCyan: '#5ee0d4', brightWhite: '#f3f6fa' },
+  };
+  function currentXtermTheme() {
+    const skin = (typeof document !== 'undefined' && document.documentElement.dataset.skin) || 'daylight-blue';
+    return CODEMAN_XTERM_THEMES[skin] || CODEMAN_XTERM_THEMES['daylight-blue'];
+  }
+
   global.CodemanTerminalInput = {
     isTerminalQueryResponse,
     shouldSuppressTerminalQueryResponse,
     USER_SCROLL_STICKY_SUPPRESS_MS,
   };
+  global.CODEMAN_XTERM_THEMES = CODEMAN_XTERM_THEMES;
+  global.codemanCurrentXtermTheme = currentXtermTheme;
 })(window);
 
 Object.assign(CodemanApp.prototype, {
@@ -47,29 +63,7 @@ Object.assign(CodemanApp.prototype, {
     const scrollback = Number.isFinite(stored) && stored > 0 ? Math.max(stored, DEFAULT_SCROLLBACK) : DEFAULT_SCROLLBACK;
 
     this.terminal = new Terminal({
-      theme: {
-        background: '#0d0d0d',
-        foreground: '#e0e0e0',
-        cursor: '#e0e0e0',
-        cursorAccent: '#0d0d0d',
-        selection: 'rgba(255, 255, 255, 0.3)',
-        black: '#0d0d0d',
-        red: '#ff6b6b',
-        green: '#51cf66',
-        yellow: '#ffd43b',
-        blue: '#339af0',
-        magenta: '#cc5de8',
-        cyan: '#22b8cf',
-        white: '#e0e0e0',
-        brightBlack: '#495057',
-        brightRed: '#ff8787',
-        brightGreen: '#69db7c',
-        brightYellow: '#ffe066',
-        brightBlue: '#5c7cfa',
-        brightMagenta: '#da77f2',
-        brightCyan: '#66d9e8',
-        brightWhite: '#ffffff',
-      },
+      theme: { ...window.codemanCurrentXtermTheme() },
       fontFamily: '"Fira Code", "Cascadia Code", "JetBrains Mono", "SF Mono", Monaco, monospace',
       // Use smaller font on mobile to fit more columns (prevents wrapping of Claude's status line)
       fontSize: MobileDetection.getDeviceType() === 'mobile' ? 10 : 14,
@@ -2181,5 +2175,28 @@ Object.assign(CodemanApp.prototype, {
       const value = input.value.trim();
       document.getElementById('dirDisplay').textContent = value || 'No directory';
     }, 100);
+  },
+
+  // Re-theme all live xterm terminals (main + teammate) to the given skin's palette.
+  // Uses the xterm v5+ live setter (full object assignment triggers a repaint for both
+  // DOM and WebGL renderers) plus a belt-and-suspenders refresh().
+  applyTerminalSkin(skin) {
+    const theme = { ...(window.CODEMAN_XTERM_THEMES[skin] || window.CODEMAN_XTERM_THEMES['daylight-blue']) };
+    if (this.terminal) {
+      this.terminal.options.theme = theme;
+      try {
+        this.terminal.refresh(0, this.terminal.rows - 1);
+      } catch {}
+    }
+    if (this.teammateTerminals) {
+      for (const [, entry] of this.teammateTerminals) {
+        if (entry && entry.terminal) {
+          entry.terminal.options.theme = { ...theme };
+          try {
+            entry.terminal.refresh(0, entry.terminal.rows - 1);
+          } catch {}
+        }
+      }
+    }
   },
 });

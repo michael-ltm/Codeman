@@ -309,6 +309,7 @@ Object.assign(CodemanApp.prototype, {
     document.getElementById('appSettingsShowCost').checked = settings.showCost ?? defaults.showCost ?? false;
     document.getElementById('appSettingsShowLifecycleLog').checked = settings.showLifecycleLog ?? defaults.showLifecycleLog ?? true;
     document.getElementById('appSettingsShowResponseViewer').checked = settings.showResponseViewer ?? defaults.showResponseViewer ?? false;
+    document.getElementById('appSettingsSkin').value = settings.skin ?? defaults.skin ?? 'daylight-blue';
     document.getElementById('appSettingsShowMonitor').checked = settings.showMonitor ?? defaults.showMonitor ?? false;
     document.getElementById('appSettingsShowProjectInsights').checked = settings.showProjectInsights ?? defaults.showProjectInsights ?? false;
     document.getElementById('appSettingsShowFileBrowser').checked = settings.showFileBrowser ?? defaults.showFileBrowser ?? false;
@@ -1377,6 +1378,7 @@ Object.assign(CodemanApp.prototype, {
       cjkInputEnabled: document.getElementById('appSettingsCjkInput').checked,
       extendedKeyboardBar: document.getElementById('appSettingsExtendedKeyboardBar').checked,
       tabTwoRows: document.getElementById('appSettingsTabTwoRows').checked,
+      skin: document.getElementById('appSettingsSkin').value,
       // Claude CLI settings
       claudeMode: document.getElementById('appSettingsClaudeMode').value,
       allowedTools: document.getElementById('appSettingsAllowedTools').value.trim(),
@@ -1491,6 +1493,7 @@ Object.assign(CodemanApp.prototype, {
 
     // Apply header visibility immediately
     this.applyHeaderVisibilitySettings();
+    this.applySkin();
     this.applyTabWrapSettings();
     this._updateTokensImmediate();  // Re-render token display (picks up showCost change)
     this.applyMonitorVisibility();
@@ -1505,7 +1508,7 @@ Object.assign(CodemanApp.prototype, {
 
     // Save to server (includes notification prefs for cross-browser persistence)
     // Strip device-specific keys — localEchoEnabled/cjkInputEnabled are per-platform
-    const { localEchoEnabled: _leo, cjkInputEnabled: _cjk, extendedKeyboardBar: _ekb, ...serverSettings } = settings;
+    const { localEchoEnabled: _leo, cjkInputEnabled: _cjk, extendedKeyboardBar: _ekb, skin: _skin, ...serverSettings } = settings;
     try {
       const res = await this._apiPut('/api/settings', {
         ...serverSettings,
@@ -1664,6 +1667,7 @@ Object.assign(CodemanApp.prototype, {
         ralphTrackerEnabled: false,
         tabTwoRows: false,
         cjkInputEnabled: false,
+        skin: 'daylight-blue',
       };
     }
     // Desktop defaults - rely on ?? operators in apply functions
@@ -1699,6 +1703,24 @@ Object.assign(CodemanApp.prototype, {
     } catch (err) {
       console.error('Failed to save app settings:', err);
     }
+  },
+
+  // Apply the chosen skin live: sets the html[data-skin] attribute, syncs BOTH
+  // localStorage locations (the standalone 'codeman:skin' key the pre-paint head
+  // script reads + the app-settings blob field written by saveAppSettingsToStorage),
+  // updates window.__codemanSkin, and re-themes any live terminals.
+  applySkin() {
+    const settings = this.loadAppSettingsFromStorage();
+    const defaults = this.getDefaultSettings();
+    const skin = settings.skin ?? defaults.skin ?? 'daylight-blue';
+    document.documentElement.setAttribute('data-skin', skin);
+    window.__codemanSkin = skin;
+    try {
+      localStorage.setItem('codeman:skin', skin);
+    } catch (_e) {
+      /* private mode */
+    }
+    if (typeof this.applyTerminalSkin === 'function') this.applyTerminalSkin(skin);
   },
 
   applyHeaderVisibilitySettings() {
@@ -1944,6 +1966,7 @@ Object.assign(CodemanApp.prototype, {
           'showLifecycleLog', 'showResponseViewer',
           'showMonitor', 'showProjectInsights', 'showFileBrowser', 'showSubagents',
           'subagentActiveTabOnly', 'tabTwoRows', 'localEchoEnabled', 'cjkInputEnabled', 'extendedKeyboardBar',
+          'skin',
         ]);
         // Merge settings: non-display keys always sync from server,
         // display keys only seed from server when localStorage has no value
