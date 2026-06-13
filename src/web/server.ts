@@ -149,6 +149,7 @@ import {
   registerRalphRoutes,
   registerPlanRoutes,
   registerClipboardRoutes,
+  registerSearchRoutes,
   registerOrchestratorRoutes,
   registerWsRoutes,
 } from './routes/index.js';
@@ -869,6 +870,7 @@ export class WebServer extends EventEmitter {
     registerRalphRoutes(this.app, ctx);
     registerPlanRoutes(this.app, ctx);
     registerClipboardRoutes(this.app, ctx);
+    registerSearchRoutes(this.app, ctx);
     registerOrchestratorRoutes(this.app, ctx);
     registerWsRoutes(this.app, ctx, () => this.getHostPolicy());
   }

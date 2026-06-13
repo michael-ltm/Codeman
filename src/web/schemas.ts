@@ -708,3 +708,35 @@ export const OrchestratorStartSchema = z.object({
 export const OrchestratorRejectSchema = z.object({
   feedback: z.string().min(1).max(10000),
 });
+
+// ========== Cross-Session Search (COD-9) ==========
+
+/** Valid federated source kinds for `GET /api/search?types=`. */
+export const SEARCH_SOURCE_TYPES = ['session', 'event', 'file'] as const;
+
+/**
+ * GET /api/search query validation.
+ *
+ * Query params arrive as strings: `q` is bounded (1..200 chars), `types` is an
+ * optional comma-separated allowlisted CSV, and `limit` is an optional coerced
+ * integer clamped to 1..60. Validation is the first line of defense — a missing
+ * or oversized `q`, an unknown type, or a non-numeric limit is rejected with 400.
+ */
+export const SearchQuerySchema = z.object({
+  q: z.string().trim().min(1, 'Query is required').max(200, 'Query too long (max 200 chars)'),
+  types: z
+    .string()
+    .max(100)
+    .optional()
+    .refine(
+      (v) =>
+        v === undefined ||
+        v
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .every((t) => (SEARCH_SOURCE_TYPES as readonly string[]).includes(t)),
+      { message: 'Invalid types value' }
+    ),
+  limit: z.coerce.number().int().min(1).max(60).optional(),
+});
