@@ -1,5 +1,24 @@
 # aicodeman
 
+## 1.0.0
+
+### Major Changes
+
+- # Codeman 1.0.0 🎉
+
+  The first stable release of Codeman — and it comes with a fresh new look.
+
+  **New: theme skins.** Codeman now ships a built-in skin switcher (App Settings → Display → Appearance):
+  - **OG Codeman** — the original look, preserved exactly.
+  - **Daylight Green** — a fresh emerald-on-slate theme.
+  - **Daylight Blue** — bright sky-blue on lifted slate (the new default).
+
+  Skins apply instantly, persist per device (with a pre-paint script so there's no flash on load), and re-theme any open terminals live. The system is built on `html[data-skin]` design tokens and self-hosted Manrope (UI) + JetBrains Mono (terminal) fonts — no external CDN, CSP-safe.
+
+  **1.0.0 milestone.** This marks the start of the stable 1.x line: the CLI, documented environment variables, and the `{ success, data }` HTTP/SSE API envelope follow semantic versioning (see `docs/versioning-policy.md`).
+
+  **Thank you to everyone who helped build Codeman.** This release is dedicated to all of our contributors for their work on the project: Ark0N, Aamer Akhter (@aakhter), Tenggan Zhang (@TeigenZhang), zhouyuan / @sunnyzhouy, jaypark, Marco Migozzi, Skúli Arnlaugsson, Aaron Fields, Loïc Sculier, and Noah Waldner (@noahwaldner). 💙
+
 ## 0.9.14
 
 ### Patch Changes
