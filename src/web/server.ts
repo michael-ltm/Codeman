@@ -630,7 +630,7 @@ export class WebServer extends EventEmitter {
     registerHostGuard(this.app, () => this.getHostPolicy());
 
     // Auth middleware (Basic Auth + session cookies + rate limiting)
-    const authState = registerAuthMiddleware(this.app, this.https, () => this.tunnelManager.isRunning());
+    const authState = registerAuthMiddleware(this.app, this.https);
     if (authState) {
       this.authSessions = authState.authSessions;
       this.authFailures = authState.authFailures;

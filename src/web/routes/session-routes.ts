@@ -45,7 +45,13 @@ import {
   validatePathWithinBase,
 } from '../route-helpers.js';
 import { AUTH_COOKIE_NAME } from '../middleware/auth.js';
-import { writeHooksConfig, updateCaseModel, stripCaseEnvKeys, applyStatusLineConfig } from '../../hooks-config.js';
+import {
+  writeHooksConfig,
+  updateCaseModel,
+  stripCaseEnvKeys,
+  applyStatusLineConfig,
+  refreshStaleHookSecret,
+} from '../../hooks-config.js';
 import { generateClaudeMd } from '../../templates/claude-md.js';
 import { imageWatcher } from '../../image-watcher.js';
 import { getLifecycleLog } from '../../session-lifecycle-log.js';
@@ -310,6 +316,13 @@ export function registerSessionRoutes(
     // statusLine is never touched.
     if ((body.mode ?? 'claude') === 'claude' && body.statusLineTelemetry === true) {
       await applyStatusLineConfig(workingDir, true);
+    }
+
+    // COD-91 self-heal: refresh a pre-secret hooks block in an existing case so the now
+    // unconditional hook-secret gate keeps accepting its hook events. No-op for fresh
+    // cases (writeHooksConfig already wrote the secret) and for non-Codeman/absent hooks.
+    if ((body.mode ?? 'claude') === 'claude') {
+      await refreshStaleHookSecret(workingDir).catch(() => {});
     }
 
     // Check OpenCode availability if requested
@@ -1279,6 +1292,11 @@ export function registerSessionRoutes(
       } catch (err) {
         return createErrorResponse(ApiErrorCode.OPERATION_FAILED, `Failed to create case: ${getErrorMessage(err)}`);
       }
+    } else if (mode !== 'opencode') {
+      // COD-91 self-heal for an EXISTING case: refresh a pre-secret hooks block so the
+      // now-unconditional hook-secret gate keeps accepting its hook events. No-op when
+      // the hooks aren't ours or already carry the secret.
+      await refreshStaleHookSecret(casePath).catch(() => {});
     }
 
     // Strip stale disk entries for keys this request is actively setting (Claude only —

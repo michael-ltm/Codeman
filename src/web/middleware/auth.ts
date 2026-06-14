@@ -36,20 +36,12 @@ interface AuthState {
  * Register HTTP Basic Auth middleware with session cookies and rate limiting.
  * Only active when CODEMAN_PASSWORD is set.
  *
- * @param getTunnelRunning - returns true while a managed tunnel is active. Used
- *   to gate the `/api/hook-event` localhost bypass: when a tunnel is up, tunneled
- *   internet traffic reaches the loopback origin with `req.ip === 127.0.0.1`, so
- *   the bypass additionally requires the shared hook secret (COD-54). When no
- *   tunnel is running (loopback-only, the normal case) the plain localhost bypass
- *   is kept so already-deployed (pre-secret) hooks + the loop channel keep working.
- *   Optional; defaults to "no tunnel" (unchanged behavior) when omitted.
+ * The `/api/hook-event` + `/api/status-telemetry` localhost bypass requires the
+ * shared hook secret unconditionally (COD-91) — see the onRequest hook below.
+ *
  * @returns AuthState for lifecycle management (dispose on server stop)
  */
-export function registerAuthMiddleware(
-  app: FastifyInstance,
-  https: boolean,
-  getTunnelRunning: () => boolean = () => false
-): AuthState {
+export function registerAuthMiddleware(app: FastifyInstance, https: boolean): AuthState {
   const state: AuthState = {
     authSessions: null,
     authFailures: null,
@@ -114,30 +106,26 @@ export function registerAuthMiddleware(
     // COD-54: the bare localhost bypass is unsafe while a tunnel is running, because
     // `cloudflared --url http://127.0.0.1:port` proxies internet traffic INTO the
     // loopback origin, so a tunneled request arrives with req.ip === 127.0.0.1 and
-    // would pass. So:
-    //   - tunnel running → bypass requires the shared hook secret (local hooks present
-    //     it via the X-Codeman-Hook-Secret header; internet traffic can't know it),
-    //   - tunnel not running (loopback-only, the normal case) → keep the plain
-    //     localhost bypass so already-deployed (pre-secret) hooks + the loop's own
-    //     credential-less hook channel keep working.
+    // would pass. COD-91: require the shared hook secret on the loopback bypass
+    // UNCONDITIONALLY (not just while the managed tunnel is up). Codeman can't detect
+    // a user's own loopback reverse proxy (their own `cloudflared --url`, `tailscale
+    // serve`, nginx → 127.0.0.1), so tunnel-gating left that path with the unsafe plain
+    // bypass. Managed-session hooks always present the secret (X-Codeman-Hook-Secret,
+    // from $CODEMAN_HOOK_SECRET_FILE — generated for every instance), so requiring it
+    // always closes the gap without breaking the legitimate hook channel.
     if ((req.url === '/api/hook-event' || req.url === '/api/status-telemetry') && req.method === 'POST') {
       const ip = req.ip;
       const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
       if (isLoopback) {
-        if (!getTunnelRunning()) {
-          // Loopback-only: unchanged behavior.
-          done();
-          return;
-        }
-        // Tunnel up: require the shared secret (constant-time compare).
+        // Always require the shared secret (constant-time compare).
         const presented = Buffer.from(req.headers[HOOK_SECRET_HEADER.toLowerCase()]?.toString() ?? '');
         const expected = Buffer.from(getHookSecret());
         if (presented.length === expected.length && timingSafeEqual(presented, expected)) {
           done();
           return;
         }
-        // Wrong/absent secret while tunneled — rate-limit per IP in the DEDICATED
-        // hook bucket (never authFailures, which would lock out the login path).
+        // Wrong/absent secret — rate-limit per IP in the DEDICATED hook bucket
+        // (never authFailures, which would lock out the login path).
         const hookIp = req.ip;
         const hookFailures = hookSecretFailures.get(hookIp) ?? 0;
         if (hookFailures >= AUTH_FAILURE_MAX) {

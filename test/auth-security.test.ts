@@ -14,6 +14,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import { WebServer } from '../src/web/server.js';
 import { TmuxManager } from '../src/tmux-manager.js';
 import { SettingsUpdateSchema } from '../src/web/schemas.js';
+import { getHookSecret, HOOK_SECRET_HEADER } from '../src/config/hook-secret.js';
 
 const AUTH_PORT = 3160;
 const NOAUTH_PORT = 3161;
@@ -250,28 +251,28 @@ describe('Auth Security', () => {
   });
 
   describe('Hook Event Endpoint', () => {
-    it('should allow hook events from localhost without auth', async () => {
+    it('should allow hook events from localhost with the hook secret (no Basic auth)', async () => {
       const res = await fetch(`${baseUrl}/api/hook-event`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', [HOOK_SECRET_HEADER]: getHookSecret() },
         body: JSON.stringify({
           event: 'stop',
           sessionId: 'nonexistent-session',
           data: {},
         }),
       });
-      // Should pass auth (localhost bypass) but may 404 on session — that's fine
-      // The key assertion is it does NOT return 401
+      // Should pass auth (localhost bypass + hook secret) but may 404 on session — that's fine.
+      // The key assertion is it does NOT return 401 (COD-91: secret required even with no tunnel).
       expect(res.status).not.toBe(401);
     });
 
     it('should reject hook events with invalid schema', async () => {
       const res = await fetch(`${baseUrl}/api/hook-event`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', [HOOK_SECRET_HEADER]: getHookSecret() },
         body: JSON.stringify({ invalid: 'data' }),
       });
-      // Schema validation should catch this
+      // Past the auth gate (valid secret) → schema validation should catch this (not a 401).
       expect(res.status).not.toBe(401); // Not an auth error
     });
   });
