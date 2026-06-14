@@ -101,31 +101,12 @@ html.mobile-init .file-browser-panel {
     gap: 0.25rem;
   }
 
+  /* Inline, always-visible header utilities (eye / multimonitor). The
+     position:fixed collapsible tray (02fa3f3) had its expand toggle reverted on
+     master but left this container permanently `mobile-collapsed` → the response
+     viewer eye became unreachable on phones. Restored to the simple inline flow. */
   .header-right {
-    position: fixed;
-    top: calc(52px + var(--safe-area-top));
-    left: calc(0.5rem + var(--safe-area-left));
-    right: auto;
-    display: flex;
-    align-items: center;
     gap: 0.35rem;
-    max-width: calc(100vw - 1rem - var(--safe-area-left) - var(--safe-area-right));
-    padding: 0.35rem;
-    background: rgba(10, 10, 10, 0.96);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 8px;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
-    overflow-x: auto;
-    scrollbar-width: none;
-    z-index: 2000;
-  }
-
-  .header-right::-webkit-scrollbar {
-    display: none;
-  }
-
-  .header-right.mobile-collapsed {
-    display: none;
   }
 
   .btn-icon-header:not(.btn-sm) {
@@ -435,32 +416,10 @@ html.mobile-init .file-browser-panel {
   }
 
   .header-right {
-    position: fixed;
-    top: calc(40px + var(--safe-area-top));
-    left: calc(0.3rem + var(--safe-area-left));
-    right: auto;
-    display: flex;
-    align-items: center;
     padding-left: 0.2rem;
     gap: 0.1rem;
-    max-width: calc(100vw - 0.6rem - var(--safe-area-left) - var(--safe-area-right));
-    padding: 0.25rem;
-    background: rgba(10, 10, 10, 0.96);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 8px;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
-    overflow-x: auto;
-    scrollbar-width: none;
+    flex-shrink: 0;
     border-left: none;
-    z-index: 2000;
-  }
-
-  .header-right::-webkit-scrollbar {
-    display: none;
-  }
-
-  .header-right.mobile-collapsed {
-    display: none;
   }
 
   /* Smaller header buttons on mobile */
