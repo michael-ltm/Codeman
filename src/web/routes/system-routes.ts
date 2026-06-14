@@ -26,6 +26,7 @@ import {
 } from '../schemas.js';
 import { subagentWatcher } from '../../subagent-watcher.js';
 import { imageWatcher } from '../../image-watcher.js';
+import { applyStatusLineConfig } from '../../hooks-config.js';
 import { getLifecycleLog } from '../../session-lifecycle-log.js';
 import {
   findSessionOrFail,
@@ -545,6 +546,21 @@ export function registerSystemRoutes(
           }
         }
       });
+
+      // Plan-usage chip (App Settings → Display → "Plan Usage Limits"): reconcile
+      // the statusLine exporter across all ACTIVE Claude sessions' working dirs the
+      // moment the setting is toggled — server-side and authoritative, so it works
+      // immediately for every user/session without depending on any client's synced
+      // state or on creating a new session. Enable injects; disable removes (ours
+      // only, marker-guarded). Each dir handled once.
+      if ('showPlanUsageLimits' in settings) {
+        const enabled = settings.showPlanUsageLimits === true;
+        const dirs = new Set<string>();
+        for (const session of ctx.sessions.values()) {
+          if (session.mode === 'claude' && session.workingDir) dirs.add(session.workingDir);
+        }
+        await Promise.all([...dirs].map((dir) => applyStatusLineConfig(dir, enabled).catch(() => {})));
+      }
 
       // Handle tunnel toggle dynamically
       if ('tunnelEnabled' in settings) {

@@ -298,14 +298,18 @@ export function registerSessionRoutes(
     }
 
     // Plan-usage statusLine exporter (App Settings → Display → "Plan Usage
-    // Limits"). Claude-only. Runs for ANY working dir — including linked cases /
-    // real repos, which is where most sessions actually run — mirroring
-    // updateCaseModel above (which likewise writes settings.local.json
-    // unconditionally). Safe against a user's own statusLine: applyStatusLineConfig
-    // only ever removes a statusLine that is OURS (marker-guarded), and adds/removes
-    // ours so toggling the setting off cleans up on the next create.
-    if ((body.mode ?? 'claude') === 'claude') {
-      await applyStatusLineConfig(workingDir, body.statusLineTelemetry === true);
+    // Limits"). Claude-only; runs for ANY working dir (linked cases / real repos,
+    // where most sessions live), mirroring updateCaseModel above.
+    //
+    // ADD-ONLY: we never remove on create. Sessions in a repo share one
+    // settings.local.json, so a single create-with-false (e.g. a client whose
+    // synced setting hadn't loaded yet) must NOT yank the statusLine out from
+    // under other live sessions in that repo — that breaks their footer + the
+    // chip's data feed for everyone. The exporter is benign when the chip is off
+    // (the footer just shows session status). isOurs-guarded so a user's own
+    // statusLine is never touched.
+    if ((body.mode ?? 'claude') === 'claude' && body.statusLineTelemetry === true) {
+      await applyStatusLineConfig(workingDir, true);
     }
 
     // Check OpenCode availability if requested
