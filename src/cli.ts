@@ -626,4 +626,29 @@ program
     }
   });
 
+program
+  .command('doctor')
+  .alias('check-deps')
+  .description('Check Codeman tool dependencies (Node, Claude CLI, tmux, LibreOffice, MS Office)')
+  .option('--json', 'Output structured JSON instead of a table')
+  .option('--category <name>', 'Only check one category (core|office|documents|media|other)')
+  .action(async (options) => {
+    const { createRealHost, checkAll } = await import('./utils/dependency-checker.js');
+    const { renderTable, renderJson, computeExitCode } = await import('./utils/dependency-report.js');
+    const { DEPENDENCY_REGISTRY } = await import('./config/dependency-registry.js');
+
+    const host = createRealHost();
+    const registry = options.category
+      ? DEPENDENCY_REGISTRY.filter((t) => t.category === options.category)
+      : DEPENDENCY_REGISTRY;
+    const results = checkAll(registry, host);
+
+    if (options.json) {
+      console.log(JSON.stringify(renderJson(results, host.environment), null, 2));
+    } else {
+      console.log(renderTable(results, host.environment));
+    }
+    process.exit(computeExitCode(results));
+  });
+
 export { program };

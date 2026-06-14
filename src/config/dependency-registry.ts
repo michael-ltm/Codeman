@@ -1,0 +1,128 @@
+/**
+ * @fileoverview Static registry of downstream tool dependencies probed by
+ * `codeman doctor`. Each entry declares per-environment resolvers and the
+ * skills that use it. EXTENSION POINT: skill-manifest-driven discovery
+ * (COD follow-up) will merge dynamically-found entries into this list.
+ *
+ * @module config/dependency-registry
+ */
+
+export type ProbeEnvironment = 'linux' | 'darwin' | 'win32' | 'wsl';
+export type ToolCategory = 'core' | 'office' | 'other';
+
+/** Resolve a binary on the PATH and read its version. */
+export interface PathResolver {
+  kind: 'path';
+  bins: string[];
+  versionArg?: string; // default '--version'
+  versionRegex?: RegExp; // default matches first \d+.\d+(.\d+)?
+}
+
+/** Resolve a Windows-installed app reachable from win32 or WSL. */
+export interface WindowsSideResolver {
+  kind: 'windows-side';
+  appDirs: string[]; // relative to a Program Files root
+  exes: string[]; // candidate executables; first found wins
+}
+
+export interface ResolverSpec {
+  match: ProbeEnvironment[];
+  resolver: PathResolver | WindowsSideResolver;
+}
+
+export interface ToolDependency {
+  id: string;
+  label: string;
+  category: ToolCategory;
+  required: boolean;
+  usedBy?: string[];
+  minVersion?: string;
+  resolvers: ResolverSpec[];
+  installHint?: Partial<Record<ProbeEnvironment, string>>;
+}
+
+const ALL: ProbeEnvironment[] = ['linux', 'darwin', 'wsl', 'win32'];
+
+export const DEPENDENCY_REGISTRY: ToolDependency[] = [
+  {
+    id: 'node',
+    label: 'Node.js',
+    category: 'core',
+    required: true,
+    minVersion: '18.0.0',
+    resolvers: [{ match: ALL, resolver: { kind: 'path', bins: ['node'], versionArg: '--version' } }],
+    installHint: { linux: 'https://nodejs.org', darwin: 'brew install node', wsl: 'https://nodejs.org' },
+  },
+  {
+    id: 'claude',
+    label: 'Claude CLI',
+    category: 'core',
+    required: false,
+    usedBy: ['Claude Code sessions (default backend)'],
+    resolvers: [{ match: ALL, resolver: { kind: 'path', bins: ['claude'], versionArg: '--version' } }],
+    installHint: { linux: 'https://docs.claude.com/claude-code', darwin: 'https://docs.claude.com/claude-code' },
+  },
+  {
+    id: 'tmux',
+    label: 'tmux',
+    category: 'core',
+    required: true,
+    resolvers: [{ match: ['linux', 'darwin', 'wsl'], resolver: { kind: 'path', bins: ['tmux'], versionArg: '-V' } }],
+    installHint: { linux: 'sudo apt install tmux', darwin: 'brew install tmux', wsl: 'sudo apt install tmux' },
+  },
+  {
+    id: 'opencode',
+    label: 'OpenCode CLI',
+    category: 'core',
+    required: false,
+    usedBy: ['OpenCode sessions'],
+    resolvers: [{ match: ALL, resolver: { kind: 'path', bins: ['opencode'], versionArg: '--version' } }],
+  },
+  {
+    id: 'codex',
+    label: 'Codex CLI',
+    category: 'core',
+    required: false,
+    usedBy: ['Codex sessions'],
+    resolvers: [{ match: ALL, resolver: { kind: 'path', bins: ['codex'], versionArg: '--version' } }],
+  },
+  {
+    id: 'gemini',
+    label: 'Gemini CLI',
+    category: 'core',
+    required: false,
+    usedBy: ['Gemini sessions'],
+    resolvers: [{ match: ALL, resolver: { kind: 'path', bins: ['gemini'], versionArg: '--version' } }],
+  },
+  {
+    id: 'libreoffice',
+    label: 'LibreOffice',
+    category: 'office',
+    required: false,
+    usedBy: ['document preview', 'thumbnails'],
+    resolvers: [
+      {
+        match: ['linux', 'darwin', 'wsl'],
+        resolver: { kind: 'path', bins: ['libreoffice', 'soffice'], versionArg: '--version' },
+      },
+    ],
+    installHint: { linux: 'sudo apt install libreoffice', darwin: 'brew install --cask libreoffice' },
+  },
+  {
+    id: 'msoffice',
+    label: 'MS Office',
+    category: 'office',
+    required: false,
+    usedBy: ['document preview', 'thumbnails'],
+    resolvers: [
+      {
+        match: ['wsl', 'win32'],
+        resolver: {
+          kind: 'windows-side',
+          appDirs: ['Microsoft Office/root/Office16'],
+          exes: ['WINWORD.EXE', 'POWERPNT.EXE', 'EXCEL.EXE'],
+        },
+      },
+    ],
+  },
+];
