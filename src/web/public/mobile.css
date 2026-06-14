@@ -434,9 +434,12 @@ html.mobile-init .file-browser-panel {
     height: 12px;
   }
 
-  /* Hide header settings gear and lifecycle log on mobile - settings moved to toolbar */
+  /* Hide header settings gear and lifecycle log on mobile - settings moved to toolbar.
+     Also hide the attachment-history button: the header is kept minimal on phones and
+     the drawer is a desktop-oriented panel. */
   .btn-icon-header.btn-settings,
-  .btn-icon-header.btn-lifecycle-log {
+  .btn-icon-header.btn-lifecycle-log,
+  .btn-icon-header.btn-attachments-history {
     display: none !important;
   }
 
