@@ -2169,7 +2169,13 @@ class CodemanApp {
     // Mobile defaults ship cjkInputEnabled: false (native terminal input by
     // default on touch), but an explicit user enable is honored everywhere —
     // the App Settings toggle must not be a silent no-op on phones.
-    const showCjk = this._serverCjkOverride || (settings.cjkInputEnabled ?? defaults.cjkInputEnabled ?? false);
+    // The welcome/home screen (no active session) has nothing to type into.
+    // Force-hide the CJK textarea there — otherwise the `position: fixed`
+    // `.cjk-input-visible` rule floats it over the welcome overlay and blocks
+    // content. Re-synced on session enter/leave via hideWelcome()/showWelcome().
+    const cjkUserEnabled =
+      this._serverCjkOverride || (settings.cjkInputEnabled ?? defaults.cjkInputEnabled ?? false);
+    const showCjk = cjkUserEnabled && !!this.activeSessionId;
     cjkEl.classList.toggle('cjk-input-visible', !!showCjk);
     document.body.classList.toggle('cjk-input-visible', !!showCjk);
     cjkEl.style.display = showCjk ? 'block' : 'none';

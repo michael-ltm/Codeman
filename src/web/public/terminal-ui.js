@@ -943,6 +943,9 @@ Object.assign(CodemanApp.prototype, {
       this.loadTunnelStatus();
       this.loadHistorySessions();
     }
+    // Home screen has no input target — hide the CJK textarea (activeSessionId
+    // is null by the time we get here). Guarded: defined on the app object.
+    this._updateCjkInputState?.();
   },
 
   hideWelcome() {
@@ -956,6 +959,9 @@ Object.assign(CodemanApp.prototype, {
       clearTimeout(this._welcomeQrShrinkTimer);
       qrWrap.classList.remove('expanded');
     }
+    // Entering a session — restore CJK textarea if the user has it enabled
+    // (activeSessionId is already set by selectSession before this call).
+    this._updateCjkInputState?.();
   },
 
   /**

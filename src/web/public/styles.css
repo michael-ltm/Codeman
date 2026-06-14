@@ -8968,6 +8968,7 @@ kbd {
   display: block;
   min-height: 44px;
   max-height: 96px;
+  padding: 12px 10px;
   border: 1px solid rgba(80, 120, 190, 0.55);
   border-left: none;
   border-right: none;
