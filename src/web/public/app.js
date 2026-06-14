@@ -390,6 +390,9 @@ class CodemanApp {
     this.imagePopupZIndex = ZINDEX_IMAGE_POPUP_BASE;
     this.attachmentCards = new Map(); // Map<attachmentId, { element, sessionId, filePath }>
     this.attachmentCardStack = null;
+    this.attachmentHistoryCounts = new Map(); // Map<sessionId, count>
+    this.attachmentHistoryItems = [];
+    this.attachmentHistoryDrawerOpen = false;
 
     // File browser state (methods in panels-ui.js)
     this.fileBrowserData = null;
@@ -764,6 +767,7 @@ class CodemanApp {
       if (e.key === 'Escape') {
         this.closeAllPanels();
         this.closeHelp();
+        if (this.attachmentHistoryDrawerOpen) this.closeAttachmentHistory();
       }
 
       // Alt+1-9: switch to Codeman session by index
@@ -2222,6 +2226,7 @@ class CodemanApp {
     KeyboardHandler.init();
     // Clear tab alerts
     this.tabAlerts.clear();
+    this.attachmentHistoryCounts.clear();
     // Clear shown completions (used for duplicate notification prevention)
     if (this._shownCompletions) {
       this._shownCompletions.clear();
@@ -3225,6 +3230,10 @@ class CodemanApp {
     // Instant active-class toggle (no 100ms debounce), then schedule full render for badges/status
     this._updateActiveTabImmediate(sessionId);
     this.renderSessionTabs();
+    this.updateAttachmentHistoryBadge?.();
+    if (this.attachmentHistoryDrawerOpen) {
+      this.loadAttachmentHistory?.(sessionId);
+    }
     this._updateLocalEchoState();
 
     // Restore flushed offset AND text IMMEDIATELY so backspace/typing work during
@@ -3595,6 +3604,10 @@ class CodemanApp {
     this.projectInsights.delete(sessionId);
     this.pendingHooks.delete(sessionId);
     this.tabAlerts.delete(sessionId);
+    this.attachmentHistoryCounts.delete(sessionId);
+    if (this.attachmentHistoryDrawerOpen && this.activeSessionId === sessionId) {
+      this.closeAttachmentHistory?.();
+    }
     this.terminalLoadStates.delete(sessionId);
     this.clearCountdownTimers(sessionId);
     this.closeSessionLogViewerWindows(sessionId);
