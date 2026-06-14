@@ -1,5 +1,17 @@
 # aicodeman
 
+## 1.1.0
+
+### Minor Changes
+
+- **Plan Usage Limits chip (new).** A header chip now shows your live Claude plan usage — the 5-hour and weekly windows as a percentage — parsed from Claude Code's statusLine telemetry (CLI v2.1.80+). It's opt-in via **App Settings → Display → "Plan Usage Limits"** (default OFF). The toggle is **per-device**: turn it on at your desk without it appearing on your phone. Telemetry collection is decoupled from display, so one device's preference never affects another's, and the last-known value replays instantly on reconnect. Distinct from auto-resume (which reacts to the limit _message_) — this proactively shows the live %.
+
+  **Attachments.** New attachment history drawer to browse files referenced by a session (COD-39), plus document previews and thumbnails on attachment cards (COD-38). The header **Attachments button is now opt-in** (default OFF) via **App Settings → Display → "Attachments Button"**, per-device like the Response Viewer button.
+
+  **Settings & models.** Added Opus 4.6 options to the Claude Model picker. Removed the legacy Token Count / Show Cost header toggles and moved Plan Usage Limits to the top of the Display settings. Slimmed the Skin picker control to match its row.
+
+  **Mobile & header polish.** Restored the response-viewer (eye) button on phones; kept the phone header minimal (settings gear + lifecycle log stay in the toolbar). Added two regression guards so header controls can't silently leak onto the mobile header again — a CI-runnable static policy check plus a real-browser E2E test.
+
 ## 1.0.0
 
 ### Major Changes
