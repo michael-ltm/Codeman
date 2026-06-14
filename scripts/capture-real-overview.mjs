@@ -89,8 +89,13 @@ const main = async () => {
     [SKIN, PLAN_USAGE, FONT]
   );
 
-  console.log(`Loading ${BASE} ...`);
-  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  // At DSF>1, xterm's WebGL renderer draws glyphs at ~2x (see DSF comment above).
+  // The app honors a `?nowebgl` URL param that switches to xterm's DOM renderer,
+  // which respects devicePixelRatio correctly — so DSF=2 + nowebgl yields a crisp
+  // 2x (retina) capture at the TRUE font size. Auto-enable it whenever DSF>1.
+  const url = DSF > 1 ? `${BASE}${BASE.includes('?') ? '&' : '?'}nowebgl` : BASE;
+  console.log(`Loading ${url} (DSF=${DSF}) ...`);
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.app && window.app.terminal, { timeout: 20000 });
   await sleep(1500);
 

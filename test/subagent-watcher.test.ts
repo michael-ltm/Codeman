@@ -404,6 +404,77 @@ describe('SubagentWatcher', () => {
     });
   });
 
+  describe('Meta-sidecar discovery (2026-06 Claude Code format)', () => {
+    it('should discover a subagent from agent-{id}.meta.json when no .jsonl exists', async () => {
+      // New format: TUI Task subagents write only a meta sidecar (no per-agent .jsonl).
+      mockExistsSync.mockImplementation((p: string) => !String(p).endsWith('.jsonl'));
+      mockReaddirSync.mockImplementation((path: string) => {
+        if (path.includes('subagents')) return ['agent-meta1.meta.json'];
+        if (path.includes('session1')) return ['subagents'];
+        if (path.includes('project1')) return ['session1'];
+        return ['project1'];
+      });
+      mockStatSync.mockReturnValue({
+        isDirectory: () => true,
+        birthtime: new Date(),
+        mtime: new Date(),
+        size: 120,
+      });
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ agentType: 'general-purpose', description: 'Audit server.js', toolUseId: 'toolu_x' })
+      );
+
+      const discoveredHandler = vi.fn();
+      watcher.on('subagent:discovered', discoveredHandler);
+
+      watcher.start();
+      await flushAsyncScan();
+
+      expect(discoveredHandler).toHaveBeenCalled();
+      const info = discoveredHandler.mock.calls[0][0] as SubagentInfo;
+      expect(info.agentId).toBe('meta1');
+      expect(info.description).toBe('Audit server.js');
+      expect(info.status).toBe('active');
+      expect(watcher.getSubagents()).toHaveLength(1);
+    });
+
+    it('should prefer the real .jsonl transcript when one exists alongside the meta', async () => {
+      // Both sidecar and transcript present → defer to the richer .jsonl path.
+      mockExistsSync.mockReturnValue(true); // sibling agent-both.jsonl exists
+      mockReaddirSync.mockImplementation((path: string) => {
+        if (path.includes('subagents')) return ['agent-both.meta.json'];
+        if (path.includes('session1')) return ['subagents'];
+        if (path.includes('project1')) return ['session1'];
+        return ['project1'];
+      });
+      mockStatSync.mockReturnValue({
+        isDirectory: () => true,
+        birthtime: new Date(),
+        mtime: new Date(),
+        size: 100,
+      });
+      // Mirror the passing discovery tests: leave createReadStream unmocked so
+      // _resolveDescription fails gracefully (undefined) and discovery still fires.
+      mockReadFileSync.mockReturnValue('');
+      const mockRl = createMockRl();
+      mockCreateInterface.mockReturnValue(mockRl);
+
+      const discoveredHandler = vi.fn();
+      watcher.on('subagent:discovered', discoveredHandler);
+
+      watcher.start();
+      await flushAsyncScan();
+      mockRl.emit('close');
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(discoveredHandler).toHaveBeenCalled();
+      const info = discoveredHandler.mock.calls[0][0] as SubagentInfo;
+      expect(info.agentId).toBe('both');
+      // filePath points at the transcript, not the sidecar.
+      expect(info.filePath.endsWith('.jsonl')).toBe(true);
+    });
+  });
+
   describe('Status Lifecycle', () => {
     it('should start agents as active', async () => {
       const mockRl = createMockRl();

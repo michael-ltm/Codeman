@@ -30,7 +30,7 @@ import { watch, existsSync, FSWatcher } from 'node:fs';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
-import { join, basename } from 'node:path';
+import { join, basename, dirname } from 'node:path';
 import { execFile } from 'node:child_process';
 import { readFile, readdir, stat as statAsync } from 'node:fs/promises';
 import { PENDING_TOOL_CALL_TTL_MS, MAX_PENDING_TOOL_CALLS, MAX_TRACKED_AGENTS } from './config/map-limits.js';
@@ -1181,6 +1181,10 @@ export class SubagentWatcher extends EventEmitter {
       for (const file of files) {
         if (file.endsWith('.jsonl')) {
           await this.registerAgentFile(join(dir, file), projectHash, sessionId, true);
+        } else if (file.endsWith('.meta.json')) {
+          // Claude Code (2026-06) writes a `agent-{id}.meta.json` sidecar for TUI
+          // Task subagents and no longer always writes a per-agent `.jsonl` here.
+          await this.registerAgentMeta(join(dir, file), projectHash, sessionId, true);
         }
       }
     } catch {
@@ -1190,12 +1194,22 @@ export class SubagentWatcher extends EventEmitter {
     // Single directory watcher handles both new files and file content changes
     try {
       const watcher = watch(dir, (_eventType, filename) => {
-        if (!filename?.endsWith('.jsonl')) return;
-        const filePath = join(dir, filename);
+        const isJsonl = filename?.endsWith('.jsonl');
+        const isMeta = filename?.endsWith('.meta.json');
+        if (!isJsonl && !isMeta) return;
+        const filePath = join(dir, filename as string);
 
         // Debounce 100ms to batch rapid writes
         this.fileDeb.schedule(filePath, () => {
           if (!existsSync(filePath)) return;
+
+          if (isMeta) {
+            // Meta sidecar — discovery only (not a transcript; never tail it).
+            if (!this.fileAgentContext.has(filePath)) {
+              this.registerAgentMeta(filePath, projectHash, sessionId).catch(() => {});
+            }
+            return;
+          }
 
           if (this.fileAgentContext.has(filePath)) {
             // Known file — handle content change
@@ -1353,6 +1367,83 @@ export class SubagentWatcher extends EventEmitter {
         console.warn(`[SubagentWatcher] Failed to read initial content for ${agentId}:`, err);
       });
 
+    this.resetIdleTimer(agentId);
+  }
+
+  /**
+   * Register a subagent discovered via its `agent-{id}.meta.json` sidecar.
+   *
+   * As of the 2026-06 Claude Code format change, TUI Task subagents write a
+   * `agent-{id}.meta.json` (`{ agentType, description, toolUseId }`) into the
+   * session's `subagents/` dir and no longer reliably write a per-agent
+   * `agent-{id}.jsonl` transcript there. The legacy `.jsonl`-only discovery
+   * therefore saw nothing ("0 tracked"); this surfaces the agent from the
+   * sidecar so it is tracked again. If a real `.jsonl` transcript exists
+   * alongside (older agents / workflow agents), defer to registerAgentFile —
+   * it's richer (live tool-call activity).
+   *
+   * Limitation: a meta-only agent has no transcript to tail, so there is no
+   * live tool-call feed and no completion signal in the sidecar — status is
+   * left 'active' and ages out via the normal idle timer / stale cleanup.
+   */
+  private async registerAgentMeta(
+    metaPath: string,
+    projectHash: string,
+    sessionId: string,
+    isInitialScan: boolean = false
+  ): Promise<void> {
+    if (this.fileAgentContext.has(metaPath)) return;
+    const agentId = basename(metaPath).replace('agent-', '').replace('.meta.json', '');
+    if (this.agentInfo.has(agentId)) return;
+
+    // Prefer a real transcript if one was written alongside the sidecar.
+    const jsonlPath = join(dirname(metaPath), `agent-${agentId}.jsonl`);
+    if (existsSync(jsonlPath)) {
+      await this.registerAgentFile(jsonlPath, projectHash, sessionId, isInitialScan);
+      return;
+    }
+
+    let fileStat;
+    try {
+      fileStat = await statAsync(metaPath);
+    } catch {
+      return; // deleted between discovery and stat
+    }
+    if (isInitialScan && Date.now() - fileStat.mtime.getTime() > STARTUP_MAX_FILE_AGE_MS) {
+      return; // skip stale historical agents on startup
+    }
+
+    let description: string | undefined;
+    try {
+      const meta = JSON.parse(await readFile(metaPath, 'utf8')) as { agentType?: string; description?: string };
+      description = meta.description || meta.agentType;
+    } catch {
+      return; // unreadable / not yet fully written — a later watch event retries
+    }
+    if (this.isInternalAgent(description)) return;
+
+    const info: SubagentInfo = {
+      agentId,
+      sessionId,
+      projectHash,
+      filePath: metaPath,
+      startedAt: fileStat.birthtime.toISOString(),
+      lastActivityAt: fileStat.mtime.getTime(),
+      status: 'active',
+      toolCallCount: 0,
+      entryCount: 0,
+      fileSize: fileStat.size,
+      description,
+    };
+
+    if (this.agentInfo.size >= MAX_TRACKED_AGENTS) {
+      const oldestId = this.findOldestInactiveAgent();
+      if (oldestId) this.removeAgent(oldestId);
+    }
+
+    this.fileAgentContext.set(metaPath, { projectHash, sessionId });
+    this.agentInfo.set(agentId, info);
+    this.emit('subagent:discovered', info);
     this.resetIdleTimer(agentId);
   }
 
