@@ -1302,28 +1302,14 @@ class CodemanApp {
 
   /** Strip dangerous elements and attributes from HTML (XSS prevention) */
   _sanitizeHtml(html) {
-    const tpl = document.createElement('template');
-    tpl.innerHTML = html;
-    const frag = tpl.content;
-    for (const el of frag.querySelectorAll('script, iframe, object, embed, form, base, meta, link, style')) {
-      el.remove();
+    if (typeof window !== 'undefined' && typeof window.sanitizeMarkdownHtml === 'function') {
+      return window.sanitizeMarkdownHtml(html);
     }
-    for (const el of frag.querySelectorAll('*')) {
-      for (const attr of [...el.attributes]) {
-        const name = attr.name.toLowerCase();
-        if (name.startsWith('on')) {
-          el.removeAttribute(attr.name);
-        } else if (['href', 'src', 'action', 'xlink:href', 'formaction'].includes(name)) {
-          const val = attr.value.replace(/\s/g, '').toLowerCase();
-          if (val.startsWith('javascript:') || val.startsWith('vbscript:') || val.startsWith('data:text/html')) {
-            el.removeAttribute(attr.name);
-          }
-        }
-      }
-    }
-    const div = document.createElement('div');
-    div.appendChild(frag);
-    return div.innerHTML;
+    // Fail closed: DOMPurify unavailable — never return un-sanitized HTML.
+    return String(html == null ? '' : html)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   /**
