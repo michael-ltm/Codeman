@@ -141,20 +141,26 @@ export function formatSessionStatusText(s: SessionStatus | null): string {
   if (s.inputTokens != null) tok.push(`in:${withCommas(s.inputTokens)}`);
   if (s.outputTokens != null) tok.push(`out:${withCommas(s.outputTokens)}`);
   if (tok.length) groups.push(tok.join(' '));
-  if (s.contextUsedPercentage != null) groups.push(`ctx:${Math.round(s.contextUsedPercentage)}%`);
+  if (s.contextUsedPercentage != null) groups.push(`ctx:${Math.round(clampPct(s.contextUsedPercentage))}%`);
   return groups.length ? groups.join('  ') : 'codeman';
 }
 
 /**
  * Stable signature for change-detection — the statusline fires on every
  * assistant message, so the route only rebroadcasts when this value changes.
+ *
+ * Keys on EXACTLY the values the header chip displays: the two windows' ROUNDED
+ * percentages (the chip renders `Math.round`) + their reset times. Deliberately
+ * excludes contextUsedPercentage / costUsd / modelDisplayName — none are shown
+ * in the chip, and contextUsedPercentage in particular drifts on every assistant
+ * message, which would defeat the dedup and fan out a redundant SSE broadcast +
+ * localStorage write + identical chip re-render each time.
  */
 export function telemetrySignature(t: StatusTelemetry): string {
   return JSON.stringify([
-    t.fiveHour?.usedPercentage ?? null,
+    t.fiveHour ? Math.round(t.fiveHour.usedPercentage) : null,
     t.fiveHour?.resetAt ?? null,
-    t.sevenDay?.usedPercentage ?? null,
+    t.sevenDay ? Math.round(t.sevenDay.usedPercentage) : null,
     t.sevenDay?.resetAt ?? null,
-    t.contextUsedPercentage ?? null,
   ]);
 }

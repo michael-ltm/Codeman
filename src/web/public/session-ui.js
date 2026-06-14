@@ -370,8 +370,12 @@ Object.assign(CodemanApp.prototype, {
             ...(hasEnvOverrides ? { envOverrides } : {}),
             ...(effort ? { effort } : {}),
             ...(modelOverride !== undefined ? { modelOverride } : {}),
-            // Plan-usage statusLine exporter (App Settings → Display). Always
-            // sent so toggling the setting off removes our exporter on next create.
+            // Plan-usage statusLine exporter (App Settings → Display). The server
+            // ADDS our exporter on create when true; when false it intentionally
+            // leaves any existing exporter in place (a per-repo settings.local.json
+            // is shared by sibling sessions, so create-with-false must not yank it
+            // — see the comment in session-routes create). Disabling the setting
+            // removes it via the App Settings toggle path (system-routes), not here.
             statusLineTelemetry: globalSettings.showPlanUsageLimits === true,
           })
         }).then(r => r.json())

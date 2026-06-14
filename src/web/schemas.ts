@@ -195,12 +195,20 @@ export const ResizeSchema = z.object({
  * subset Codeman displays; unknown keys (session_id, transcript_path, cwd, …)
  * are stripped by z.object. Auth-exempt like /api/hook-event.
  */
+// NOTE: every modeled field is `.nullish()` (not `.optional()`) on purpose.
+// Claude's statusline blob is officially shipped but undocumented in exact
+// shape, and `z.optional()` REJECTS an explicit `null` (accepts only
+// `undefined`) — a single stray `null` (e.g. `cost:{total_cost_usd:null}`)
+// would 400 the ENTIRE POST before the deliberately-tolerant parser
+// (usage-telemetry.ts, which only acts on `typeof === 'number'/'string'`) ever
+// runs, silently killing the chip's data feed. `.nullish()` keeps the schema
+// gate as forgiving as the parser it guards.
 const RateLimitWindowSchema = z
   .object({
-    used_percentage: z.number().optional(),
-    resets_at: z.number().optional(),
+    used_percentage: z.number().nullish(),
+    resets_at: z.number().nullish(),
   })
-  .optional();
+  .nullish();
 
 export const StatusTelemetrySchema = z.object({
   sessionId: z.string().min(1).max(100),
@@ -211,18 +219,18 @@ export const StatusTelemetrySchema = z.object({
           five_hour: RateLimitWindowSchema,
           seven_day: RateLimitWindowSchema,
         })
-        .optional(),
+        .nullish(),
       context_window: z
         .object({
-          used_percentage: z.number().optional(),
-          total_input_tokens: z.number().optional(),
-          total_output_tokens: z.number().optional(),
+          used_percentage: z.number().nullish(),
+          total_input_tokens: z.number().nullish(),
+          total_output_tokens: z.number().nullish(),
         })
-        .optional(),
-      cost: z.object({ total_cost_usd: z.number().optional() }).optional(),
-      model: z.object({ display_name: z.string().max(100).optional() }).optional(),
+        .nullish(),
+      cost: z.object({ total_cost_usd: z.number().nullish() }).nullish(),
+      model: z.object({ display_name: z.string().max(100).nullish() }).nullish(),
     })
-    .optional(),
+    .nullish(),
 });
 
 // ========== Case Routes ==========

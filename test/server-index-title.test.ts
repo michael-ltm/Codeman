@@ -21,11 +21,11 @@
  * Port: N/A (no server start)
  */
 
-import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { readFileSync, mkdtempSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hostname as osHostname } from 'node:os';
+import { hostname as osHostname, tmpdir } from 'node:os';
 import { WebServer } from '../src/web/server.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -40,6 +40,21 @@ async function render(host?: string): Promise<string> {
 }
 
 describe('WebServer index.html <title> templating (#82)', () => {
+  // renderIndexHtml reads the ambient settings.json (for the gesture bundle and
+  // the header-toggle marker-class strips, e.g. showPlanUsageLimits /
+  // showMultiMonitorButton). Point it at an empty data dir so this test is
+  // deterministic regardless of the developer's real settings — otherwise an
+  // enabled toggle would strip a marker class and break the byte-identical
+  // assertion below. getDataDir() reads CODEMAN_DATA_DIR fresh per call.
+  const _prevDataDir = process.env.CODEMAN_DATA_DIR;
+  beforeAll(() => {
+    process.env.CODEMAN_DATA_DIR = mkdtempSync(join(tmpdir(), 'codeman-title-test-'));
+  });
+  afterAll(() => {
+    if (_prevDataDir === undefined) delete process.env.CODEMAN_DATA_DIR;
+    else process.env.CODEMAN_DATA_DIR = _prevDataDir;
+  });
+
   it('substitutes the bare <title>Codeman</title> with codeman:<host>', async () => {
     const html = await render('laptop');
     expect(html).toContain('<title>codeman:laptop</title>');

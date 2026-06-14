@@ -1351,7 +1351,8 @@ Object.assign(CodemanApp.prototype, {
   async saveAppSettings() {
     // Gesture overlay is injected at page render (server-side), so a change to it
     // only takes effect on reload — remember the prior value to decide below.
-    const _prevGestureEnabled = (this.loadAppSettingsFromStorage().gestureControlEnabled ?? false) === true;
+    const _prev = this.loadAppSettingsFromStorage();
+    const _prevGestureEnabled = (_prev.gestureControlEnabled ?? false) === true;
     const settings = {
       defaultClaudeMdPath: document.getElementById('appSettingsClaudeMdPath').value.trim(),
       defaultWorkingDir: document.getElementById('appSettingsDefaultDir').value.trim(),
@@ -1393,6 +1394,16 @@ Object.assign(CodemanApp.prototype, {
         niceValue: parseInt(document.getElementById('appSettingsNiceValue').value) || 10,
       },
     };
+
+    // The "Token Count" / "Show Cost ($)" header toggles were removed from the
+    // UI, but their features still read settings.showTokenCount / settings.showCost
+    // (applyHeaderVisibilitySettings, the header cost render). saveAppSettings
+    // rebuilds `settings` fresh from the DOM (a full replacement, not a merge), so
+    // without this these keys would be DROPPED on every save and fall back to their
+    // defaults — silently re-enabling the token chip for anyone who'd turned it off,
+    // with no UI left to turn it back off. Preserve the prior stored preference.
+    if (_prev.showTokenCount !== undefined) settings.showTokenCount = _prev.showTokenCount;
+    if (_prev.showCost !== undefined) settings.showCost = _prev.showCost;
 
     // Save to localStorage
     this.saveAppSettingsToStorage(settings);

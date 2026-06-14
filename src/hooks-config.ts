@@ -32,6 +32,30 @@ import type { HookEventType } from './types.js';
 import { HOOK_TIMEOUT_MS } from './config/auth-config.js';
 
 /**
+ * Serializes read-modify-write access to a `settings.local.json` path. Every
+ * writer in this module (hooks, env, model, statusLine) shares this map, so
+ * concurrent updates to the SAME file — e.g. session-create writing hooks/model
+ * while an App-Settings toggle injects the statusLine into the same repo — can't
+ * lose each other's changes through interleaved read-then-write. Per-path chains
+ * are independent; the map self-prunes when a path's chain goes idle.
+ */
+const settingsWriteLocks = new Map<string, Promise<unknown>>();
+function withSettingsLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
+  const prev = settingsWriteLocks.get(path) ?? Promise.resolve();
+  const run = prev.then(fn, fn); // run after the prior writer, regardless of its outcome
+  // Tail never rejects, so a failed write doesn't poison subsequent writers.
+  const tail = run.then(
+    () => {},
+    () => {}
+  );
+  settingsWriteLocks.set(path, tail);
+  void tail.then(() => {
+    if (settingsWriteLocks.get(path) === tail) settingsWriteLocks.delete(path);
+  });
+  return run;
+}
+
+/**
  * Generates the hooks section for .claude/settings.local.json
  *
  * The hook commands read stdin JSON from Claude Code (contains tool_name,
@@ -103,29 +127,31 @@ export async function stripCaseEnvKeys(casePath: string, keysToRemove: readonly 
   if (keysToRemove.length === 0) return;
 
   const settingsPath = join(casePath, '.claude', 'settings.local.json');
-  if (!existsSync(settingsPath)) return;
+  await withSettingsLock(settingsPath, async () => {
+    if (!existsSync(settingsPath)) return;
 
-  let existing: Record<string, unknown>;
-  try {
-    existing = JSON.parse(await readFile(settingsPath, 'utf-8'));
-  } catch {
-    return; // Malformed — don't rewrite it
-  }
-
-  const env = existing.env as Record<string, string> | undefined;
-  if (!env) return;
-
-  let changed = false;
-  for (const key of keysToRemove) {
-    if (key in env) {
-      delete env[key];
-      changed = true;
+    let existing: Record<string, unknown>;
+    try {
+      existing = JSON.parse(await readFile(settingsPath, 'utf-8'));
+    } catch {
+      return; // Malformed — don't rewrite it
     }
-  }
-  if (!changed) return;
 
-  existing.env = env;
-  await writeFile(settingsPath, JSON.stringify(existing, null, 2) + '\n');
+    const env = existing.env as Record<string, string> | undefined;
+    if (!env) return;
+
+    let changed = false;
+    for (const key of keysToRemove) {
+      if (key in env) {
+        delete env[key];
+        changed = true;
+      }
+    }
+    if (!changed) return;
+
+    existing.env = env;
+    await writeFile(settingsPath, JSON.stringify(existing, null, 2) + '\n');
+  });
 }
 
 /**
@@ -134,30 +160,31 @@ export async function stripCaseEnvKeys(casePath: string, keysToRemove: readonly 
  */
 export async function updateCaseEnvVars(casePath: string, envVars: Record<string, string>): Promise<void> {
   const claudeDir = join(casePath, '.claude');
-  if (!existsSync(claudeDir)) {
-    await mkdir(claudeDir, { recursive: true });
-  }
-
   const settingsPath = join(claudeDir, 'settings.local.json');
-  let existing: Record<string, unknown> = {};
-
-  try {
-    existing = JSON.parse(await readFile(settingsPath, 'utf-8'));
-  } catch {
-    existing = {};
-  }
-
-  const currentEnv = (existing.env as Record<string, string>) || {};
-  for (const [key, value] of Object.entries(envVars)) {
-    if (value) {
-      currentEnv[key] = value;
-    } else {
-      delete currentEnv[key];
+  await withSettingsLock(settingsPath, async () => {
+    if (!existsSync(claudeDir)) {
+      await mkdir(claudeDir, { recursive: true });
     }
-  }
-  existing.env = currentEnv;
 
-  await writeFile(settingsPath, JSON.stringify(existing, null, 2) + '\n');
+    let existing: Record<string, unknown> = {};
+    try {
+      existing = JSON.parse(await readFile(settingsPath, 'utf-8'));
+    } catch {
+      existing = {};
+    }
+
+    const currentEnv = (existing.env as Record<string, string>) || {};
+    for (const [key, value] of Object.entries(envVars)) {
+      if (value) {
+        currentEnv[key] = value;
+      } else {
+        delete currentEnv[key];
+      }
+    }
+    existing.env = currentEnv;
+
+    await writeFile(settingsPath, JSON.stringify(existing, null, 2) + '\n');
+  });
 }
 
 /**
@@ -166,26 +193,27 @@ export async function updateCaseEnvVars(casePath: string, envVars: Record<string
  */
 export async function updateCaseModel(casePath: string, model: string | null): Promise<void> {
   const claudeDir = join(casePath, '.claude');
-  if (!existsSync(claudeDir)) {
-    await mkdir(claudeDir, { recursive: true });
-  }
-
   const settingsPath = join(claudeDir, 'settings.local.json');
-  let existing: Record<string, unknown> = {};
+  await withSettingsLock(settingsPath, async () => {
+    if (!existsSync(claudeDir)) {
+      await mkdir(claudeDir, { recursive: true });
+    }
 
-  try {
-    existing = JSON.parse(await readFile(settingsPath, 'utf-8'));
-  } catch {
-    existing = {};
-  }
+    let existing: Record<string, unknown> = {};
+    try {
+      existing = JSON.parse(await readFile(settingsPath, 'utf-8'));
+    } catch {
+      existing = {};
+    }
 
-  if (model) {
-    existing.model = model;
-  } else {
-    delete existing.model;
-  }
+    if (model) {
+      existing.model = model;
+    } else {
+      delete existing.model;
+    }
 
-  await writeFile(settingsPath, JSON.stringify(existing, null, 2) + '\n');
+    await writeFile(settingsPath, JSON.stringify(existing, null, 2) + '\n');
+  });
 }
 
 /**
@@ -194,24 +222,25 @@ export async function updateCaseModel(casePath: string, model: string | null): P
  */
 export async function writeHooksConfig(casePath: string): Promise<void> {
   const claudeDir = join(casePath, '.claude');
-  if (!existsSync(claudeDir)) {
-    await mkdir(claudeDir, { recursive: true });
-  }
-
   const settingsPath = join(claudeDir, 'settings.local.json');
-  let existing: Record<string, unknown> = {};
+  await withSettingsLock(settingsPath, async () => {
+    if (!existsSync(claudeDir)) {
+      await mkdir(claudeDir, { recursive: true });
+    }
 
-  try {
-    existing = JSON.parse(await readFile(settingsPath, 'utf-8'));
-  } catch {
-    // If file is malformed or doesn't exist, start fresh
-    existing = {};
-  }
+    let existing: Record<string, unknown> = {};
+    try {
+      existing = JSON.parse(await readFile(settingsPath, 'utf-8'));
+    } catch {
+      // If file is malformed or doesn't exist, start fresh
+      existing = {};
+    }
 
-  const hooksConfig = generateHooksConfig();
-  const merged = { ...existing, ...hooksConfig };
+    const hooksConfig = generateHooksConfig();
+    const merged = { ...existing, ...hooksConfig };
 
-  await writeFile(settingsPath, JSON.stringify(merged, null, 2) + '\n');
+    await writeFile(settingsPath, JSON.stringify(merged, null, 2) + '\n');
+  });
 }
 
 /** Unique marker identifying Codeman's own statusLine command (vs a user's). */
@@ -243,34 +272,38 @@ export function generateStatusLineCommand(): string {
  * Add or remove Codeman's plan-usage statusLine exporter in
  * `.claude/settings.local.json`. Only ever touches a statusLine that is OURS
  * (command targets `/api/status-telemetry`), so a user's hand-authored
- * statusLine is never removed. Callers gate on Claude mode + a Codeman-managed
- * case path. Merges, preserving all other keys (hooks, env, model).
+ * statusLine is never removed OR overwritten — on both the enable and disable
+ * paths we bail out when an existing statusLine isn't ours. Callers gate on
+ * Claude mode. Merges, preserving all other keys (hooks, env, model).
  */
 export async function applyStatusLineConfig(casePath: string, enabled: boolean): Promise<void> {
   const claudeDir = join(casePath, '.claude');
   const settingsPath = join(claudeDir, 'settings.local.json');
 
-  let existing: Record<string, unknown> = {};
-  if (existsSync(settingsPath)) {
-    try {
-      existing = JSON.parse(await readFile(settingsPath, 'utf-8'));
-    } catch {
-      return; // Malformed — don't rewrite it
+  await withSettingsLock(settingsPath, async () => {
+    let existing: Record<string, unknown> = {};
+    if (existsSync(settingsPath)) {
+      try {
+        existing = JSON.parse(await readFile(settingsPath, 'utf-8'));
+      } catch {
+        return; // Malformed — don't rewrite it
+      }
     }
-  }
 
-  const current = existing.statusLine as { command?: unknown } | undefined;
-  const isOurs = !!current && typeof current.command === 'string' && current.command.includes(STATUSLINE_MARKER);
+    const current = existing.statusLine as { command?: unknown } | undefined;
+    const isOurs = !!current && typeof current.command === 'string' && current.command.includes(STATUSLINE_MARKER);
 
-  if (enabled) {
-    const desired = generateStatusLineCommand();
-    if (isOurs && current?.command === desired) return; // already current — skip rewrite
-    if (!existsSync(claudeDir)) await mkdir(claudeDir, { recursive: true });
-    existing.statusLine = { type: 'command', command: desired }; // add, or update an out-of-date ours
-  } else {
-    if (!isOurs) return; // nothing of ours to remove (leave a user's own statusLine alone)
-    delete existing.statusLine;
-  }
+    if (enabled) {
+      const desired = generateStatusLineCommand();
+      if (isOurs && current?.command === desired) return; // already current — skip rewrite
+      if (current && !isOurs) return; // user has their OWN statusLine — never clobber it
+      if (!existsSync(claudeDir)) await mkdir(claudeDir, { recursive: true });
+      existing.statusLine = { type: 'command', command: desired }; // add, or update an out-of-date ours
+    } else {
+      if (!isOurs) return; // nothing of ours to remove (leave a user's own statusLine alone)
+      delete existing.statusLine;
+    }
 
-  await writeFile(settingsPath, JSON.stringify(existing, null, 2) + '\n');
+    await writeFile(settingsPath, JSON.stringify(existing, null, 2) + '\n');
+  });
 }

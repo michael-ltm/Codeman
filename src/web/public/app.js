@@ -1817,7 +1817,6 @@ class CodemanApp {
   // Claude plan usage limits (5-hour + weekly) — account-global, so the latest
   // sample from any session drives the shared header chip.
   _onSessionStatusTelemetry(data) {
-    this._latestPlanUsage = data;
     this.updatePlanUsageChip(data);
     // Persist last-known so the chip shows immediately on the next page load /
     // SSE reconnect, instead of staying blank until a session next renders.
@@ -1848,10 +1847,17 @@ class CodemanApp {
     if (five === null && seven === null) return;
     // Per-window color by how much is used up: green < 60%, yellow 60–84%, red ≥ 85%.
     const colorClass = (p) => (p >= 85 ? 'pu-red' : p >= 60 ? 'pu-yellow' : 'pu-green');
-    const seg = (label, p) =>
-      p === null
-        ? ''
-        : `<span class="pu-win"><span class="pu-label">${label}</span><span class="pu-val ${colorClass(p)}">${p}%</span></span>`;
+    // innerHTML here is XSS-safe ONLY because every interpolated value is a
+    // coerced finite number and the labels/classes are fixed literals. If a
+    // string field (e.g. modelDisplayName, which the route also broadcasts) is
+    // ever shown in this chip, render it via textContent — never interpolate an
+    // untrusted string into this template.
+    const seg = (label, p) => {
+      if (p === null) return '';
+      const n = Math.round(Number(p));
+      if (!Number.isFinite(n)) return '';
+      return `<span class="pu-win"><span class="pu-label">${label}</span><span class="pu-val ${colorClass(n)}">${n}%</span></span>`;
+    };
     chip.innerHTML = [seg('5h', five), seg('7d', seven)].filter(Boolean).join('<span class="pu-sep">·</span>');
     const resetStr = (w) => (w && w.resetAt ? new Date(w.resetAt).toLocaleString() : '—');
     chip.title =
