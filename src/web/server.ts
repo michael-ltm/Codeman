@@ -60,7 +60,7 @@ import {
   type SubagentToolResult,
 } from '../subagent-watcher.js';
 import { imageWatcher } from '../image-watcher.js';
-import { attachmentRegistry, registerExternalAttachment } from '../attachment-registry.js';
+import { attachmentRegistry, buildFileThumbnailRoute, registerExternalAttachment } from '../attachment-registry.js';
 import { TranscriptWatcher } from '../transcript-watcher.js';
 import { TeamWatcher } from '../team-watcher.js';
 import { TunnelManager } from '../tunnel-manager.js';
@@ -442,7 +442,12 @@ export class WebServer extends EventEmitter {
     this.imageWatcherHandlers = {
       detected: (event: ImageDetectedEvent) => this.broadcast(SseEvent.ImageDetected, event),
       attachmentDetected: (event: AttachmentDetectedEvent) =>
-        this.broadcast(SseEvent.AttachmentDetected, { ...event, source: event.source || 'detected' }),
+        this.broadcast(SseEvent.AttachmentDetected, {
+          ...event,
+          source: event.source || 'detected',
+          thumbnailUrl:
+            event.thumbnailUrl || buildFileThumbnailRoute(event.sessionId, event.relativePath || event.fileName),
+        }),
       error: (error: Error, sessionId?: string) => {
         console.error(`[ImageWatcher] Error${sessionId ? ` for ${sessionId}` : ''}:`, error.message);
       },

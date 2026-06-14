@@ -20,12 +20,8 @@ import { KeyedDebouncer } from './utils/index.js';
 // ========== Constants ==========
 
 /** Supported image file extensions (lowercase) */
-// PNG stays on the image-popup path: it's the dominant screenshot format and the
-// frontend only wires the `image:detected` popup today. The attachment-card UI
-// that would consume `attachment:detected` for images is out of scope for this
-// PR, so routing PNG to it would silently break the dropped-screenshot popup.
-const IMAGE_POPUP_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']);
-const ATTACHMENT_EXTENSIONS = new Set(['.pdf', '.docx', '.pptx']);
+const IMAGE_POPUP_EXTENSIONS = new Set(['.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']);
+const ATTACHMENT_EXTENSIONS = new Set(['.png', '.pdf', '.docx', '.pptx']);
 const DETECTED_FILE_EXTENSIONS = new Set([...IMAGE_POPUP_EXTENSIONS, ...ATTACHMENT_EXTENSIONS]);
 
 /** Time to wait for file writes to stabilize (ms) */

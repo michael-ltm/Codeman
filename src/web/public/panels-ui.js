@@ -2443,8 +2443,8 @@ Object.assign(CodemanApp.prototype, {
     this.saveAppSettingsToStorage(settings);
   },
 
-  async openFilePreview(filePath) {
-    if (!this.activeSessionId || !filePath) return;
+  async openFilePreview(filePath, sessionId = this.activeSessionId, attachmentId = null) {
+    if (!sessionId || !filePath) return;
 
     const overlay = this.$('filePreviewOverlay');
     const titleEl = this.$('filePreviewTitle');
@@ -2459,8 +2459,53 @@ Object.assign(CodemanApp.prototype, {
     bodyEl.innerHTML = '<div class="binary-message">Loading...</div>';
     footerEl.textContent = '';
 
+    const ext = (filePath.split('.').pop() || '').toLowerCase();
+
+    // Registered attachment: render straight from its by-id routes — images and
+    // PDFs inline, Office docs via the server-converted PDF preview, text fetched
+    // raw. (Workspace-path previews fall through to the file-content endpoint.)
+    if (attachmentId) {
+      const base = `/api/sessions/${sessionId}/attachments/${encodeURIComponent(attachmentId)}`;
+      const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
+      footerEl.textContent = ext.toUpperCase();
+      if (IMAGE_EXTS.has(ext)) {
+        bodyEl.innerHTML = `<img src="${escapeHtml(`${base}/raw`)}" alt="${escapeHtml(filePath)}">`;
+      } else if (ext === 'pdf') {
+        bodyEl.innerHTML = `<iframe src="${escapeHtml(`${base}/raw`)}" title="${escapeHtml(filePath)}"></iframe>`;
+      } else if (ext === 'docx' || ext === 'pptx') {
+        bodyEl.innerHTML = `<iframe src="${escapeHtml(`${base}/preview`)}" title="${escapeHtml(filePath)}"></iframe>`;
+      } else {
+        try {
+          const res = await fetch(`${base}/raw`);
+          if (!res.ok) throw new Error('Failed to load attachment');
+          const text = await res.text();
+          bodyEl.innerHTML = `<pre><code>${escapeHtml(text)}</code></pre>`;
+        } catch (err) {
+          bodyEl.innerHTML = `<div class="binary-message">Error: ${escapeHtml(err.message)}</div>`;
+        }
+      }
+      return;
+    }
+
+    // Workspace-path (auto-detected, unregistered) attachments: Office docs are
+    // converted to PDF server-side via the file-preview route; PDFs stream raw.
+    // Both render inline in an iframe. Without this, docx/pptx/pdf fall through
+    // to file-content below, which would dump the binary bytes as mojibake.
+    if (ext === 'docx' || ext === 'pptx') {
+      footerEl.textContent = ext.toUpperCase();
+      const previewSrc = `/api/sessions/${sessionId}/file-preview?path=${encodeURIComponent(filePath)}`;
+      bodyEl.innerHTML = `<iframe src="${escapeHtml(previewSrc)}" title="${escapeHtml(filePath)}"></iframe>`;
+      return;
+    }
+    if (ext === 'pdf') {
+      footerEl.textContent = 'PDF';
+      const rawSrc = `/api/sessions/${sessionId}/file-raw?path=${encodeURIComponent(filePath)}`;
+      bodyEl.innerHTML = `<iframe src="${escapeHtml(rawSrc)}" title="${escapeHtml(filePath)}"></iframe>`;
+      return;
+    }
+
     try {
-      const res = await fetch(`/api/sessions/${this.activeSessionId}/file-content?path=${encodeURIComponent(filePath)}&lines=500`);
+      const res = await fetch(`/api/sessions/${sessionId}/file-content?path=${encodeURIComponent(filePath)}&lines=500`);
       if (!res.ok) throw new Error('Failed to load file');
 
       const result = await res.json();
@@ -2496,6 +2541,183 @@ Object.assign(CodemanApp.prototype, {
       overlay.classList.remove('visible');
     }
     this.filePreviewContent = '';
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // Attachment Cards (detected documents/images)
+  // ═══════════════════════════════════════════════════════════════
+
+  // SSE `attachment:detected` consumer: surface a dismissible card for the file.
+  _onAttachmentDetected(data) {
+    console.log('[Attachment Detected]', data);
+    this.addAttachmentCard(data);
+  },
+
+  // Lazily create the floating stack the cards live in (appended to <body>).
+  ensureAttachmentCardStack() {
+    let stack = this.attachmentCardStack || document.getElementById('attachmentCardStack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'attachmentCardStack';
+      stack.className = 'attachment-card-stack';
+      document.body.appendChild(stack);
+    }
+    this.attachmentCardStack = stack;
+    return stack;
+  },
+
+  openAttachmentInNewTab(sessionId, filePath, attachmentId = null) {
+    const url = attachmentId
+      ? `/api/sessions/${sessionId}/attachments/${encodeURIComponent(attachmentId)}/raw`
+      : `/api/sessions/${sessionId}/file-raw?path=${encodeURIComponent(filePath)}`;
+    window.open(url, '_blank');
+  },
+
+  addAttachmentCard(attachmentEvent) {
+    const {
+      sessionId,
+      relativePath,
+      fileName,
+      timestamp,
+      size,
+      attachmentType,
+      extension,
+      attachmentId,
+      rawUrl,
+      previewUrl,
+      thumbnailUrl,
+    } = attachmentEvent;
+    const filePath = relativePath || fileName;
+    const cardId = attachmentId || `${sessionId}-${timestamp}-${fileName}`;
+
+    if (this.attachmentCards.has(cardId)) {
+      const existing = this.attachmentCards.get(cardId);
+      existing.element.focus?.();
+      return;
+    }
+
+    const MAX_ATTACHMENT_CARDS = 10;
+    if (this.attachmentCards.size >= MAX_ATTACHMENT_CARDS) {
+      const oldestId = this.attachmentCards.keys().next().value;
+      if (oldestId) this.closeAttachmentCard(oldestId);
+    }
+
+    const stack = this.ensureAttachmentCardStack();
+    const session = this.sessions.get(sessionId);
+    const sessionName = session?.name || sessionId.substring(0, 8);
+    const attachmentRawUrl =
+      rawUrl ||
+      (attachmentId
+        ? `/api/sessions/${sessionId}/attachments/${encodeURIComponent(attachmentId)}/raw`
+        : `/api/sessions/${sessionId}/file-raw?path=${encodeURIComponent(filePath)}`);
+    const attachmentPreviewUrl =
+      previewUrl ||
+      (attachmentId ? `/api/sessions/${sessionId}/attachments/${encodeURIComponent(attachmentId)}/preview` : null);
+    const attachmentThumbnailUrl =
+      thumbnailUrl ||
+      (attachmentId
+        ? `/api/sessions/${sessionId}/attachments/${encodeURIComponent(attachmentId)}/thumbnail`
+        : `/api/sessions/${sessionId}/file-thumbnail?path=${encodeURIComponent(filePath)}`);
+    const downloadUrl = attachmentId ? `${attachmentRawUrl}?download=true` : `${attachmentRawUrl}&download=true`;
+    const typeLabel = (extension || attachmentType || 'file').toUpperCase();
+
+    const card = document.createElement('article');
+    card.className = `attachment-card attachment-${escapeHtml(attachmentType || 'file')}`;
+    card.tabIndex = 0;
+    card.dataset.attachmentId = cardId;
+    card.dataset.previewUrl = attachmentPreviewUrl || '';
+    card.innerHTML = `
+      <div class="attachment-thumbnail">
+        ${attachmentThumbnailUrl ? `<img class="attachment-thumbnail-img" src="${escapeHtml(attachmentThumbnailUrl)}" alt="">` : ''}
+        <div class="attachment-thumbnail-fallback ${attachmentThumbnailUrl ? '' : 'visible'}">${escapeHtml(typeLabel)}</div>
+      </div>
+      <div class="attachment-card-main">
+        <div class="attachment-file-name" title="${escapeHtml(filePath)}">${escapeHtml(fileName)}</div>
+        <div class="attachment-file-meta">
+          <span>${escapeHtml(sessionName)}</span>
+          <span>${this.formatFileSize(size || 0)}</span>
+        </div>
+        <div class="attachment-actions">
+          <button type="button" class="attachment-preview-btn">Preview</button>
+          <a href="${escapeHtml(downloadUrl)}">Download</a>
+          <button type="button" class="attachment-open-btn">Open</button>
+        </div>
+      </div>
+      <button type="button" class="attachment-close-btn" title="Dismiss">&times;</button>
+    `;
+
+    const attachmentThumbnailImg = card.querySelector('.attachment-thumbnail-img');
+    if (attachmentThumbnailImg) {
+      attachmentThumbnailImg.onerror = () => {
+        attachmentThumbnailImg.remove();
+        card.querySelector('.attachment-thumbnail-fallback')?.classList.add('visible');
+      };
+    }
+
+    card.querySelector('.attachment-preview-btn')?.addEventListener('click', () => {
+      this.openFilePreview(filePath, sessionId, attachmentId || null);
+    });
+    card.querySelector('.attachment-open-btn')?.addEventListener('click', () => {
+      this.openAttachmentInNewTab(sessionId, filePath, attachmentId || null);
+    });
+    card.querySelector('.attachment-close-btn')?.addEventListener('click', () => {
+      this.closeAttachmentCard(cardId);
+    });
+
+    stack.prepend(card);
+    this.attachmentCards.set(cardId, { element: card, sessionId, filePath });
+    this._refreshAttachmentClearAll();
+  },
+
+  // Centralized show/hide for the stack's "Clear all" control. Both addAttachmentCard and
+  // closeAttachmentCard call this so the control appears on the 2nd card and hides at <=1.
+  _refreshAttachmentClearAll() {
+    const stack = this.attachmentCardStack;
+    if (!stack) return;
+    let control = stack.querySelector('.attachment-clear-all');
+    if (this.attachmentCards.size < 2) {
+      if (control) control.hidden = true;
+      return;
+    }
+    if (!control) {
+      control = document.createElement('button');
+      control.type = 'button';
+      control.className = 'attachment-clear-all';
+      control.textContent = 'Clear all';
+      control.title = 'Dismiss all attachment cards';
+      control.addEventListener('click', () => this.closeAllAttachmentCards());
+      stack.prepend(control);
+    }
+    control.hidden = false;
+  },
+
+  closeAttachmentCard(attachmentId) {
+    const cardData = this.attachmentCards.get(attachmentId);
+    if (!cardData) return;
+    cardData.element.remove();
+    this.attachmentCards.delete(attachmentId);
+    if (this.attachmentCardStack && this.attachmentCards.size === 0) {
+      this.attachmentCardStack.remove();
+      this.attachmentCardStack = null;
+    } else {
+      this._refreshAttachmentClearAll();
+    }
+  },
+
+  closeAllAttachmentCards() {
+    for (const attachmentId of [...this.attachmentCards.keys()]) {
+      this.closeAttachmentCard(attachmentId);
+    }
+  },
+
+  closeSessionAttachmentCards(sessionId) {
+    const toClose = [];
+    for (const [attachmentId, data] of this.attachmentCards) {
+      if (data.sessionId === sessionId) toClose.push(attachmentId);
+    }
+    for (const attachmentId of toClose) {
+      this.closeAttachmentCard(attachmentId);
+    }
   },
 
   copyFilePreviewContent() {

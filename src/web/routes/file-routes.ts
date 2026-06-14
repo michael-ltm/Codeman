@@ -12,14 +12,17 @@ import { fileStreamManager } from '../../file-stream-manager.js';
 import {
   AttachmentRegistrationError,
   attachmentRegistry,
+  isSupportedAttachmentExtension,
   registerExternalAttachment,
   type AttachmentRecord,
 } from '../../attachment-registry.js';
+import { generateFirstPageThumbnail } from '../../document-thumbnailer.js';
+import { getOfficePreviewPdfPath, getPreviewPdfDownloadName } from '../../document-preview-cache.js';
 import { isBlockedAttachmentPath, loadAttachmentGuardConfig } from '../../config/attachment-guard.js';
 import { findSessionOrFail, validateSessionFilePath } from '../route-helpers.js';
 import { isSensitivePath } from '../sensitive-path.js';
 import { SseEvent } from '../sse-events.js';
-import type { EventPort, SessionPort } from '../ports/index.js';
+import type { ConfigPort, EventPort, SessionPort } from '../ports/index.js';
 
 const MIME_TYPES: Record<string, string> = {
   png: 'image/png',
@@ -159,7 +162,80 @@ async function resolveServableAttachmentPath(
   return resolved ? pathToCheck : record.filePath;
 }
 
-export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort & EventPort): void {
+/**
+ * Convert a DOCX/PPTX to a single-PDF preview (LibreOffice when available) and
+ * stream it inline. PDF/PNG and text formats don't need conversion — callers
+ * redirect those to the raw route instead.
+ */
+async function serveConvertedPreview(
+  reply: FastifyReply,
+  resolvedPath: string,
+  fileName: string,
+  extension: string
+): Promise<void> {
+  if (extension !== 'docx' && extension !== 'pptx') {
+    reply
+      .code(400)
+      .send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Preview is not supported for this file type'));
+    return;
+  }
+
+  try {
+    const previewPath = await getOfficePreviewPdfPath(resolvedPath, extension);
+    if (!previewPath) {
+      reply.code(500).send(createErrorResponse(ApiErrorCode.OPERATION_FAILED, 'Document preview conversion failed'));
+      return;
+    }
+
+    const content = await fs.readFile(previewPath);
+    reply.header('Content-Type', 'application/pdf');
+    reply.header('Content-Disposition', `inline; filename="${getPreviewPdfDownloadName(fileName, extension)}"`);
+    reply.header('Cache-Control', 'no-cache');
+    reply.header('Content-Length', content.length);
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.send(content);
+  } catch (err) {
+    reply
+      .code(500)
+      .send(createErrorResponse(ApiErrorCode.OPERATION_FAILED, `Failed to generate preview: ${getErrorMessage(err)}`));
+  }
+}
+
+/** Generate and stream a first-page thumbnail (PNG) for a supported attachment. */
+async function serveThumbnail(reply: FastifyReply, resolvedPath: string, extension: string): Promise<void> {
+  const thumbnail = await generateFirstPageThumbnail(resolvedPath, extension);
+  if (!thumbnail) {
+    reply.code(204).send();
+    return;
+  }
+
+  reply.header('Content-Type', thumbnail.contentType);
+  reply.header('Cache-Control', 'no-cache');
+  reply.header('X-Content-Type-Options', 'nosniff');
+  reply.send(thumbnail.content);
+}
+
+/**
+ * Resolve a session's working dir from the live session, falling back to the
+ * persisted record so preview/thumbnail requests keep working for a session
+ * that has since detached. Sends a 404 and returns undefined when unknown.
+ */
+function getKnownSessionWorkingDir(
+  ctx: SessionPort & ConfigPort,
+  sessionId: string,
+  reply: FastifyReply
+): string | undefined {
+  const liveSession = ctx.sessions.get(sessionId);
+  if (liveSession) return liveSession.workingDir;
+
+  const stored = ctx.store.getSession(sessionId);
+  if (stored) return stored.workingDir;
+
+  reply.code(404).send(createErrorResponse(ApiErrorCode.NOT_FOUND, `Session ${sessionId} not found`));
+  return undefined;
+}
+
+export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort & EventPort & ConfigPort): void {
   // File tree listing
   app.get('/api/sessions/:id/files', async (req) => {
     const { id } = req.params as { id: string };
@@ -513,6 +589,97 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort & Even
         .code(500)
         .send(createErrorResponse(ApiErrorCode.OPERATION_FAILED, `Failed to read file: ${getErrorMessage(err)}`));
     }
+  });
+
+  // Serve a converted PDF preview of a registered attachment by id. Office docs
+  // convert server-side; PDF/PNG/text redirect to the raw route.
+  app.get('/api/sessions/:id/attachments/:attachmentId/preview', async (req, reply) => {
+    const { id, attachmentId } = req.params as { id: string; attachmentId: string };
+    const workingDir = getKnownSessionWorkingDir(ctx, id, reply);
+    if (!workingDir) return;
+    const record = getAttachmentOr404(reply, id, attachmentId);
+    if (!record) return;
+    const servePath = await resolveServableAttachmentPath(reply, record, workingDir);
+    if (!servePath) return;
+
+    // Only Office formats need server-side conversion; PDF/PNG and text formats
+    // (md/txt) preview directly from their raw bytes.
+    if (record.extension !== 'docx' && record.extension !== 'pptx') {
+      reply.redirect(`/api/sessions/${id}/attachments/${encodeURIComponent(attachmentId)}/raw`);
+      return;
+    }
+
+    await serveConvertedPreview(reply, servePath, record.fileName, record.extension);
+  });
+
+  // Serve a first-page thumbnail of a registered attachment by id.
+  app.get('/api/sessions/:id/attachments/:attachmentId/thumbnail', async (req, reply) => {
+    const { id, attachmentId } = req.params as { id: string; attachmentId: string };
+    const workingDir = getKnownSessionWorkingDir(ctx, id, reply);
+    if (!workingDir) return;
+    const record = getAttachmentOr404(reply, id, attachmentId);
+    if (!record) return;
+    const servePath = await resolveServableAttachmentPath(reply, record, workingDir);
+    if (!servePath) return;
+    await serveThumbnail(reply, servePath, record.extension);
+  });
+
+  // Serve converted document previews for a workspace-relative path. DOCX/PPTX
+  // are converted to PDF via LibreOffice; PDF/PNG/text preview through file-raw.
+  app.get('/api/sessions/:id/file-preview', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { path: filePath } = req.query as { path?: string };
+    const workingDir = getKnownSessionWorkingDir(ctx, id, reply);
+    if (!workingDir) return;
+
+    if (!filePath) {
+      reply.code(400).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Missing path parameter'));
+      return;
+    }
+
+    const validated = validateSessionFilePath(workingDir, filePath);
+    if (!validated) {
+      reply.code(404).send(createErrorResponse(ApiErrorCode.NOT_FOUND, 'File not found'));
+      return;
+    }
+    const { resolvedPath } = validated;
+    const ext = filePath.split('.').pop()?.toLowerCase() || '';
+
+    if (ext !== 'docx' && ext !== 'pptx') {
+      reply.redirect(`/api/sessions/${id}/file-raw?path=${encodeURIComponent(filePath)}`);
+      return;
+    }
+
+    await serveConvertedPreview(reply, resolvedPath, filePath, ext);
+  });
+
+  // Serve a first-page thumbnail for a workspace-relative path.
+  app.get('/api/sessions/:id/file-thumbnail', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { path: filePath } = req.query as { path?: string };
+    const workingDir = getKnownSessionWorkingDir(ctx, id, reply);
+    if (!workingDir) return;
+
+    if (!filePath) {
+      reply.code(400).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Missing path parameter'));
+      return;
+    }
+
+    const validated = validateSessionFilePath(workingDir, filePath);
+    if (!validated) {
+      reply.code(404).send(createErrorResponse(ApiErrorCode.NOT_FOUND, 'File not found'));
+      return;
+    }
+
+    const ext = filePath.split('.').pop()?.toLowerCase() || '';
+    if (!isSupportedAttachmentExtension(ext)) {
+      reply
+        .code(400)
+        .send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Thumbnail is not supported for this file type'));
+      return;
+    }
+
+    await serveThumbnail(reply, validated.resolvedPath, ext);
   });
 
   // Stream file content via tail -f (SSE endpoint)
