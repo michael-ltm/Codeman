@@ -23,6 +23,7 @@ import {
   type RawStatuslinePayload,
 } from '../../usage-telemetry.js';
 import { SessionStatusTelemetry } from '../sse-events.js';
+import { setLatestPlanUsage } from '../plan-usage-latest.js';
 import type { SessionPort, EventPort } from '../ports/index.js';
 
 export function registerStatusTelemetryRoutes(app: FastifyInstance, ctx: SessionPort & EventPort): void {
@@ -56,7 +57,9 @@ export function registerStatusTelemetryRoutes(app: FastifyInstance, ctx: Session
             if (!ctx.sessions.has(id)) lastSig.delete(id);
           }
         }
-        ctx.broadcast(SessionStatusTelemetry, { sessionId, ...telemetry });
+        const payload = { sessionId, ...telemetry };
+        setLatestPlanUsage(payload); // replayed in the SSE init snapshot for fresh loads
+        ctx.broadcast(SessionStatusTelemetry, payload);
       }
     }
 

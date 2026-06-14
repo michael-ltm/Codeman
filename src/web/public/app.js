@@ -2258,6 +2258,10 @@ class CodemanApp {
     this._serverCjkOverride = data.inputCjkForm || false;
     this._updateCjkInputState();
 
+    // Plan-usage chip: server's last-known telemetry, so it shows immediately on
+    // a fresh load / reconnect (authoritative; wins over the localStorage restore).
+    if (data.planUsage) this.updatePlanUsageChip(data.planUsage);
+
     // Update version displays (header and toolbar)
     if (data.version) {
       const versionEl = this.$('versionDisplay');

@@ -124,6 +124,7 @@ import {
 import type { EventLoopMonitorHandle } from '../utils/index.js';
 import { MAX_CONCURRENT_SESSIONS, MAX_SSE_CLIENTS } from '../config/map-limits.js';
 import { SseEvent } from './sse-events.js';
+import { getLatestPlanUsage } from './plan-usage-latest.js';
 import type { ScheduledRun } from './ports/index.js';
 import { registerAuthMiddleware, registerSecurityHeaders, registerHostGuard } from './middleware/auth.js';
 import { installRouteErrorHandler } from './route-error-handler.js';
@@ -1627,6 +1628,7 @@ export class WebServer extends EventEmitter {
       subagents: subagentWatcher.getRecentSubagents(15), // 15 min to avoid stale agents
       timestamp: now,
       inputCjkForm: process.env.INPUT_CJK_FORM?.toUpperCase() === 'ON',
+      planUsage: getLatestPlanUsage(), // last-known plan-usage telemetry, for the header chip on fresh load
     };
 
     this.cachedLightState = { data: result, timestamp: now };
