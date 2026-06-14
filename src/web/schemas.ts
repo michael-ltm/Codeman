@@ -212,7 +212,13 @@ export const StatusTelemetrySchema = z.object({
           seven_day: RateLimitWindowSchema,
         })
         .optional(),
-      context_window: z.object({ used_percentage: z.number().optional() }).optional(),
+      context_window: z
+        .object({
+          used_percentage: z.number().optional(),
+          total_input_tokens: z.number().optional(),
+          total_output_tokens: z.number().optional(),
+        })
+        .optional(),
       cost: z.object({ total_cost_usd: z.number().optional() }).optional(),
       model: z.object({ display_name: z.string().max(100).optional() }).optional(),
     })

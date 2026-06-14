@@ -8341,13 +8341,37 @@ kbd {
   white-space: nowrap;
   cursor: default;
 }
-.header-plan-usage--warn {
-  color: #e6b800;
-  border-color: rgba(230, 184, 0, 0.4);
+/* Readable two-window layout: dim uppercase label + bold, color-coded value. */
+.header-plan-usage .pu-win {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
 }
-.header-plan-usage--crit {
-  color: var(--danger, #ff5c5c);
-  border-color: rgba(255, 92, 92, 0.5);
+.header-plan-usage .pu-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--text);
+  opacity: 0.9;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.header-plan-usage .pu-val {
+  font-weight: 700;
+}
+.header-plan-usage .pu-sep {
+  margin: 0 7px;
+  color: var(--text-dim);
+  opacity: 0.45;
+}
+/* Green/yellow/red by how much of the window is used up. */
+.header-plan-usage .pu-green {
+  color: #3fb950;
+}
+.header-plan-usage .pu-yellow {
+  color: #d6a01a;
+}
+.header-plan-usage .pu-red {
+  color: #f85149;
 }
 /* Marker class must out-specify the display:inline-flex !important above. */
 .header-plan-usage.header-plan-usage--hidden {

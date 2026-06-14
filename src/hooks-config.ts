@@ -225,13 +225,17 @@ const STATUSLINE_MARKER = '/api/status-telemetry';
  * (present in every managed session via tmux setenv), so the config is static.
  */
 export function generateStatusLineCommand(): string {
+  // `curl -sk`: CODEMAN_API_URL is loopback HTTPS with a self-signed cert in the
+  // production setup; without -k curl returns 000 and the statusline shows
+  // nothing. -k is safe here (loopback only). Falls back to a brand string so the
+  // footer is never blank if Codeman is unreachable.
   return (
     `INPUT=$(cat 2>/dev/null || echo '{}'); ` +
     `printf '{"sessionId":"%s","data":%s}' "$CODEMAN_SESSION_ID" "$INPUT" | ` +
-    `curl -s -X POST "$CODEMAN_API_URL${STATUSLINE_MARKER}" ` +
+    `curl -sk -X POST "$CODEMAN_API_URL${STATUSLINE_MARKER}" ` +
     `-H 'Content-Type: application/json' ` +
     `-H "X-Codeman-Hook-Secret: $(cat "$CODEMAN_HOOK_SECRET_FILE" 2>/dev/null)" ` +
-    `--data @- 2>/dev/null || true`
+    `--data @- 2>/dev/null || echo codeman`
   );
 }
 
@@ -259,9 +263,10 @@ export async function applyStatusLineConfig(casePath: string, enabled: boolean):
   const isOurs = !!current && typeof current.command === 'string' && current.command.includes(STATUSLINE_MARKER);
 
   if (enabled) {
-    if (isOurs) return; // already configured — avoid rewriting on every session create
+    const desired = generateStatusLineCommand();
+    if (isOurs && current?.command === desired) return; // already current — skip rewrite
     if (!existsSync(claudeDir)) await mkdir(claudeDir, { recursive: true });
-    existing.statusLine = { type: 'command', command: generateStatusLineCommand() };
+    existing.statusLine = { type: 'command', command: desired }; // add, or update an out-of-date ours
   } else {
     if (!isOurs) return; // nothing of ours to remove (leave a user's own statusLine alone)
     delete existing.statusLine;

@@ -581,6 +581,7 @@ class CodemanApp {
     const _kbSettings = this.loadAppSettingsFromStorage();
     if (_kbSettings.extendedKeyboardBar) KeyboardAccessoryBar.setMode('extended');
     this.applyHeaderVisibilitySettings();
+    this.restorePlanUsageChip();
     this.applySkin();
     this.applyTabWrapSettings();
     this.applyMonitorVisibility();
@@ -1818,6 +1819,24 @@ class CodemanApp {
   _onSessionStatusTelemetry(data) {
     this._latestPlanUsage = data;
     this.updatePlanUsageChip(data);
+    // Persist last-known so the chip shows immediately on the next page load /
+    // SSE reconnect, instead of staying blank until a session next renders.
+    try {
+      localStorage.setItem('codeman:planUsage', JSON.stringify({ t: Date.now(), data }));
+    } catch {}
+  }
+
+  // Repopulate the chip from the last-known value on page load (account-global,
+  // slow-moving; ignored if older than 12h). Live events refresh it.
+  restorePlanUsageChip() {
+    try {
+      const raw = localStorage.getItem('codeman:planUsage');
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (saved?.data && Date.now() - (saved.t || 0) < 12 * 3600 * 1000) {
+        this.updatePlanUsageChip(saved.data);
+      }
+    } catch {}
   }
 
   updatePlanUsageChip(data) {
@@ -1827,19 +1846,18 @@ class CodemanApp {
     const five = pct(data.fiveHour);
     const seven = pct(data.sevenDay);
     if (five === null && seven === null) return;
-    const parts = [];
-    if (five !== null) parts.push(`5h ${five}%`);
-    if (seven !== null) parts.push(`7d ${seven}%`);
-    chip.textContent = parts.join(' · ');
-    // Color hint as a window nears exhaustion.
-    const max = Math.max(five ?? 0, seven ?? 0);
-    chip.classList.toggle('header-plan-usage--warn', max >= 80 && max < 95);
-    chip.classList.toggle('header-plan-usage--crit', max >= 95);
+    // Per-window color by how much is used up: green < 60%, yellow 60–84%, red ≥ 85%.
+    const colorClass = (p) => (p >= 85 ? 'pu-red' : p >= 60 ? 'pu-yellow' : 'pu-green');
+    const seg = (label, p) =>
+      p === null
+        ? ''
+        : `<span class="pu-win"><span class="pu-label">${label}</span><span class="pu-val ${colorClass(p)}">${p}%</span></span>`;
+    chip.innerHTML = [seg('5h', five), seg('7d', seven)].filter(Boolean).join('<span class="pu-sep">·</span>');
     const resetStr = (w) => (w && w.resetAt ? new Date(w.resetAt).toLocaleString() : '—');
     chip.title =
       `Claude plan usage\n` +
-      `5-hour: ${five ?? '—'}% (resets ${resetStr(data.fiveHour)})\n` +
-      `Weekly: ${seven ?? '—'}% (resets ${resetStr(data.sevenDay)})`;
+      `5-hour limit: ${five ?? '—'}% used (resets ${resetStr(data.fiveHour)})\n` +
+      `Weekly limit: ${seven ?? '—'}% used (resets ${resetStr(data.sevenDay)})`;
   }
 
   // Scheduled runs

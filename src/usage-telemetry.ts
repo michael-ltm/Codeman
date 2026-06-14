@@ -46,7 +46,7 @@ export interface RawStatuslinePayload {
     five_hour?: { used_percentage?: number; resets_at?: number };
     seven_day?: { used_percentage?: number; resets_at?: number };
   };
-  context_window?: { used_percentage?: number };
+  context_window?: { used_percentage?: number; total_input_tokens?: number; total_output_tokens?: number };
   cost?: { total_cost_usd?: number };
   model?: { display_name?: string };
 }
@@ -88,13 +88,61 @@ export function parseStatusTelemetry(data: RawStatuslinePayload | undefined): St
   return t;
 }
 
-/** Compact in-terminal footer text (statusLine stdout / print-through). */
-export function formatStatusLineText(t: StatusTelemetry | null): string {
-  if (!t) return 'codeman';
-  const parts: string[] = [];
-  if (t.fiveHour) parts.push(`5h ${Math.round(t.fiveHour.usedPercentage)}%`);
-  if (t.sevenDay) parts.push(`7d ${Math.round(t.sevenDay.usedPercentage)}%`);
-  return parts.length ? `⟳ ${parts.join(' · ')}` : 'codeman';
+/**
+ * Current-session status for the in-terminal statusline footer. This is the
+ * "status of the current session" the user sees in Claude's footer — distinct
+ * from the account-wide plan limits, which live ONLY in the Codeman header chip.
+ */
+export interface SessionStatus {
+  modelDisplayName?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  contextUsedPercentage?: number;
+}
+
+/** Group a non-negative integer with thousands separators: 562411 → "562,411". */
+function withCommas(n: number): string {
+  return Math.max(0, Math.round(n))
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/** Extract current-session status (footer) from the raw payload. */
+export function parseSessionStatus(data: RawStatuslinePayload | undefined): SessionStatus | null {
+  if (!data) return null;
+  const s: SessionStatus = {};
+  if (typeof data.model?.display_name === 'string' && data.model.display_name) {
+    s.modelDisplayName = data.model.display_name.slice(0, 60);
+  }
+  const cw = data.context_window;
+  if (typeof cw?.total_input_tokens === 'number' && Number.isFinite(cw.total_input_tokens)) {
+    s.inputTokens = Math.max(0, cw.total_input_tokens);
+  }
+  if (typeof cw?.total_output_tokens === 'number' && Number.isFinite(cw.total_output_tokens)) {
+    s.outputTokens = Math.max(0, cw.total_output_tokens);
+  }
+  if (typeof cw?.used_percentage === 'number') {
+    s.contextUsedPercentage = clampPct(cw.used_percentage);
+  }
+  return Object.keys(s).length ? s : null;
+}
+
+/**
+ * Format the in-terminal statusline footer: the CURRENT SESSION's status —
+ * `Opus 4.8 (1M context)  in:562,411 out:1,188  ctx:56%` — NOT the plan limits,
+ * which live in the Codeman header chip. Claude requires a statusLine command to
+ * emit the rate_limits JSON at all, so this is what that command prints back.
+ */
+export function formatSessionStatusText(s: SessionStatus | null): string {
+  if (!s) return 'codeman';
+  const groups: string[] = [];
+  if (s.modelDisplayName) groups.push(s.modelDisplayName);
+  const tok: string[] = [];
+  if (s.inputTokens != null) tok.push(`in:${withCommas(s.inputTokens)}`);
+  if (s.outputTokens != null) tok.push(`out:${withCommas(s.outputTokens)}`);
+  if (tok.length) groups.push(tok.join(' '));
+  if (s.contextUsedPercentage != null) groups.push(`ctx:${Math.round(s.contextUsedPercentage)}%`);
+  return groups.length ? groups.join('  ') : 'codeman';
 }
 
 /**

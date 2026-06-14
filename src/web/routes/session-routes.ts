@@ -298,10 +298,13 @@ export function registerSessionRoutes(
     }
 
     // Plan-usage statusLine exporter (App Settings → Display → "Plan Usage
-    // Limits"). Claude-only, and only inside Codeman-managed cases (never
-    // arbitrary user repos, which may carry a hand-authored statusLine). Adds or
-    // removes our exporter so toggling the setting off cleans up on next create.
-    if ((body.mode ?? 'claude') === 'claude' && workingDir.startsWith(CASES_DIR + '/')) {
+    // Limits"). Claude-only. Runs for ANY working dir — including linked cases /
+    // real repos, which is where most sessions actually run — mirroring
+    // updateCaseModel above (which likewise writes settings.local.json
+    // unconditionally). Safe against a user's own statusLine: applyStatusLineConfig
+    // only ever removes a statusLine that is OURS (marker-guarded), and adds/removes
+    // ours so toggling the setting off cleans up on the next create.
+    if ((body.mode ?? 'claude') === 'claude') {
       await applyStatusLineConfig(workingDir, body.statusLineTelemetry === true);
     }
 

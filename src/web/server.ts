@@ -1123,13 +1123,6 @@ export class WebServer extends EventEmitter {
     if (settings.showMultiMonitorButton === true) {
       html = html.replace(' btn-multimonitor--hidden', '');
     }
-    // Plan-usage chip: carries `header-plan-usage--hidden` by default (App
-    // Settings → Display → "Plan Usage Limits"); reveal by stripping the marker
-    // class when the user enabled it, so the chip paints in the right state on
-    // every normal reload (the client toggles the same class live on save).
-    if (settings.showPlanUsageLimits === true) {
-      html = html.replace(' header-plan-usage--hidden', '');
-    }
     // Detached single-session ("solo") window: inject the target session id so
     // the client can enter solo mode even if a (network-first) service worker
     // later serves a cached shell. The client primarily detects solo mode from

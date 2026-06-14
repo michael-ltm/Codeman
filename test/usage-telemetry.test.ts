@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseStatusTelemetry,
-  formatStatusLineText,
+  parseSessionStatus,
+  formatSessionStatusText,
   telemetrySignature,
   type RawStatuslinePayload,
 } from '../src/usage-telemetry.js';
@@ -13,7 +14,7 @@ const REAL: RawStatuslinePayload = {
     five_hour: { used_percentage: 15, resets_at: 1781409000 },
     seven_day: { used_percentage: 34, resets_at: 1781827200 },
   },
-  context_window: { used_percentage: 2 },
+  context_window: { used_percentage: 56, total_input_tokens: 562411, total_output_tokens: 1188 },
   cost: { total_cost_usd: 0.0415495 },
   model: { display_name: 'Opus 4.8 (1M context)' },
 };
@@ -24,7 +25,7 @@ describe('parseStatusTelemetry', () => {
     expect(t).not.toBeNull();
     expect(t!.fiveHour).toEqual({ usedPercentage: 15, resetAt: 1781409000 * 1000 });
     expect(t!.sevenDay).toEqual({ usedPercentage: 34, resetAt: 1781827200 * 1000 });
-    expect(t!.contextUsedPercentage).toBe(2);
+    expect(t!.contextUsedPercentage).toBe(56);
     expect(t!.costUsd).toBeCloseTo(0.0415495);
     expect(t!.modelDisplayName).toBe('Opus 4.8 (1M context)');
   });
@@ -69,13 +70,39 @@ describe('parseStatusTelemetry', () => {
   });
 });
 
-describe('formatStatusLineText', () => {
-  it('formats both windows compactly', () => {
-    expect(formatStatusLineText(parseStatusTelemetry(REAL))).toBe('⟳ 5h 15% · 7d 34%');
+describe('parseSessionStatus', () => {
+  it('extracts model, token totals, and context % for the footer', () => {
+    const s = parseSessionStatus(REAL);
+    expect(s).toEqual({
+      modelDisplayName: 'Opus 4.8 (1M context)',
+      inputTokens: 562411,
+      outputTokens: 1188,
+      contextUsedPercentage: 56,
+    });
+  });
+
+  it('returns null when none of the footer fields are present', () => {
+    expect(parseSessionStatus({})).toBeNull();
+    expect(parseSessionStatus(undefined)).toBeNull();
+    // rate_limits alone is not session status
+    expect(parseSessionStatus({ rate_limits: { five_hour: { used_percentage: 5, resets_at: 1 } } })).toBeNull();
+  });
+});
+
+describe('formatSessionStatusText', () => {
+  it('formats the footer with comma-grouped tokens', () => {
+    expect(formatSessionStatusText(parseSessionStatus(REAL))).toBe(
+      'Opus 4.8 (1M context)  in:562,411 out:1,188  ctx:56%'
+    );
+  });
+
+  it('omits groups that are missing', () => {
+    expect(formatSessionStatusText({ contextUsedPercentage: 12 })).toBe('ctx:12%');
+    expect(formatSessionStatusText({ modelDisplayName: 'Opus 4.8 (1M context)' })).toBe('Opus 4.8 (1M context)');
   });
 
   it('falls back to a brand string when there is no data', () => {
-    expect(formatStatusLineText(null)).toBe('codeman');
+    expect(formatSessionStatusText(null)).toBe('codeman');
   });
 });
 

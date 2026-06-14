@@ -17,7 +17,8 @@ import { StatusTelemetrySchema } from '../schemas.js';
 import { parseBody } from '../route-helpers.js';
 import {
   parseStatusTelemetry,
-  formatStatusLineText,
+  parseSessionStatus,
+  formatSessionStatusText,
   telemetrySignature,
   type RawStatuslinePayload,
 } from '../../usage-telemetry.js';
@@ -40,24 +41,28 @@ export function registerStatusTelemetryRoutes(app: FastifyInstance, ctx: Session
       return 'codeman';
     }
 
-    const telemetry = parseStatusTelemetry(data as RawStatuslinePayload | undefined);
-    if (!telemetry) {
-      // No plan-limit data yet (pre-first-response or non-subscriber auth).
-      return 'codeman';
-    }
+    const payload = data as RawStatuslinePayload | undefined;
 
-    const sig = telemetrySignature(telemetry);
-    if (lastSig.get(sessionId) !== sig) {
-      lastSig.set(sessionId, sig);
-      // Bound the map across long multi-session runs: prune dead sessions.
-      if (lastSig.size > 256) {
-        for (const id of [...lastSig.keys()]) {
-          if (!ctx.sessions.has(id)) lastSig.delete(id);
+    // Plan-usage limits (account-wide) → broadcast to the header chip, when
+    // present and changed (the statusline fires on every assistant message).
+    const telemetry = parseStatusTelemetry(payload);
+    if (telemetry) {
+      const sig = telemetrySignature(telemetry);
+      if (lastSig.get(sessionId) !== sig) {
+        lastSig.set(sessionId, sig);
+        // Bound the map across long multi-session runs: prune dead sessions.
+        if (lastSig.size > 256) {
+          for (const id of [...lastSig.keys()]) {
+            if (!ctx.sessions.has(id)) lastSig.delete(id);
+          }
         }
+        ctx.broadcast(SessionStatusTelemetry, { sessionId, ...telemetry });
       }
-      ctx.broadcast(SessionStatusTelemetry, { sessionId, ...telemetry });
     }
 
-    return formatStatusLineText(telemetry);
+    // In-terminal statusline footer → CURRENT SESSION status (model / tokens /
+    // context %), NOT the plan limits. Available from the first render, even
+    // before rate_limits appears.
+    return formatSessionStatusText(parseSessionStatus(payload));
   });
 }
