@@ -243,6 +243,43 @@ export async function writeHooksConfig(casePath: string): Promise<void> {
   });
 }
 
+/**
+ * Self-heal a case's hooks block so the COD-91 unconditional hook-secret gate keeps
+ * accepting its hook events.
+ *
+ * `writeHooksConfig` only runs when a case is first CREATED. Cases created before the
+ * X-Codeman-Hook-Secret header was added (COD-54, 2026-06-10) keep hook curls in their
+ * settings.local.json that POST to /api/hook-event WITHOUT the secret — which, once the
+ * gate requires it unconditionally (COD-91), silently 401 on a password-protected
+ * install. This refreshes the hooks block so those stale curls regain the header.
+ *
+ * Deliberately surgical: regenerates ONLY when settings.local.json already contains
+ * Codeman's own hook curls (they target `/api/hook-event`) that lack the secret header.
+ * No-op when the file/hooks are absent (we never impose hooks on a user who removed
+ * them), when the hooks aren't ours, or when the secret is already present — so it never
+ * clobbers a user's customizations and is cheap enough to call on every Claude spawn.
+ */
+export async function refreshStaleHookSecret(casePath: string): Promise<void> {
+  const settingsPath = join(casePath, '.claude', 'settings.local.json');
+  if (!existsSync(settingsPath)) return;
+  await withSettingsLock(settingsPath, async () => {
+    let existing: Record<string, unknown>;
+    try {
+      existing = JSON.parse(await readFile(settingsPath, 'utf-8'));
+    } catch {
+      return; // malformed — leave it untouched (case-create owns the happy path)
+    }
+    const hooksJson = JSON.stringify(existing.hooks ?? null);
+    const isOurs = hooksJson.includes('/api/hook-event');
+    // The generated curl carries this header literal (see generateHooksConfig); its
+    // absence on our own hooks means they predate COD-54 and need regenerating.
+    const hasSecret = hooksJson.includes('X-Codeman-Hook-Secret');
+    if (!isOurs || hasSecret) return;
+    const merged = { ...existing, ...generateHooksConfig() };
+    await writeFile(settingsPath, JSON.stringify(merged, null, 2) + '\n');
+  });
+}
+
 /** Unique marker identifying Codeman's own statusLine command (vs a user's). */
 const STATUSLINE_MARKER = '/api/status-telemetry';
 
