@@ -13,6 +13,8 @@
  * - `SubagentEvents` — typed event map
  *
  * Watched patterns: `~/.claude/projects/{project}/{session}/subagents/agent-{id}.jsonl`
+ *   plus the `agent-{id}.meta.json` discovery sidecar (2026-06 format) and nested
+ *   workflow agents under `subagents/workflows/{workflowId}/agent-{id}.jsonl`.
  * Parses JSONL entries: user/assistant messages, tool_use/tool_result blocks, progress events.
  * Tracks per-agent: status, token counts, model, description, tool call count, liveness (PID).
  *
@@ -1150,6 +1152,10 @@ export class SubagentWatcher extends EventEmitter {
               try {
                 await statAsync(subagentDir);
                 await this.watchSubagentDir(subagentDir, project, session);
+                // Workflow agents nest one level deeper under subagents/workflows/{wf}/
+                // (each holds its own agent-{id}.jsonl/.meta.json) — the flat watcher
+                // above never sees them, so discover and watch each workflow dir too.
+                await this.watchWorkflowDirs(subagentDir, project, session);
               } catch {
                 // subagent dir doesn't exist - skip
               }
@@ -1179,9 +1185,9 @@ export class SubagentWatcher extends EventEmitter {
     try {
       const files = await readdir(dir);
       for (const file of files) {
-        if (file.endsWith('.jsonl')) {
+        if (file.startsWith('agent-') && file.endsWith('.jsonl')) {
           await this.registerAgentFile(join(dir, file), projectHash, sessionId, true);
-        } else if (file.endsWith('.meta.json')) {
+        } else if (file.startsWith('agent-') && file.endsWith('.meta.json')) {
           // Claude Code (2026-06) writes a `agent-{id}.meta.json` sidecar for TUI
           // Task subagents and no longer always writes a per-agent `.jsonl` here.
           await this.registerAgentMeta(join(dir, file), projectHash, sessionId, true);
@@ -1194,8 +1200,11 @@ export class SubagentWatcher extends EventEmitter {
     // Single directory watcher handles both new files and file content changes
     try {
       const watcher = watch(dir, (_eventType, filename) => {
-        const isJsonl = filename?.endsWith('.jsonl');
-        const isMeta = filename?.endsWith('.meta.json');
+        // Only agent-{id}.jsonl / agent-{id}.meta.json — ignore siblings like a
+        // workflow dir's journal.jsonl (would otherwise register a bogus "journal" agent).
+        const isAgent = !!filename && filename.startsWith('agent-');
+        const isJsonl = isAgent && filename.endsWith('.jsonl');
+        const isMeta = isAgent && filename.endsWith('.meta.json');
         if (!isJsonl && !isMeta) return;
         const filePath = join(dir, filename as string);
 
@@ -1236,6 +1245,40 @@ export class SubagentWatcher extends EventEmitter {
       this.dirWatchers.set(dir, watcher);
     } catch {
       // Watch failed
+    }
+  }
+
+  /**
+   * Discover and watch nested workflow agent directories.
+   *
+   * The Workflow tool runs its subagents under
+   * `subagents/workflows/{workflowId}/agent-{id}.jsonl` (+ `.meta.json`, alongside
+   * a `journal.jsonl` of orchestration events). The flat `subagents/` watcher does
+   * not recurse, and Node's `fs.watch({ recursive: true })` is unsupported on Linux,
+   * so each workflow dir gets its own watcher here. Idempotent via `knownSubagentDirs`
+   * and re-driven by the periodic scan, so newly created workflows are picked up
+   * within one scan cycle (~5s) — the same latency as a new session's `subagents/`.
+   */
+  private async watchWorkflowDirs(subagentDir: string, projectHash: string, sessionId: string): Promise<void> {
+    const workflowsRoot = join(subagentDir, 'workflows');
+    let names: string[];
+    try {
+      names = await readdir(workflowsRoot);
+    } catch {
+      return; // no workflows for this session
+    }
+    for (const name of names) {
+      // Workflow ids are directories (e.g. `wf_<id>`); skip any stray files that
+      // share the root (a workflow id never carries a file extension).
+      if (name.endsWith('.jsonl') || name.endsWith('.json')) continue;
+      const wfDir = join(workflowsRoot, name);
+      try {
+        const st = await statAsync(wfDir);
+        if (!st.isDirectory()) continue;
+        await this.watchSubagentDir(wfDir, projectHash, sessionId);
+      } catch {
+        // workflow dir vanished mid-scan — skip
+      }
     }
   }
 
@@ -1305,6 +1348,16 @@ export class SubagentWatcher extends EventEmitter {
 
     const agentId = basename(filePath).replace('agent-', '').replace('.jsonl', '');
 
+    // Meta→transcript upgrade: the agent may already be registered from its
+    // `.meta.json` sidecar (discovery-only — nothing to tail). Now that the real
+    // `.jsonl` transcript has appeared, re-point to it and drop the stale sidecar
+    // context, emitting `updated` below rather than a duplicate `discovered`.
+    const priorEntry = this.agentInfo.get(agentId);
+    const isMetaUpgrade = !!priorEntry && priorEntry.filePath.endsWith('.meta.json');
+    if (isMetaUpgrade && priorEntry) {
+      this.fileAgentContext.delete(priorEntry.filePath);
+    }
+
     // Initial info - handle race condition where file may be deleted between discovery and stat
     let fileStat;
     try {
@@ -1355,7 +1408,7 @@ export class SubagentWatcher extends EventEmitter {
     // Track file context for directory watcher change handling
     this.fileAgentContext.set(filePath, { projectHash, sessionId });
     this.agentInfo.set(agentId, info);
-    this.emit('subagent:discovered', info);
+    this.emit(isMetaUpgrade ? 'subagent:updated' : 'subagent:discovered', info);
 
     // Read existing content
     this.tailFile(filePath, agentId, sessionId, 0)
@@ -1373,18 +1426,21 @@ export class SubagentWatcher extends EventEmitter {
   /**
    * Register a subagent discovered via its `agent-{id}.meta.json` sidecar.
    *
-   * As of the 2026-06 Claude Code format change, TUI Task subagents write a
-   * `agent-{id}.meta.json` (`{ agentType, description, toolUseId }`) into the
-   * session's `subagents/` dir and no longer reliably write a per-agent
-   * `agent-{id}.jsonl` transcript there. The legacy `.jsonl`-only discovery
-   * therefore saw nothing ("0 tracked"); this surfaces the agent from the
-   * sidecar so it is tracked again. If a real `.jsonl` transcript exists
-   * alongside (older agents / workflow agents), defer to registerAgentFile —
-   * it's richer (live tool-call activity).
+   * As of the 2026-06 Claude Code format change, TUI Task subagents write the
+   * `agent-{id}.meta.json` sidecar (`{ agentType, description, toolUseId }`) at
+   * spawn, a beat *before* the `agent-{id}.jsonl` transcript appears in the same
+   * dir. The legacy `.jsonl`-only discovery saw nothing in that window ("0
+   * tracked"); this surfaces the agent from the sidecar immediately. The
+   * transcript then lands within ~1s at the standard path and grows incrementally
+   * (empirically verified — it is fully tailable, NOT a dead end), so:
+   *   - if the `.jsonl` already exists, defer to registerAgentFile (richer); else
+   *   - register meta-only now, and when the sibling `.jsonl` arrives the dir
+   *     watcher routes it to registerAgentFile, which detects the prior meta-only
+   *     entry and *upgrades* it in place (re-points filePath, starts tailing).
    *
-   * Limitation: a meta-only agent has no transcript to tail, so there is no
-   * live tool-call feed and no completion signal in the sidecar — status is
-   * left 'active' and ages out via the normal idle timer / stale cleanup.
+   * Edge case: if the transcript never materializes (e.g. an agent that dies
+   * before writing one), the agent stays meta-only — no live feed, status ages
+   * out via the idle timer / stale cleanup.
    */
   private async registerAgentMeta(
     metaPath: string,
