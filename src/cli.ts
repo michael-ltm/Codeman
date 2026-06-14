@@ -631,11 +631,16 @@ program
   .alias('check-deps')
   .description('Check Codeman tool dependencies (Node, Claude CLI, tmux, LibreOffice, MS Office)')
   .option('--json', 'Output structured JSON instead of a table')
-  .option('--category <name>', 'Only check one category (core|office|documents|media|other)')
+  .option('--category <name>', 'Only check one category (core|office|other)')
   .action(async (options) => {
     const { createRealHost, checkAll } = await import('./utils/dependency-checker.js');
     const { renderTable, renderJson, computeExitCode } = await import('./utils/dependency-report.js');
-    const { DEPENDENCY_REGISTRY } = await import('./config/dependency-registry.js');
+    const { DEPENDENCY_REGISTRY, TOOL_CATEGORIES } = await import('./config/dependency-registry.js');
+
+    if (options.category && !(TOOL_CATEGORIES as readonly string[]).includes(options.category)) {
+      console.error(`Unknown category "${options.category}". Valid categories: ${TOOL_CATEGORIES.join(', ')}`);
+      process.exit(2);
+    }
 
     const host = createRealHost();
     const registry = options.category

@@ -22,8 +22,8 @@ describe('DEPENDENCY_REGISTRY', () => {
       .map((t) => t.id)
       .sort();
     expect(required).toEqual(['node', 'tmux']);
-    // all four agent CLIs are optional (Codeman runs any of them)
-    const agentClis = ['claude', 'opencode', 'codex', 'gemini'];
+    // all agent CLIs are optional (Codeman runs any of them)
+    const agentClis = ['claude', 'opencode', 'codex'];
     expect(DEPENDENCY_REGISTRY.filter((t) => agentClis.includes(t.id)).every((t) => t.required === false)).toBe(true);
     const office = DEPENDENCY_REGISTRY.filter((t) => t.category === 'office');
     expect(office.every((t) => t.required === false)).toBe(true);

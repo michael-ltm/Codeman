@@ -8,7 +8,11 @@
  */
 
 export type ProbeEnvironment = 'linux' | 'darwin' | 'win32' | 'wsl';
-export type ToolCategory = 'core' | 'office' | 'other';
+
+/** The valid `--category` filter values; single source of truth for the type, the CLI
+ *  help text, and CLI input validation. */
+export const TOOL_CATEGORIES = ['core', 'office', 'other'] as const;
+export type ToolCategory = (typeof TOOL_CATEGORIES)[number];
 
 /** Resolve a binary on the PATH and read its version. */
 export interface PathResolver {
@@ -49,7 +53,7 @@ export const DEPENDENCY_REGISTRY: ToolDependency[] = [
     label: 'Node.js',
     category: 'core',
     required: true,
-    minVersion: '18.0.0',
+    minVersion: '22.0.0',
     resolvers: [{ match: ALL, resolver: { kind: 'path', bins: ['node'], versionArg: '--version' } }],
     installHint: { linux: 'https://nodejs.org', darwin: 'brew install node', wsl: 'https://nodejs.org' },
   },
@@ -87,14 +91,6 @@ export const DEPENDENCY_REGISTRY: ToolDependency[] = [
     resolvers: [{ match: ALL, resolver: { kind: 'path', bins: ['codex'], versionArg: '--version' } }],
   },
   {
-    id: 'gemini',
-    label: 'Gemini CLI',
-    category: 'core',
-    required: false,
-    usedBy: ['Gemini sessions'],
-    resolvers: [{ match: ALL, resolver: { kind: 'path', bins: ['gemini'], versionArg: '--version' } }],
-  },
-  {
     id: 'libreoffice',
     label: 'LibreOffice',
     category: 'office',
@@ -107,6 +103,22 @@ export const DEPENDENCY_REGISTRY: ToolDependency[] = [
       },
     ],
     installHint: { linux: 'sudo apt install libreoffice', darwin: 'brew install --cask libreoffice' },
+  },
+  {
+    id: 'pdftoppm',
+    label: 'pdftoppm',
+    category: 'office',
+    required: false,
+    usedBy: ['document preview', 'PDF/Office first-page thumbnails'],
+    // poppler's pdftoppm prints its version to stderr; presence is what matters here.
+    resolvers: [
+      { match: ['linux', 'darwin', 'wsl'], resolver: { kind: 'path', bins: ['pdftoppm'], versionArg: '-v' } },
+    ],
+    installHint: {
+      linux: 'sudo apt install poppler-utils',
+      darwin: 'brew install poppler',
+      wsl: 'sudo apt install poppler-utils',
+    },
   },
   {
     id: 'msoffice',
