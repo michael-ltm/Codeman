@@ -307,6 +307,7 @@ Object.assign(CodemanApp.prototype, {
     document.getElementById('appSettingsShowSystemStats').checked = settings.showSystemStats ?? defaults.showSystemStats ?? true;
     document.getElementById('appSettingsShowLifecycleLog').checked = settings.showLifecycleLog ?? defaults.showLifecycleLog ?? true;
     document.getElementById('appSettingsShowResponseViewer').checked = settings.showResponseViewer ?? defaults.showResponseViewer ?? false;
+    document.getElementById('appSettingsShowAttachmentsButton').checked = settings.showAttachmentsButton ?? defaults.showAttachmentsButton ?? false;
     document.getElementById('appSettingsSkin').value = settings.skin ?? defaults.skin ?? 'daylight-blue';
     document.getElementById('appSettingsShowMonitor').checked = settings.showMonitor ?? defaults.showMonitor ?? false;
     document.getElementById('appSettingsShowProjectInsights').checked = settings.showProjectInsights ?? defaults.showProjectInsights ?? false;
@@ -1362,6 +1363,7 @@ Object.assign(CodemanApp.prototype, {
       showSystemStats: document.getElementById('appSettingsShowSystemStats').checked,
       showLifecycleLog: document.getElementById('appSettingsShowLifecycleLog').checked,
       showResponseViewer: document.getElementById('appSettingsShowResponseViewer').checked,
+      showAttachmentsButton: document.getElementById('appSettingsShowAttachmentsButton').checked,
       showMonitor: document.getElementById('appSettingsShowMonitor').checked,
       showProjectInsights: document.getElementById('appSettingsShowProjectInsights').checked,
       showFileBrowser: document.getElementById('appSettingsShowFileBrowser').checked,
@@ -1528,6 +1530,7 @@ Object.assign(CodemanApp.prototype, {
       extendedKeyboardBar: _ekb,
       skin: _skin,
       showPlanUsageLimits: _pul,
+      showAttachmentsButton: _ahb,
       ...serverSettings
     } = settings;
     try {
@@ -1681,6 +1684,7 @@ Object.assign(CodemanApp.prototype, {
         showSubagents: false,
         showMultiMonitorButton: false,
         showPlanUsageLimits: false,
+        showAttachmentsButton: false,
         // Input
         gestureControlEnabled: false,
         // Feature toggles - keep tracking on even on mobile
@@ -1781,6 +1785,14 @@ Object.assign(CodemanApp.prototype, {
     const responseViewerBtn = document.querySelector('.btn-response-viewer-header');
     if (responseViewerBtn) {
       responseViewerBtn.classList.toggle('btn-response-viewer-header--hidden', !showResponseViewer);
+    }
+
+    // Hide the attachments (history) button when disabled. Opt-in, default OFF —
+    // marker class, base is display:inline-flex !important.
+    const showAttachmentsButton = settings.showAttachmentsButton ?? defaults.showAttachmentsButton ?? false;
+    const attachmentsBtn = document.getElementById('attachmentsHistoryBtn');
+    if (attachmentsBtn) {
+      attachmentsBtn.classList.toggle('btn-attachments-history--hidden', !showAttachmentsButton);
     }
 
     // Multi-monitor button — hidden by default (App Settings → Display → "Header
@@ -2018,7 +2030,7 @@ Object.assign(CodemanApp.prototype, {
           'showLifecycleLog', 'showResponseViewer',
           'showMonitor', 'showProjectInsights', 'showFileBrowser', 'showSubagents',
           'subagentActiveTabOnly', 'tabTwoRows', 'localEchoEnabled', 'cjkInputEnabled', 'extendedKeyboardBar',
-          'skin', 'showPlanUsageLimits',
+          'skin', 'showPlanUsageLimits', 'showAttachmentsButton',
         ]);
         // The plan-usage chip is a PER-DEVICE display setting (default OFF): desktop
         // can show it while mobile stays hidden. It used to sync, so an older

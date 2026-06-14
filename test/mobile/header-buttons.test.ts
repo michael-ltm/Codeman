@@ -1,10 +1,12 @@
-// Port 3208 - Mobile header button visibility (real-browser E2E).
+// Port 3208 - Header button visibility (real-browser E2E).
 //
 // Companion to the CI static guard (test/mobile-header-buttons-policy.test.ts).
-// This one renders the real app in an emulated phone vs. a desktop-class tablet
-// and asserts the ACTUAL computed visibility — catching CSS/layout regressions
-// the static parser can't see. Regression history: the COD-39 attachments button
-// (and earlier the plan-usage chip) shipped visible on the cramped phone header.
+// Renders the real app and asserts ACTUAL computed visibility, catching CSS/layout
+// regressions the static parser can't see. Two behaviours are covered:
+//   1. The minimal phone header hides the settings gear + lifecycle log.
+//   2. The attachments button (COD-39) is OPT-IN — default-hidden everywhere, shown
+//      only when App Settings → Display → "Attachments Button" is enabled. It first
+//      shipped always-visible (mobile, then desktop), which is the regression here.
 import { describe, it, beforeAll, afterAll } from 'vitest';
 import type { WebServer } from '../../src/web/server.js';
 import { createTestServer, stopTestServer } from './helpers/server.js';
@@ -16,15 +18,7 @@ import { PORTS, WAIT } from './helpers/constants.js';
 const PORT = PORTS.HEADER_BUTTONS;
 const BASE_URL = `http://localhost:${PORT}`;
 
-// Secondary header buttons that must NOT clutter the minimal phone header
-// (settings/case controls live in the mobile toolbar instead).
-const PHONE_HIDDEN = [
-  '#attachmentsHistoryBtn', // COD-39 — the reported regression
-  '.btn-icon-header.btn-settings',
-  '.btn-icon-header.btn-lifecycle-log',
-];
-
-describe('Mobile header button visibility (E2E)', () => {
+describe('Header button visibility (E2E)', () => {
   let server: WebServer;
 
   beforeAll(async () => {
@@ -36,18 +30,28 @@ describe('Mobile header button visibility (E2E)', () => {
     await stopTestServer(server);
   });
 
-  it('hides secondary header buttons on a standard phone (iPhone 14 Pro, 393px)', async () => {
+  it('hides the settings gear + lifecycle log on a standard phone (iPhone 14 Pro)', async () => {
     const { page } = await createDevicePage(REPRESENTATIVE_DEVICES['standard-phone'], BASE_URL);
     await page.waitForTimeout(WAIT.PAGE_SETTLE);
-    for (const sel of PHONE_HIDDEN) {
-      await assertHidden(page, sel);
-    }
+    await assertHidden(page, '.btn-icon-header.btn-settings');
+    await assertHidden(page, '.btn-icon-header.btn-lifecycle-log');
   });
 
-  it('keeps the attachments button visible on a desktop-class tablet', async () => {
-    // assertHidden also passes when an element is ABSENT, so prove the selector is
-    // real by asserting the same button IS visible where the phone rule doesn't apply.
+  it('keeps the opt-in attachments button HIDDEN by default on a desktop-class viewport', async () => {
     const { page } = await createDevicePage(REPRESENTATIVE_DEVICES['large-tablet'], BASE_URL);
+    await page.waitForTimeout(WAIT.PAGE_SETTLE);
+    await assertHidden(page, '#attachmentsHistoryBtn');
+  });
+
+  it('shows the attachments button once the setting is enabled', async () => {
+    const { page } = await createDevicePage(REPRESENTATIVE_DEVICES['large-tablet'], BASE_URL);
+    // Desktop-class devices use the non-mobile settings blob.
+    await page.evaluate(() => {
+      const cur = JSON.parse(localStorage.getItem('codeman-app-settings') || '{}');
+      cur.showAttachmentsButton = true;
+      localStorage.setItem('codeman-app-settings', JSON.stringify(cur));
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(WAIT.PAGE_SETTLE);
     await assertVisible(page, '#attachmentsHistoryBtn');
   });

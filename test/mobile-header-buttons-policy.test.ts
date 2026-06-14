@@ -35,8 +35,10 @@ const PHONE_WIDTH = 393;
 const MOBILE_VISIBLE_ALLOWLIST = new Set<string>([]);
 
 // Buttons we expect to STAY hidden on phones — an explicit lock so a future edit
-// that removes a hide rule fails loudly (not silently).
-const KNOWN_PHONE_HIDDEN = ['btn-attachments-history', 'btn-settings', 'btn-lifecycle-log'];
+// that removes a hide rule fails loudly (not silently). The attachments button is
+// NOT here: it's opt-in (default-hidden everywhere via its own --hidden marker), so
+// it's excluded from the default-visible enumeration rather than mobile-hidden.
+const KNOWN_PHONE_HIDDEN = ['btn-settings', 'btn-lifecycle-log'];
 
 function attrOf(openTag: string, name: string): string {
   const m = openTag.match(new RegExp(`${name}="([^"]*)"`));

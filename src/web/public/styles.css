@@ -8328,6 +8328,16 @@ kbd {
   display: none !important;
 }
 
+/* "Attachments" header button — opt-in (App Settings → Display), hidden by
+   default. Same pattern as the response viewer: a base inline-flex !important so
+   an inline style can't override it, and a more-specific marker rule to hide. */
+.btn-attachments-history {
+  display: inline-flex !important;
+}
+.btn-attachments-history.btn-attachments-history--hidden {
+  display: none !important;
+}
+
 /* Plan-usage chip (App Settings → Display → "Plan Usage Limits"). Shows the
    live 5-hour + weekly plan limits parsed from the Claude statusline. Hidden by
    default via the marker class below; the server strips it at render when the
