@@ -312,6 +312,13 @@ body {
   max-height: 120px;
 }
 
+.session-tabs.tabs-auto-wrap {
+  flex-wrap: wrap;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: 96px;
+}
+
 .session-tabs::-webkit-scrollbar {
   width: 4px;
   height: 0;

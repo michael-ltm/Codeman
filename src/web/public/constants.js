@@ -114,9 +114,24 @@ function evaluateWebGLLongTaskTrip(recent, entries, now, config = WEBGL_FALLBACK
 // Expose for tests. `const` declarations at the top of a non-module script
 // are global lexical bindings but not `window` properties, so explicit
 // assignment is the test-visible API surface.
+// Desktop tab-overflow policy: auto-wrap the session tabs to a second row when
+// they overflow one row (and the user hasn't pinned the manual two-row layout).
+function shouldAutoWrapTabs(input) {
+  if (!input || input.deviceType !== 'desktop') return false;
+  if (input.manualTwoRows) return false;
+  if ((input.tabCount || 0) < 2) return false;
+
+  const scrollWidth = Number(input.scrollWidth) || 0;
+  const clientWidth = Number(input.clientWidth) || 0;
+  return scrollWidth > clientWidth + 1;
+}
+
 if (typeof window !== 'undefined') {
   window.WEBGL_FALLBACK = WEBGL_FALLBACK;
   window.evaluateWebGLLongTaskTrip = evaluateWebGLLongTaskTrip;
+  window.CodemanTabOverflow = {
+    shouldAutoWrapTabs,
+  };
 }
 
 // Scheduler API — prioritize terminal writes over background UI updates.

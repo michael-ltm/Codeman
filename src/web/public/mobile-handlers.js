@@ -139,6 +139,9 @@ const MobileDetection = {
       resizeTimeout = setTimeout(() => {
         this.updateBodyClass();
         this.updateAppHeight();
+        // Tab auto-wrap is width-driven, so it must re-evaluate on resize — the only
+        // other trigger is a tab content render. No-op on mobile/tablet (method bails).
+        if (typeof app !== 'undefined') app.updateTabOverflowMode?.();
       }, 100);
     };
     window.addEventListener('resize', this._resizeHandler);

@@ -2665,6 +2665,39 @@ class CodemanApp {
       this._fullRenderSessionTabs();
     }
 
+    this.updateTabOverflowMode();
+  }
+
+  // Auto-wrap desktop session tabs to a second row when they overflow one row,
+  // unless the user has pinned the manual two-row layout (tabTwoRows). Mobile/
+  // tablet keep horizontal scroll. Policy lives in constants.js for unit testing.
+  updateTabOverflowMode() {
+    const container = this.$('sessionTabs');
+    if (!container) return;
+
+    const deviceType = MobileDetection.getDeviceType();
+    const settings = this.loadAppSettingsFromStorage();
+    const defaults = this.getDefaultSettings();
+    const manualTwoRows = deviceType === 'desktop' ? (settings.tabTwoRows ?? defaults.tabTwoRows ?? false) : false;
+
+    if (manualTwoRows || deviceType !== 'desktop') {
+      container.classList.remove('tabs-auto-wrap');
+      return;
+    }
+
+    // Measure the natural one-row overflow, then enable wrapping only if needed.
+    container.classList.remove('tabs-auto-wrap');
+    const shouldWrap = window.CodemanTabOverflow?.shouldAutoWrapTabs
+      ? window.CodemanTabOverflow.shouldAutoWrapTabs({
+          deviceType,
+          manualTwoRows,
+          tabCount: this.sessions.size,
+          scrollWidth: container.scrollWidth,
+          clientWidth: container.clientWidth,
+        })
+      : container.scrollWidth > container.clientWidth + 1;
+
+    container.classList.toggle('tabs-auto-wrap', shouldWrap);
   }
 
   _fullRenderSessionTabs() {
@@ -2741,6 +2774,12 @@ class CodemanApp {
 
     // Update connection lines after tabs change (positions may have shifted)
     this.updateConnectionLines();
+
+    // Re-evaluate desktop auto-wrap for every full rebuild, including the incremental
+    // branch's early `_fullRenderSessionTabs(); return;` paths and the manual two-rows
+    // toggle (applyTabWrapSettings calls this) which would otherwise leave a stale
+    // tabs-auto-wrap class until the next content render.
+    this.updateTabOverflowMode();
   }
 
   // Set up arrow key navigation for session tabs (accessibility)
