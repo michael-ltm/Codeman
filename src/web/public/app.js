@@ -2765,6 +2765,12 @@ class CodemanApp {
 
     // Update connection lines after tabs change (positions may have shifted)
     this.updateConnectionLines();
+
+    // Re-evaluate desktop auto-wrap for every full rebuild, including the incremental
+    // branch's early `_fullRenderSessionTabs(); return;` paths and the manual two-rows
+    // toggle (applyTabWrapSettings calls this) which would otherwise leave a stale
+    // tabs-auto-wrap class until the next content render.
+    this.updateTabOverflowMode();
   }
 
   // Set up arrow key navigation for session tabs (accessibility)

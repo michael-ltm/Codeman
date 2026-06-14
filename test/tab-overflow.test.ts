@@ -48,4 +48,18 @@ describe('tab overflow layout policy', () => {
       })
     ).toBe(false);
   });
+
+  it('respects the boundary conditions (exact fit, +1 tolerance, and tabCount < 2)', () => {
+    const helper = loadTabOverflowHelper();
+    const base = { deviceType: 'desktop' as const, manualTwoRows: false, tabCount: 6 };
+
+    // Exact fit: no overflow, no wrap.
+    expect(helper.shouldAutoWrapTabs({ ...base, scrollWidth: 800, clientWidth: 800 })).toBe(false);
+    // Within the +1 sub-pixel tolerance: still no wrap.
+    expect(helper.shouldAutoWrapTabs({ ...base, scrollWidth: 801, clientWidth: 800 })).toBe(false);
+    // 2px over: wrap.
+    expect(helper.shouldAutoWrapTabs({ ...base, scrollWidth: 802, clientWidth: 800 })).toBe(true);
+    // A single overflowing tab must not wrap (need at least 2 to form a second row).
+    expect(helper.shouldAutoWrapTabs({ ...base, tabCount: 1, scrollWidth: 1400, clientWidth: 760 })).toBe(false);
+  });
 });
