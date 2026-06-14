@@ -528,15 +528,24 @@ describe('Virtual Keyboard', () => {
       expect(afterEnter.sentInputs).toEqual(['hello', '\r']);
     });
 
-    it('shows the CJK textarea on mobile only for server override', async () => {
+    it('shows the CJK textarea on mobile for server override only inside an active session', async () => {
       const state = await page.evaluate(() => {
-        app._serverCjkOverride = true;
-        app._updateCjkInputState();
-
         const input = document.getElementById('cjkInput');
         if (!(input instanceof HTMLElement)) return null;
+
+        // Welcome screen (no active session): even with the server override on, the
+        // fixed-position textarea must stay hidden so it doesn't float over the overlay.
+        app.activeSessionId = null;
+        app._serverCjkOverride = true;
+        app._updateCjkInputState();
+        const onWelcomeDisplay = getComputedStyle(input).display;
+
+        // Entering a session reveals it.
+        app.activeSessionId = 'cjk-server-override-test';
+        app._updateCjkInputState();
         const cs = getComputedStyle(input);
         return {
+          onWelcomeDisplay,
           display: cs.display,
           position: cs.position,
           bottom: cs.bottom,
@@ -546,6 +555,7 @@ describe('Virtual Keyboard', () => {
       });
 
       expect(state).not.toBeNull();
+      expect(state?.onWelcomeDisplay).toBe('none');
       expect(state?.display).not.toBe('none');
       expect(state?.position).toBe('fixed');
       expect(Number(state?.zIndex)).toBeGreaterThan(50);
