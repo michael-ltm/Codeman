@@ -369,6 +369,12 @@ export const SettingsUpdateSchema = z
     showSubagents: z.boolean().optional(),
     showMultiMonitorButton: z.boolean().optional(),
     showPlanUsageLimits: z.boolean().optional(),
+    // Action field (NOT persisted as a setting): when true, (re)injects the
+    // plan-usage statusLine exporter into active Claude sessions so live usage %
+    // starts flowing. Sent on ENABLE only — the chip's DISPLAY is per-device
+    // (client-side), but telemetry COLLECTION is server-side, so the per-device
+    // toggle signals it out-of-band here rather than via showPlanUsageLimits.
+    statusLineTelemetry: z.boolean().optional(),
     // Input
     gestureControlEnabled: z.boolean().optional(),
     // Claude CLI settings

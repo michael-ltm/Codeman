@@ -531,7 +531,10 @@ export function registerSystemRoutes(
       } catch {
         /* ignore */
       }
-      const merged = { ...existing, ...settings };
+      // statusLineTelemetry is an ACTION field (reconcile the plan-usage exporter),
+      // not a stored setting — strip it before persisting so settings.json stays clean.
+      const { statusLineTelemetry, ...settingsToStore } = settings;
+      const merged = { ...existing, ...settingsToStore };
       await fs.writeFile(SETTINGS_PATH, JSON.stringify(merged, null, 2));
 
       // Handle subagent tracking toggle dynamically
@@ -547,19 +550,20 @@ export function registerSystemRoutes(
         }
       });
 
-      // Plan-usage chip (App Settings → Display → "Plan Usage Limits"): reconcile
-      // the statusLine exporter across all ACTIVE Claude sessions' working dirs the
-      // moment the setting is toggled — server-side and authoritative, so it works
-      // immediately for every user/session without depending on any client's synced
-      // state or on creating a new session. Enable injects; disable removes (ours
-      // only, marker-guarded). Each dir handled once.
-      if ('showPlanUsageLimits' in settings) {
-        const enabled = settings.showPlanUsageLimits === true;
+      // Plan-usage chip: its DISPLAY is per-device (client-side, see settings-ui.js).
+      // Telemetry COLLECTION is server-side and enable-sticky — when a client turns
+      // the chip ON it sends statusLineTelemetry:true and we (re)inject our exporter
+      // into every ACTIVE Claude session's working dir so the live % starts flowing
+      // immediately (no new session needed). We deliberately never auto-REMOVE here:
+      // the exporter is benign/print-through and a per-repo settings.local.json is
+      // shared by sibling sessions, so one device's "off" must not yank the exporter
+      // another device's chip depends on. Each dir handled once.
+      if (statusLineTelemetry === true) {
         const dirs = new Set<string>();
         for (const session of ctx.sessions.values()) {
           if (session.mode === 'claude' && session.workingDir) dirs.add(session.workingDir);
         }
-        await Promise.all([...dirs].map((dir) => applyStatusLineConfig(dir, enabled).catch(() => {})));
+        await Promise.all([...dirs].map((dir) => applyStatusLineConfig(dir, true).catch(() => {})));
       }
 
       // Handle tunnel toggle dynamically

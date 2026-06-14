@@ -1515,12 +1515,25 @@ Object.assign(CodemanApp.prototype, {
     // Apply keyboard bar mode
     KeyboardAccessoryBar.setMode(settings.extendedKeyboardBar ? 'extended' : 'simple');
 
-    // Save to server (includes notification prefs for cross-browser persistence)
-    // Strip device-specific keys — localEchoEnabled/cjkInputEnabled are per-platform
-    const { localEchoEnabled: _leo, cjkInputEnabled: _cjk, extendedKeyboardBar: _ekb, skin: _skin, ...serverSettings } = settings;
+    // Save to server (includes notification prefs for cross-browser persistence).
+    // Strip device-specific DISPLAY keys so they never sync across devices —
+    // localEcho/cjk/extendedKeyboard/skin are per-platform, and showPlanUsageLimits
+    // is per-device too (desktop can show the usage chip while mobile stays hidden).
+    // Telemetry COLLECTION is requested out-of-band via statusLineTelemetry (sent on
+    // ENABLE only, so a device with the chip OFF never strips the exporter that
+    // another device's chip depends on — see system-routes settings handler).
+    const {
+      localEchoEnabled: _leo,
+      cjkInputEnabled: _cjk,
+      extendedKeyboardBar: _ekb,
+      skin: _skin,
+      showPlanUsageLimits: _pul,
+      ...serverSettings
+    } = settings;
     try {
       const res = await this._apiPut('/api/settings', {
         ...serverSettings,
+        ...(settings.showPlanUsageLimits ? { statusLineTelemetry: true } : {}),
         notificationPreferences: notifPrefsToSave,
         voiceSettings,
       });
@@ -1972,6 +1985,25 @@ Object.assign(CodemanApp.prototype, {
   },
 
   async loadAppSettingsFromServer(settingsPromise = null) {
+    // One-time migration: showPlanUsageLimits became a per-device display setting.
+    // Before this, it synced from the server, so the (separate) mobile settings blob
+    // may carry a stale `true` the user never enabled on this device. Clear it once
+    // so mobile defaults to OFF; the desktop blob is untouched and keeps its value.
+    try {
+      if (
+        MobileDetection.getDeviceType() === 'mobile' &&
+        !localStorage.getItem('codeman:planUsagePerDeviceMigrated')
+      ) {
+        const s = this.loadAppSettingsFromStorage();
+        if (s && s.showPlanUsageLimits) {
+          s.showPlanUsageLimits = false;
+          this.saveAppSettingsToStorage(s);
+        }
+        localStorage.setItem('codeman:planUsagePerDeviceMigrated', '1');
+      }
+    } catch {
+      /* best-effort migration */
+    }
     try {
       const settings = settingsPromise ? await settingsPromise : await fetch('/api/settings').then(r => r.ok ? r.json() : null).then(env => env?.success === true ? env.data : env);
       if (settings) {
@@ -1986,8 +2018,14 @@ Object.assign(CodemanApp.prototype, {
           'showLifecycleLog', 'showResponseViewer',
           'showMonitor', 'showProjectInsights', 'showFileBrowser', 'showSubagents',
           'subagentActiveTabOnly', 'tabTwoRows', 'localEchoEnabled', 'cjkInputEnabled', 'extendedKeyboardBar',
-          'skin',
+          'skin', 'showPlanUsageLimits',
         ]);
+        // The plan-usage chip is a PER-DEVICE display setting (default OFF): desktop
+        // can show it while mobile stays hidden. It used to sync, so an older
+        // server.json may still carry `true` — drop it so the server value is NEVER
+        // seeded into a device that didn't explicitly enable it (collection is handled
+        // separately via the statusLineTelemetry action, not this display flag).
+        delete appSettings.showPlanUsageLimits;
         // Merge settings: non-display keys always sync from server,
         // display keys only seed from server when localStorage has no value
         // (prevents cross-device overwrite while fixing settings re-enabling on fresh loads)

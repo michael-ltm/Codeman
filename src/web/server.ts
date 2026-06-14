@@ -1147,14 +1147,11 @@ export class WebServer extends EventEmitter {
     if (settings.showMultiMonitorButton === true) {
       html = html.replace(' btn-multimonitor--hidden', '');
     }
-    // Plan-usage chip: same pattern. Ships with `header-plan-usage--hidden` (App
-    // Settings → Display → "Plan Usage Limits", default off); strip it server-side
-    // when enabled so the chip doesn't flash hidden on every reload before the
-    // client's applyHeaderVisibilitySettings runs. showPlanUsageLimits is a synced
-    // (non-display) setting, so readSettings sees the persisted value here.
-    if (settings.showPlanUsageLimits === true) {
-      html = html.replace(' header-plan-usage--hidden', '');
-    }
+    // Plan-usage chip: ships hidden (`header-plan-usage--hidden`) and is revealed
+    // PER-DEVICE by the client (settings-ui.js applyHeaderVisibilitySettings). It
+    // used to be server-revealed from a synced setting, but that leaked the desktop
+    // choice onto mobile — display is now per-device only (like the response viewer).
+    // Telemetry collection stays server-side via the statusLineTelemetry action.
     // Detached single-session ("solo") window: inject the target session id so
     // the client can enter solo mode even if a (network-first) service worker
     // later serves a cached shell. The client primarily detects solo mode from
