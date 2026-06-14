@@ -767,6 +767,7 @@ class CodemanApp {
       if (e.key === 'Escape') {
         this.closeAllPanels();
         this.closeHelp();
+        if (this.attachmentHistoryDrawerOpen) this.closeAttachmentHistory();
       }
 
       // Alt+1-9: switch to Codeman session by index

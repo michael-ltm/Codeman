@@ -113,4 +113,52 @@ describe('session attachment history', () => {
     expect(publicState.attachmentHistory?.[0].id).not.toContain('/mnt/c/private/board-update.pdf');
     expect(persistedHistory?.[0].externalPath).toBe('/mnt/c/private/board-update.pdf');
   });
+
+  it('round-trips persisted history (incl. externalPath) through constructor restore', () => {
+    const a = new Session({ workingDir: '/tmp' });
+    a.upsertAttachmentHistory(
+      buildExternalAttachmentHistoryItem({
+        sessionId: a.id,
+        externalPath: '/mnt/c/docs/deck.docx',
+        fileName: 'deck.docx',
+        extension: 'docx',
+        size: 10,
+        timestamp: 5,
+      })
+    );
+    const persisted = a.getAttachmentHistoryForPersist();
+
+    const b = new Session({ workingDir: '/tmp', attachmentHistory: persisted });
+    // Private copy keeps externalPath (needed to re-register/serve the file)...
+    expect(b.getAttachmentHistoryForPersist()?.[0].externalPath).toBe('/mnt/c/docs/deck.docx');
+    // ...but the public copy stays sanitized after restore.
+    expect(JSON.stringify(b.toState().attachmentHistory)).not.toContain('/mnt/c/docs/deck.docx');
+  });
+
+  it('ignores malformed saved history items during restore instead of throwing', () => {
+    const valid: SessionAttachmentHistoryItem = {
+      id: 'detected:ok.png',
+      sessionId: 's',
+      fileName: 'ok.png',
+      extension: 'png',
+      attachmentType: 'image',
+      size: 1,
+      mtimeMs: 0,
+      timestamp: 1,
+      source: 'detected',
+      relativePath: 'ok.png',
+    };
+    // null, a non-object, and an item missing required fields must be skipped —
+    // historyKey() would otherwise throw inside the constructor and abort recovery.
+    const malformed = [null, 'nope', { partial: true }, valid] as unknown as SessionAttachmentHistoryItem[];
+
+    let session!: Session;
+    expect(() => {
+      session = new Session({ workingDir: '/tmp', attachmentHistory: malformed });
+    }).not.toThrow();
+
+    const persisted = session.getAttachmentHistoryForPersist();
+    expect(persisted).toHaveLength(1);
+    expect(persisted?.[0].fileName).toBe('ok.png');
+  });
 });

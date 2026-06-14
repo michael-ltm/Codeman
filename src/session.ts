@@ -919,6 +919,11 @@ export class Session extends EventEmitter {
   restoreAttachmentHistory(history: SessionAttachmentHistoryItem[] | undefined): void {
     this._attachmentHistory = [];
     for (const item of [...(history ?? [])].reverse()) {
+      // Guard against malformed/legacy on-disk entries (null, non-object, or
+      // missing required fields). historyKey() dereferences source/fileName, so
+      // a bad item would otherwise throw inside the constructor and abort the
+      // entire mux-recovery loop.
+      if (!item || typeof item !== 'object' || !item.source || !item.fileName) continue;
       this.upsertAttachmentHistory(item);
     }
   }

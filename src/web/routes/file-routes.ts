@@ -714,9 +714,10 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort & Even
 
     const items = await Promise.all(
       sessionHistory.history.map((item) =>
-        item.source === 'external'
+        (item.source === 'external'
           ? buildExternalAttachmentRouteItem(id, item, sessionHistory.workingDir)
           : buildDetectedAttachmentRouteItem(id, sessionHistory.workingDir, item)
+        ).catch(() => ({ ...sanitizeAttachmentHistoryItem(item), missing: true }))
       )
     );
 

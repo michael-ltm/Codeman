@@ -2561,7 +2561,17 @@ Object.assign(CodemanApp.prototype, {
       if (data.sessionId === this.activeSessionId) {
         this.updateAttachmentHistoryBadge();
         if (this.attachmentHistoryDrawerOpen) {
-          this._debouncedCall('attachmentHistoryRefresh', () => this.loadAttachmentHistory(data.sessionId), 250);
+          this._debouncedCall(
+            'attachmentHistoryRefresh',
+            () => {
+              // The drawer may have closed or the active session changed during
+              // the debounce window — don't refresh for a stale session.
+              if (this.attachmentHistoryDrawerOpen && this.activeSessionId === data.sessionId) {
+                this.loadAttachmentHistory(data.sessionId);
+              }
+            },
+            250
+          );
         }
       }
     }
@@ -2744,7 +2754,7 @@ Object.assign(CodemanApp.prototype, {
     const sessionId = this.activeSessionId;
     const nextCount = count ?? (sessionId ? this.attachmentHistoryCounts.get(sessionId) || 0 : 0);
     if (badge) {
-      badge.textContent = String(Math.min(nextCount, 99));
+      badge.textContent = nextCount > 99 ? '99+' : String(nextCount);
       badge.style.display = nextCount > 0 ? '' : 'none';
     }
     if (button) {
@@ -2804,6 +2814,11 @@ Object.assign(CodemanApp.prototype, {
     const drawer = document.getElementById('attachmentHistoryDrawer');
     this.attachmentHistoryDrawerOpen = false;
     drawer?.classList.remove('open');
+    // Cancel any pending debounced refresh so it can't fire against a closed drawer.
+    if (this._debounceTimers?.attachmentHistoryRefresh) {
+      clearTimeout(this._debounceTimers.attachmentHistoryRefresh);
+      this._debounceTimers.attachmentHistoryRefresh = null;
+    }
     this.updateAttachmentHistoryBadge();
   },
 
@@ -2949,7 +2964,10 @@ Object.assign(CodemanApp.prototype, {
       sessionId: item.sessionId,
       relativePath: item.relativePath,
       fileName: item.fileName,
-      timestamp: Date.now(),
+      // Use the item's own timestamp (not Date.now()) so the derived cardId is
+      // stable across clicks — re-showing focuses the existing card instead of
+      // stacking a duplicate.
+      timestamp: item.timestamp ?? Date.now(),
       size: item.size,
       attachmentType: item.attachmentType,
       extension: item.extension,
