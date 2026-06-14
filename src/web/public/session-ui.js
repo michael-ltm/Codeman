@@ -370,6 +370,9 @@ Object.assign(CodemanApp.prototype, {
             ...(hasEnvOverrides ? { envOverrides } : {}),
             ...(effort ? { effort } : {}),
             ...(modelOverride !== undefined ? { modelOverride } : {}),
+            // Plan-usage statusLine exporter (App Settings → Display). Always
+            // sent so toggling the setting off removes our exporter on next create.
+            statusLineTelemetry: globalSettings.showPlanUsageLimits === true,
           })
         }).then(r => r.json())
       );

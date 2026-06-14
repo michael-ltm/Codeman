@@ -213,3 +213,59 @@ export async function writeHooksConfig(casePath: string): Promise<void> {
 
   await writeFile(settingsPath, JSON.stringify(merged, null, 2) + '\n');
 }
+
+/** Unique marker identifying Codeman's own statusLine command (vs a user's). */
+const STATUSLINE_MARKER = '/api/status-telemetry';
+
+/**
+ * The plan-usage statusLine exporter command. Mirrors the hook `curlCmd` pattern:
+ * reads Claude Code's statusline stdin JSON, POSTs `{sessionId,data}` to Codeman,
+ * and prints the response body (a compact "⟳ 5h 15% · 7d 34%" footer) back to
+ * stdout so the in-terminal statusline stays useful. Env vars resolve at runtime
+ * (present in every managed session via tmux setenv), so the config is static.
+ */
+export function generateStatusLineCommand(): string {
+  return (
+    `INPUT=$(cat 2>/dev/null || echo '{}'); ` +
+    `printf '{"sessionId":"%s","data":%s}' "$CODEMAN_SESSION_ID" "$INPUT" | ` +
+    `curl -s -X POST "$CODEMAN_API_URL${STATUSLINE_MARKER}" ` +
+    `-H 'Content-Type: application/json' ` +
+    `-H "X-Codeman-Hook-Secret: $(cat "$CODEMAN_HOOK_SECRET_FILE" 2>/dev/null)" ` +
+    `--data @- 2>/dev/null || true`
+  );
+}
+
+/**
+ * Add or remove Codeman's plan-usage statusLine exporter in
+ * `.claude/settings.local.json`. Only ever touches a statusLine that is OURS
+ * (command targets `/api/status-telemetry`), so a user's hand-authored
+ * statusLine is never removed. Callers gate on Claude mode + a Codeman-managed
+ * case path. Merges, preserving all other keys (hooks, env, model).
+ */
+export async function applyStatusLineConfig(casePath: string, enabled: boolean): Promise<void> {
+  const claudeDir = join(casePath, '.claude');
+  const settingsPath = join(claudeDir, 'settings.local.json');
+
+  let existing: Record<string, unknown> = {};
+  if (existsSync(settingsPath)) {
+    try {
+      existing = JSON.parse(await readFile(settingsPath, 'utf-8'));
+    } catch {
+      return; // Malformed — don't rewrite it
+    }
+  }
+
+  const current = existing.statusLine as { command?: unknown } | undefined;
+  const isOurs = !!current && typeof current.command === 'string' && current.command.includes(STATUSLINE_MARKER);
+
+  if (enabled) {
+    if (isOurs) return; // already configured — avoid rewriting on every session create
+    if (!existsSync(claudeDir)) await mkdir(claudeDir, { recursive: true });
+    existing.statusLine = { type: 'command', command: generateStatusLineCommand() };
+  } else {
+    if (!isOurs) return; // nothing of ours to remove (leave a user's own statusLine alone)
+    delete existing.statusLine;
+  }
+
+  await writeFile(settingsPath, JSON.stringify(existing, null, 2) + '\n');
+}

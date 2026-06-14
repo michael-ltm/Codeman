@@ -1107,6 +1107,7 @@ body.solo-mode .header-system-stats,
 body.solo-mode .header-tokens,
 body.solo-mode .btn-notifications,
 body.solo-mode .btn-multimonitor,
+body.solo-mode .header-plan-usage,
 body.solo-mode .btn-lifecycle-log {
   display: none !important;
 }
@@ -8318,6 +8319,38 @@ kbd {
 /* "Response Viewer" header toggle (App Settings → Display) — must out-specify
    the inline-flex !important above */
 .btn-response-viewer-header.btn-response-viewer-header--hidden {
+  display: none !important;
+}
+
+/* Plan-usage chip (App Settings → Display → "Plan Usage Limits"). Shows the
+   live 5-hour + weekly plan limits parsed from the Claude statusline. Hidden by
+   default via the marker class below; the server strips it at render when the
+   setting is on and the client toggles it live on save. */
+.header-plan-usage {
+  display: inline-flex !important;
+  align-items: center;
+  height: 22px;
+  padding: 0 0.5rem;
+  border-radius: 11px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  font-family: 'SF Mono', Monaco, monospace;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+  cursor: default;
+}
+.header-plan-usage--warn {
+  color: #e6b800;
+  border-color: rgba(230, 184, 0, 0.4);
+}
+.header-plan-usage--crit {
+  color: var(--danger, #ff5c5c);
+  border-color: rgba(255, 92, 92, 0.5);
+}
+/* Marker class must out-specify the display:inline-flex !important above. */
+.header-plan-usage.header-plan-usage--hidden {
   display: none !important;
 }
 

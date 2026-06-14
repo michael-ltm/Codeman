@@ -158,6 +158,8 @@ export const CreateSessionSchema = z.object({
   effort: effortLevelSchema,
   /** Model override to write to .claude/settings.local.json (e.g., "opus[1m]"). Empty string clears. */
   modelOverride: z.string().max(50).optional(),
+  /** Inject the plan-usage statusLine exporter into the case (App Settings → Display → "Plan Usage Limits"). Claude-only. */
+  statusLineTelemetry: z.boolean().optional(),
   openCodeConfig: OpenCodeConfigSchema,
   codexConfig: CodexConfigSchema,
   /** Resume a previous Claude conversation by its session ID (used for reboot recovery) */
@@ -184,6 +186,37 @@ export const ResizeSchema = z.object({
   cols: z.number().int().min(1).max(500),
   rows: z.number().int().min(1).max(200),
   viewportType: z.enum(['mobile', 'tablet', 'desktop']).optional(),
+});
+
+/**
+ * Schema for POST /api/status-telemetry
+ * Claude Code statusline payload forwarded by the Codeman-managed statusLine
+ * exporter (see hooks-config.generateStatusLineCommand). Validates only the
+ * subset Codeman displays; unknown keys (session_id, transcript_path, cwd, …)
+ * are stripped by z.object. Auth-exempt like /api/hook-event.
+ */
+const RateLimitWindowSchema = z
+  .object({
+    used_percentage: z.number().optional(),
+    resets_at: z.number().optional(),
+  })
+  .optional();
+
+export const StatusTelemetrySchema = z.object({
+  sessionId: z.string().min(1).max(100),
+  data: z
+    .object({
+      rate_limits: z
+        .object({
+          five_hour: RateLimitWindowSchema,
+          seven_day: RateLimitWindowSchema,
+        })
+        .optional(),
+      context_window: z.object({ used_percentage: z.number().optional() }).optional(),
+      cost: z.object({ total_cost_usd: z.number().optional() }).optional(),
+      model: z.object({ display_name: z.string().max(100).optional() }).optional(),
+    })
+    .optional(),
 });
 
 // ========== Case Routes ==========
@@ -321,6 +354,7 @@ export const SettingsUpdateSchema = z
     showFileBrowser: z.boolean().optional(),
     showSubagents: z.boolean().optional(),
     showMultiMonitorButton: z.boolean().optional(),
+    showPlanUsageLimits: z.boolean().optional(),
     // Input
     gestureControlEnabled: z.boolean().optional(),
     // Claude CLI settings

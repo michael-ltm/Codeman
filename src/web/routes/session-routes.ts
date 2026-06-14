@@ -45,7 +45,7 @@ import {
   validatePathWithinBase,
 } from '../route-helpers.js';
 import { AUTH_COOKIE_NAME } from '../middleware/auth.js';
-import { writeHooksConfig, updateCaseModel, stripCaseEnvKeys } from '../../hooks-config.js';
+import { writeHooksConfig, updateCaseModel, stripCaseEnvKeys, applyStatusLineConfig } from '../../hooks-config.js';
 import { generateClaudeMd } from '../../templates/claude-md.js';
 import { imageWatcher } from '../../image-watcher.js';
 import { getLifecycleLog } from '../../session-lifecycle-log.js';
@@ -295,6 +295,14 @@ export function registerSessionRoutes(
     // Write model override to .claude/settings.local.json if provided
     if (body.modelOverride !== undefined) {
       await updateCaseModel(workingDir, body.modelOverride || null);
+    }
+
+    // Plan-usage statusLine exporter (App Settings → Display → "Plan Usage
+    // Limits"). Claude-only, and only inside Codeman-managed cases (never
+    // arbitrary user repos, which may carry a hand-authored statusLine). Adds or
+    // removes our exporter so toggling the setting off cleans up on next create.
+    if ((body.mode ?? 'claude') === 'claude' && workingDir.startsWith(CASES_DIR + '/')) {
+      await applyStatusLineConfig(workingDir, body.statusLineTelemetry === true);
     }
 
     // Check OpenCode availability if requested

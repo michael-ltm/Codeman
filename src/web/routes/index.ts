@@ -9,6 +9,7 @@ export { registerFileRoutes } from './file-routes.js';
 export { registerScheduledRoutes } from './scheduled-routes.js';
 export { registerSystemRoutes } from './system-routes.js';
 export { registerHookEventRoutes } from './hook-event-routes.js';
+export { registerStatusTelemetryRoutes } from './status-telemetry-routes.js';
 export { registerCaseRoutes } from './case-routes.js';
 export { registerSessionRoutes } from './session-routes.js';
 export { registerRespawnRoutes } from './respawn-routes.js';

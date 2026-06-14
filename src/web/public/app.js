@@ -157,6 +157,7 @@ const _SSE_HANDLER_MAP = [
   [SSE_EVENTS.SESSION_LIMIT_RESUME, '_onSessionLimitResume'],
   [SSE_EVENTS.SESSION_LIMIT_RESUME_CANCELLED, '_onSessionLimitResumeCancelled'],
   [SSE_EVENTS.SESSION_CLI_INFO, '_onSessionCliInfo'],
+  [SSE_EVENTS.SESSION_STATUS_TELEMETRY, '_onSessionStatusTelemetry'],
 
   // Scheduled runs
   [SSE_EVENTS.SCHEDULED_CREATED, '_onScheduledCreated'],
@@ -1810,6 +1811,35 @@ class CodemanApp {
     if (data.sessionId === this.activeSessionId) {
       this.updateCliInfoDisplay();
     }
+  }
+
+  // Claude plan usage limits (5-hour + weekly) — account-global, so the latest
+  // sample from any session drives the shared header chip.
+  _onSessionStatusTelemetry(data) {
+    this._latestPlanUsage = data;
+    this.updatePlanUsageChip(data);
+  }
+
+  updatePlanUsageChip(data) {
+    const chip = document.getElementById('planUsageChip');
+    if (!chip || !data) return;
+    const pct = (w) => (w && typeof w.usedPercentage === 'number' ? Math.round(w.usedPercentage) : null);
+    const five = pct(data.fiveHour);
+    const seven = pct(data.sevenDay);
+    if (five === null && seven === null) return;
+    const parts = [];
+    if (five !== null) parts.push(`5h ${five}%`);
+    if (seven !== null) parts.push(`7d ${seven}%`);
+    chip.textContent = parts.join(' · ');
+    // Color hint as a window nears exhaustion.
+    const max = Math.max(five ?? 0, seven ?? 0);
+    chip.classList.toggle('header-plan-usage--warn', max >= 80 && max < 95);
+    chip.classList.toggle('header-plan-usage--crit', max >= 95);
+    const resetStr = (w) => (w && w.resetAt ? new Date(w.resetAt).toLocaleString() : '—');
+    chip.title =
+      `Claude plan usage\n` +
+      `5-hour: ${five ?? '—'}% (resets ${resetStr(data.fiveHour)})\n` +
+      `Weekly: ${seven ?? '—'}% (resets ${resetStr(data.sevenDay)})`;
   }
 
   // Scheduled runs

@@ -107,8 +107,9 @@ export function registerAuthMiddleware(
   }
 
   app.addHook('onRequest', (req, reply, done) => {
-    // Hook events come from local Claude Code hooks (curl from localhost) — no
-    // Basic-Auth credentials available. Validated downstream by HookEventSchema.
+    // Hook events + statusline telemetry come from local Claude Code (curl from
+    // localhost) — no Basic-Auth credentials available. Validated downstream by
+    // HookEventSchema / StatusTelemetrySchema. Same loopback+hook-secret gate.
     //
     // COD-54: the bare localhost bypass is unsafe while a tunnel is running, because
     // `cloudflared --url http://127.0.0.1:port` proxies internet traffic INTO the
@@ -119,7 +120,7 @@ export function registerAuthMiddleware(
     //   - tunnel not running (loopback-only, the normal case) → keep the plain
     //     localhost bypass so already-deployed (pre-secret) hooks + the loop's own
     //     credential-less hook channel keep working.
-    if (req.url === '/api/hook-event' && req.method === 'POST') {
+    if ((req.url === '/api/hook-event' || req.url === '/api/status-telemetry') && req.method === 'POST') {
       const ip = req.ip;
       const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
       if (isLoopback) {

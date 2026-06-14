@@ -1,0 +1,63 @@
+/**
+ * @fileoverview Status-telemetry route.
+ *
+ * Receives Claude Code statusline payloads POSTed by the Codeman-managed
+ * statusLine exporter (see `hooks-config.generateStatusLineCommand`) and
+ * broadcasts the parsed plan-usage limits (5-hour + weekly) to SSE clients for
+ * the header "Plan Usage Limits" chip. Auth-exempt like `/api/hook-event`
+ * (localhost-only; hook-secret-gated while a tunnel runs — see middleware/auth).
+ *
+ * Returns a compact plain-text status string for the exporter to print as the
+ * in-terminal footer (print-through), so injecting our statusLine doesn't leave
+ * the terminal footer blank.
+ */
+
+import { FastifyInstance } from 'fastify';
+import { StatusTelemetrySchema } from '../schemas.js';
+import { parseBody } from '../route-helpers.js';
+import {
+  parseStatusTelemetry,
+  formatStatusLineText,
+  telemetrySignature,
+  type RawStatuslinePayload,
+} from '../../usage-telemetry.js';
+import { SessionStatusTelemetry } from '../sse-events.js';
+import type { SessionPort, EventPort } from '../ports/index.js';
+
+export function registerStatusTelemetryRoutes(app: FastifyInstance, ctx: SessionPort & EventPort): void {
+  // Last broadcast telemetry signature per session — the statusline fires on
+  // every assistant message, so we only rebroadcast when the value changes.
+  const lastSig = new Map<string, string>();
+
+  app.post('/api/status-telemetry', async (req, reply) => {
+    const { sessionId, data } = parseBody(StatusTelemetrySchema, req.body);
+
+    reply.type('text/plain; charset=utf-8');
+
+    // Unknown session — minimal footer, no broadcast.
+    if (!ctx.sessions.has(sessionId)) {
+      lastSig.delete(sessionId);
+      return 'codeman';
+    }
+
+    const telemetry = parseStatusTelemetry(data as RawStatuslinePayload | undefined);
+    if (!telemetry) {
+      // No plan-limit data yet (pre-first-response or non-subscriber auth).
+      return 'codeman';
+    }
+
+    const sig = telemetrySignature(telemetry);
+    if (lastSig.get(sessionId) !== sig) {
+      lastSig.set(sessionId, sig);
+      // Bound the map across long multi-session runs: prune dead sessions.
+      if (lastSig.size > 256) {
+        for (const id of [...lastSig.keys()]) {
+          if (!ctx.sessions.has(id)) lastSig.delete(id);
+        }
+      }
+      ctx.broadcast(SessionStatusTelemetry, { sessionId, ...telemetry });
+    }
+
+    return formatStatusLineText(telemetry);
+  });
+}

@@ -315,6 +315,7 @@ Object.assign(CodemanApp.prototype, {
     document.getElementById('appSettingsShowFileBrowser').checked = settings.showFileBrowser ?? defaults.showFileBrowser ?? false;
     document.getElementById('appSettingsShowSubagents').checked = settings.showSubagents ?? defaults.showSubagents ?? false;
     document.getElementById('appSettingsShowMultiMonitorButton').checked = settings.showMultiMonitorButton ?? defaults.showMultiMonitorButton ?? false;
+    document.getElementById('appSettingsShowPlanUsageLimits').checked = settings.showPlanUsageLimits ?? defaults.showPlanUsageLimits ?? false;
     // Gesture control lives in the Input section (alongside Local Echo / CJK Input)
     // but is only available when the instance runs with CODEMAN_GESTURE=1 (server sets
     // window.__codemanGestureAvailable). Hide just this item otherwise so the toggle
@@ -1369,6 +1370,7 @@ Object.assign(CodemanApp.prototype, {
       showFileBrowser: document.getElementById('appSettingsShowFileBrowser').checked,
       showSubagents: document.getElementById('appSettingsShowSubagents').checked,
       showMultiMonitorButton: document.getElementById('appSettingsShowMultiMonitorButton').checked,
+      showPlanUsageLimits: document.getElementById('appSettingsShowPlanUsageLimits').checked,
       gestureControlEnabled: document.getElementById('appSettingsGestureControl').checked,
       subagentTrackingEnabled: document.getElementById('appSettingsSubagentTracking').checked,
       subagentActiveTabOnly: document.getElementById('appSettingsSubagentActiveTabOnly').checked,
@@ -1658,6 +1660,7 @@ Object.assign(CodemanApp.prototype, {
         showFileBrowser: false,
         showSubagents: false,
         showMultiMonitorButton: false,
+        showPlanUsageLimits: false,
         // Input
         gestureControlEnabled: false,
         // Feature toggles - keep tracking on even on mobile
@@ -1768,6 +1771,16 @@ Object.assign(CodemanApp.prototype, {
     const multiMonitorBtn = document.querySelector('.btn-multimonitor');
     if (multiMonitorBtn) {
       multiMonitorBtn.classList.toggle('btn-multimonitor--hidden', !showMultiMonitorButton);
+    }
+
+    // Plan-usage chip — hidden by default (App Settings → Display → "Plan Usage
+    // Limits"). Server renders the initial state on reload; this handles a live
+    // toggle from a settings save. Marker class (base is display:inline-flex
+    // !important), matching the response-viewer/multimonitor pattern.
+    const showPlanUsageLimits = settings.showPlanUsageLimits ?? defaults.showPlanUsageLimits ?? false;
+    const planUsageChip = document.getElementById('planUsageChip');
+    if (planUsageChip) {
+      planUsageChip.classList.toggle('header-plan-usage--hidden', !showPlanUsageLimits);
     }
 
     // Notification bell is retired (notifications live in Settings → Notifications
