@@ -1,5 +1,17 @@
 # aicodeman
 
+## 1.1.1
+
+### Patch Changes
+
+- Six reviewed contributor PRs (all adversarially reviewed and fixed before merge):
+  - **Markdown sanitizer hardened against mutation-XSS (#126).** The denylist `_sanitizeHtml` is replaced with vendored DOMPurify 3.4.8 (authentic, byte-matched to the official dist) wired via a new `sanitize-html.js` allowlist, with a fail-closed escape fallback. The curated allowlist is genuinely enforced (no `USE_PROFILES` override) so non-markdown tags and svg/math/style/script/event-handler/`javascript:` vectors are stripped while legitimate markdown survives.
+  - **Hook-event secret now required unconditionally (#127).** The `/api/hook-event` + `/api/status-telemetry` localhost bypass requires the per-instance hook secret whether or not a managed tunnel is running, closing the own-loopback-reverse-proxy gap. A self-heal refreshes pre-secret hook configs in existing cases on spawn so password-protected installs don't silently 401 their hooks. No-password loopback installs are unaffected.
+  - **`codeman doctor` dependency checker (#125).** New `doctor`/`check-deps` command probes Node, the agent CLIs, tmux, and document converters per environment (linux/darwin/win32/wsl), with grouped or `--json` output and a non-zero exit when a required tool is missing. Requires Node 22+, reports `pdftoppm` (used for PDF/Office thumbnails), and validates `--category`.
+  - **macOS Option / physical-key session shortcuts (#129).** Tab switching matches physical key codes (`e.code`) so Option+1–9 works on macOS layouts that remap Option, plus Option/Alt+`[`/`]` for previous/next session — without leaking escape sequences into the focused terminal.
+  - **Desktop session tabs auto-wrap to a second row on overflow (#128)** instead of horizontal scrolling (off when the manual two-row layout is pinned; mobile/tablet unchanged), re-evaluated on window resize.
+  - **CJK input textarea hidden on the welcome screen (#123)** so it no longer floats over the welcome overlay, and re-shown on session entry; vertical centering fixed.
+
 ## 1.1.0
 
 ### Minor Changes
