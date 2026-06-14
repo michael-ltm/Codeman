@@ -3944,6 +3944,12 @@ body.solo-mode .btn-lifecycle-log {
   min-width: 220px;
   max-width: 320px;
   flex: 0 1 auto;
+  /* Match the field to its settings row: the base .form-select (0.8rem / 0.5rem
+     padding) renders bigger and taller than the row, and the daylight skins'
+     Manrope font exaggerates it further. Slim it to the row's 0.75rem text. */
+  font-size: 0.75rem;
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
 }
 
 .settings-item-multiline {
