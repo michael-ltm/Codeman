@@ -2503,6 +2503,25 @@ Object.assign(CodemanApp.prototype, {
       bodyEl.innerHTML = `<iframe src="${escapeHtml(rawSrc)}" title="${escapeHtml(filePath)}"></iframe>`;
       return;
     }
+    // SVG renders as an image, but file-raw deliberately serves SVG as an
+    // untrusted octet-stream attachment (XSS hardening), so a direct
+    // <img src=file-raw> would break. Fetch the bytes and render via a
+    // same-origin blob typed image/svg+xml — <img> never executes scripts in
+    // the referenced SVG, so this is safe while still rendering the graphic.
+    if (ext === 'svg') {
+      footerEl.textContent = 'SVG';
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}/file-raw?path=${encodeURIComponent(filePath)}`);
+        if (!res.ok) throw new Error('Failed to load image');
+        const blobUrl = URL.createObjectURL(new Blob([await res.text()], { type: 'image/svg+xml' }));
+        bodyEl.innerHTML = `<img src="${blobUrl}" alt="${escapeHtml(filePath)}">`;
+        const img = bodyEl.querySelector('img');
+        if (img) img.onload = () => URL.revokeObjectURL(blobUrl);
+      } catch (err) {
+        bodyEl.innerHTML = `<div class="binary-message">Error: ${escapeHtml(err.message)}</div>`;
+      }
+      return;
+    }
 
     try {
       const res = await fetch(`/api/sessions/${sessionId}/file-content?path=${encodeURIComponent(filePath)}&lines=500`);
@@ -2519,8 +2538,12 @@ Object.assign(CodemanApp.prototype, {
       } else if (data.type === 'video') {
         bodyEl.innerHTML = `<video src="${data.url}" controls autoplay></video>`;
         footerEl.textContent = `${this.formatFileSize(data.size)} \u2022 ${data.extension}`;
+      } else if (data.type === 'audio') {
+        bodyEl.innerHTML = `<audio src="${data.url}" controls autoplay></audio>`;
+        footerEl.textContent = `${this.formatFileSize(data.size)} \u2022 ${data.extension}`;
       } else if (data.type === 'binary') {
-        bodyEl.innerHTML = `<div class="binary-message">Binary file (${this.formatFileSize(data.size)})<br>Cannot preview</div>`;
+        const downloadHref = `/api/sessions/${sessionId}/file-raw?path=${encodeURIComponent(filePath)}&download=true`;
+        bodyEl.innerHTML = `<div class="binary-message">Binary file (${this.formatFileSize(data.size)})<br>Cannot preview<br><a href="${escapeHtml(downloadHref)}" download>Download</a></div>`;
         footerEl.textContent = data.extension || 'binary';
       } else {
         // Text content

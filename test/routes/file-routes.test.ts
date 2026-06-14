@@ -215,6 +215,50 @@ describe('file-routes', () => {
       expect(body.data.url).toContain('file-raw');
     });
 
+    it('returns audio metadata for audio files', async () => {
+      mockedStat.mockResolvedValue({ size: 2048 } as never);
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: `/api/sessions/${harness.ctx._sessionId}/file-content?path=clip.mp3`,
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.data.type).toBe('audio');
+      expect(body.data.url).toContain('file-raw');
+    });
+
+    it('flags known-binary extensions (e.g. xlsx) instead of dumping mojibake', async () => {
+      mockedStat.mockResolvedValue({ size: 4096 } as never);
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: `/api/sessions/${harness.ctx._sessionId}/file-content?path=sheet.xlsx`,
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.data.type).toBe('binary');
+      expect(body.data.content).toBeUndefined();
+    });
+
+    it('sniffs NUL bytes and flags binary content for unknown extensions', async () => {
+      const binary = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x01, 0x02]);
+      mockedReadFile.mockResolvedValue(binary as never);
+      mockedStat.mockResolvedValue({ size: binary.length } as never);
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: `/api/sessions/${harness.ctx._sessionId}/file-content?path=mystery.dat`,
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.data.type).toBe('binary');
+      expect(body.data.content).toBeUndefined();
+    });
+
     it('rejects path traversal attempts', async () => {
       // realpathSync resolves the symlink to a path outside workingDir
       mockedRealpathSync.mockReturnValue('/etc/passwd' as never);

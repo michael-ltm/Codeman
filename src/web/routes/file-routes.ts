@@ -511,49 +511,73 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort & Even
     try {
       const stat = await fs.stat(resolvedPath);
 
-      // Check if it's a binary/media file
+      // Classify by extension. Known media types render with a dedicated player;
+      // other known-binary types are flagged so the client offers a download
+      // affordance instead of trying to decode the bytes as text. Matches the
+      // breadth of formats the attachments viewer renders (image/audio/video/pdf)
+      // so the file viewer can open the same files.
       const ext = filePath.split('.').pop()?.toLowerCase() || '';
-      const binaryExts = new Set([
-        'png',
-        'jpg',
-        'jpeg',
-        'gif',
-        'webp',
-        'ico',
-        'svg',
-        'bmp',
-        'mp4',
-        'webm',
-        'mov',
-        'avi',
-        'mp3',
-        'wav',
-        'ogg',
+      const imageExts = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico']);
+      const videoExts = new Set(['mp4', 'webm', 'mov', 'm4v', 'ogv']);
+      const audioExts = new Set(['mp3', 'wav', 'ogg', 'oga', 'm4a', 'aac', 'flac', 'opus']);
+      const otherBinaryExts = new Set([
         'pdf',
         'zip',
         'tar',
         'gz',
+        'bz2',
+        'xz',
+        '7z',
+        'rar',
         'exe',
         'dll',
         'so',
+        'dylib',
+        'bin',
+        'wasm',
+        'class',
+        'o',
+        'a',
         'woff',
         'woff2',
         'ttf',
         'eot',
+        'otf',
+        'xlsx',
+        'xls',
+        'doc',
+        'docx',
+        'ppt',
+        'pptx',
+        'odt',
+        'ods',
+        'odp',
+        'avi',
+        'mkv',
+        'wmv',
+        'flv',
       ]);
-      const imageExts = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico']);
-      const videoExts = new Set(['mp4', 'webm', 'mov', 'avi']);
 
-      if (raw === 'true' || binaryExts.has(ext)) {
-        // Return metadata for binary files
+      const mediaType = imageExts.has(ext)
+        ? 'image'
+        : videoExts.has(ext)
+          ? 'video'
+          : audioExts.has(ext)
+            ? 'audio'
+            : null;
+
+      const fileRawUrl = `/api/sessions/${id}/file-raw?path=${encodeURIComponent(filePath)}`;
+
+      if (raw === 'true' || mediaType || otherBinaryExts.has(ext)) {
+        // Return metadata for media/binary files (no text body)
         return {
           success: true,
           data: {
             path: filePath,
             size: stat.size,
-            type: imageExts.has(ext) ? 'image' : videoExts.has(ext) ? 'video' : 'binary',
+            type: mediaType ?? 'binary',
             extension: ext,
-            url: `/api/sessions/${id}/file-raw?path=${encodeURIComponent(filePath)}`,
+            url: fileRawUrl,
           },
         };
       }
@@ -567,10 +591,39 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort & Even
         );
       }
 
+      // Read as raw bytes so we can sniff for binary content before decoding. An
+      // unrecognized extension (none at all, or a format not listed above) that
+      // is actually binary would otherwise be dumped to the viewer as UTF-8
+      // mojibake; a NUL byte in the first 8KB is a reliable binary signal that
+      // (unlike a static extension list) catches arbitrary binary formats.
+      const fileBuffer = await fs.readFile(resolvedPath);
+      const buf = Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(String(fileBuffer));
+      const sniffLength = Math.min(buf.length, 8192);
+      let looksBinary = false;
+      for (let i = 0; i < sniffLength; i++) {
+        if (buf[i] === 0) {
+          looksBinary = true;
+          break;
+        }
+      }
+
+      if (looksBinary) {
+        return {
+          success: true,
+          data: {
+            path: filePath,
+            size: stat.size,
+            type: 'binary',
+            extension: ext,
+            url: fileRawUrl,
+          },
+        };
+      }
+
       // Read text file with line limit (bounded to prevent DoS)
       const MAX_LINES_LIMIT = 10000;
       const maxLines = Math.min(parseInt(lines || '500', 10) || 500, MAX_LINES_LIMIT);
-      const content = await fs.readFile(resolvedPath, 'utf-8');
+      const content = buf.toString('utf-8');
       const allLines = content.split('\n');
       const truncatedContent = allLines.length > maxLines;
       const displayContent = truncatedContent ? allLines.slice(0, maxLines).join('\n') : content;
@@ -638,9 +691,16 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort & Even
         mp4: 'video/mp4',
         webm: 'video/webm',
         mov: 'video/quicktime',
+        m4v: 'video/mp4',
+        ogv: 'video/ogg',
         mp3: 'audio/mpeg',
         wav: 'audio/wav',
         ogg: 'audio/ogg',
+        oga: 'audio/ogg',
+        opus: 'audio/ogg',
+        m4a: 'audio/mp4',
+        aac: 'audio/aac',
+        flac: 'audio/flac',
         pdf: 'application/pdf',
         json: 'application/json',
       };

@@ -7239,10 +7239,20 @@ kbd {
   max-height: 100%;
 }
 
+.file-preview-body audio {
+  display: block;
+  width: 90%;
+  margin: 2rem auto;
+}
+
 .file-preview-body .binary-message {
   padding: 2rem;
   text-align: center;
   color: var(--text-muted);
+}
+
+.file-preview-body .binary-message a {
+  color: var(--accent, #4ea1ff);
 }
 
 .file-preview-footer {
