@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 /**
  * COD-56 — markdown HTML sanitizer (mXSS hardening).
  *
@@ -8,46 +7,70 @@
  * DENYLIST and is mXSS-prone — it never stripped `svg`/`math`/`style`, so foreign-namespace and
  * CSS vectors survived.
  *
- * This suite drives the EXACT shipping artifacts under jsdom:
+ * This suite drives the EXACT shipping artifacts:
  *   - src/web/public/vendor/dompurify.min.js   (the vendored sanitizer)
  *   - src/web/public/sanitize-html.js          (our allowlist config wired to DOMPurify)
  *
+ * It runs in the DEFAULT node environment (it deliberately does NOT declare a per-file jsdom
+ * environment) and constructs a jsdom window here, then binds the vendored DOMPurify to it. A
+ * per-file jsdom environment externalizes node:fs/node:path under vite, which made this suite fail
+ * to load when
+ * run in isolation (it only survived the full CI run because an earlier node-env test happened to
+ * pre-cache node:fs). Building the window in-test keeps fs/path native and the suite order-robust.
+ *
  * It feeds a corpus of mXSS payloads (svg/math/style/namespace-confusion/event-handler) and
- * asserts the output carries NO script-executing constructs, and that legitimate
- * markdown-rendered HTML survives unchanged.
+ * asserts the output carries NO script-executing constructs, that the curated allowlist is
+ * actually enforced (non-markdown tags dropped), and that legitimate markdown-rendered HTML
+ * survives unchanged. A faithful re-implementation of the OLD denylist is included and asserted to
+ * LET payloads through — the gap this fix closes.
  *
- * RED demonstration: a faithful re-implementation of the OLD denylist sanitizer is included and
- * asserted to LET payloads through — the gap this fix closes.
- *
- * No port / server needed; pure DOM logic in jsdom.
+ * No port / server needed.
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { JSDOM } from 'jsdom';
 
 const publicDir = join(process.cwd(), 'src/web/public');
 
-/** Build the SHIPPING sanitizer the way the browser does: vendored DOMPurify + sanitize-html.js,
- *  both evaluated inside the (jsdom) window so DOMPurify binds to a real DOM. */
+// One jsdom window shared by the shipping sanitizer (bound to its DOMPurify) and the old-denylist
+// reference impl (which needs a DOM `document`).
+const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
+const jsdomWindow = dom.window as unknown as Window & typeof globalThis;
+const jsdomDocument = jsdomWindow.document;
+
+/** Build the SHIPPING sanitizer the way the browser does: vendored DOMPurify (bound to our jsdom
+ *  window) + the EXACT CONFIG from sanitize-html.js — so the same allow/forbid lists are exercised
+ *  under vitest without a real browser. */
 function loadShippingSanitizer(): (html: string) => string {
-  const win = window as unknown as Record<string, unknown>;
-  // Evaluate the vendored UMD in the jsdom global context (mirrors <script src=vendor/...>).
   const dompurifySrc = readFileSync(join(publicDir, 'vendor/dompurify.min.js'), 'utf8');
-  // sanitize-html.js is a classic script that reads global DOMPurify and sets sanitizeMarkdownHtml.
   const sanitizeSrc = readFileSync(join(publicDir, 'sanitize-html.js'), 'utf8');
-  // jsdom's window is the global in this vitest environment; eval the classic scripts into it
-  // so DOMPurify and sanitizeMarkdownHtml bind to the jsdom window exactly as in the browser.
-  (0, eval)(dompurifySrc);
-  (0, eval)(sanitizeSrc);
-  const fn = win.sanitizeMarkdownHtml as ((html: string) => string) | undefined;
+
+  // dompurify.min.js is a UMD — evaluate it as CommonJS to obtain the factory (createDOMPurify),
+  // then bind it to our jsdom window so DOMPurify sanitizes against a real DOM.
+  const dpModule: { exports: unknown } = { exports: {} };
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
+  new Function('module', 'exports', dompurifySrc)(dpModule, dpModule.exports);
+  const factory = dpModule.exports as (win: unknown) => { sanitize: (h: string, c?: unknown) => string };
+  const DOMPurify = factory(jsdomWindow);
+
+  // sanitize-html.js exposes createMarkdownSanitizer via its CommonJS export.
+  const sanModule: { exports: { createMarkdownSanitizer?: (dp: unknown) => (html: string) => string } } = {
+    exports: {},
+  };
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
+  new Function('module', 'exports', sanitizeSrc)(sanModule, sanModule.exports);
+  const create = sanModule.exports.createMarkdownSanitizer;
+  if (typeof create !== 'function') throw new Error('createMarkdownSanitizer not exported');
+  const fn = create(DOMPurify);
   if (typeof fn !== 'function') throw new Error('sanitizeMarkdownHtml not wired');
   return fn;
 }
 
 /** Faithful copy of the OLD denylist _sanitizeHtml (app.js pre-COD-56) — used only to prove RED. */
 function oldDenylistSanitize(html: string): string {
-  const tpl = document.createElement('template');
+  const tpl = jsdomDocument.createElement('template');
   tpl.innerHTML = html;
   const frag = tpl.content;
   for (const el of frag.querySelectorAll('script, iframe, object, embed, form, base, meta, link, style')) {
@@ -66,7 +89,7 @@ function oldDenylistSanitize(html: string): string {
       }
     }
   }
-  const div = document.createElement('div');
+  const div = jsdomDocument.createElement('div');
   div.appendChild(frag);
   return div.innerHTML;
 }
@@ -122,6 +145,24 @@ describe('COD-56 markdown sanitizer (DOMPurify allowlist)', () => {
     for (const { name, html } of PAYLOADS) {
       it(`blocks: ${name}`, () => {
         assertNeutralized(sanitize(html), name);
+      });
+    }
+  });
+
+  describe('curated allowlist is actually enforced (USE_PROFILES must not override it)', () => {
+    // These tags are in DOMPurify's default html profile but NOT in the curated ALLOWED_TAGS.
+    // If USE_PROFILES were set, the profile would override the allowlist and these would survive.
+    const NON_MARKDOWN_TAGS: { name: string; html: string; tag: string }[] = [
+      { name: 'button', html: '<button>click</button>', tag: '<button' },
+      { name: 'input', html: '<input value="x">', tag: '<input' },
+      { name: 'details', html: '<details open>d</details>', tag: '<details' },
+      { name: 'audio', html: '<audio controls></audio>', tag: '<audio' },
+      { name: 'select/option', html: '<select><option>o</option></select>', tag: '<select' },
+      { name: 'label', html: '<label>l</label>', tag: '<label' },
+    ];
+    for (const { name, html, tag } of NON_MARKDOWN_TAGS) {
+      it(`drops non-markdown tag: ${name}`, () => {
+        expect(sanitize(html).toLowerCase()).not.toContain(tag);
       });
     }
   });

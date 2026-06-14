@@ -123,8 +123,14 @@
       // foreign-namespace roots and style so config drift can't silently re-admit them.
       FORBID_TAGS: ['style', 'svg', 'math', 'script', 'iframe', 'object', 'embed', 'form'],
       FORBID_ATTR: ['style'],
-      // No data: URIs except images; block the rest. SVG/MathML namespaces fully disabled.
-      USE_PROFILES: { html: true },
+      // NOTE: do NOT set USE_PROFILES here. DOMPurify treats USE_PROFILES and
+      // ALLOWED_TAGS/ALLOWED_ATTR as mutually exclusive — when a profile is set it
+      // RESETS the allow-lists to the full profile and silently ignores the curated
+      // lists above, widening the tag set far beyond what markdown emits. Relying on
+      // the explicit ALLOWED_TAGS/ALLOWED_ATTR keeps the tight allowlist in force;
+      // FORBID_TAGS/FORBID_ATTR remain as defense-in-depth. DOMPurify still applies
+      // its default safe-URI handling (blocks javascript:/vbscript:, allows
+      // http/https/mailto/tel + data: only on image tags).
       ALLOW_DATA_ATTR: false,
       ADD_ATTR: [],
       RETURN_DOM: false,
