@@ -132,13 +132,16 @@ describe('Tab Navigation', () => {
       expect(modalClass).toMatch(/active/);
     });
 
-    it('header has no utility toggle and the tray stays collapsed on mobile', async () => {
+    it('header has no utility toggle and the tray is reachable inline on mobile', async () => {
       // The three-dot header utility toggle was removed (owner decision,
-      // 2026-06-10): nothing interactive may occupy the top-left corner, and
-      // the headerRight tray stays collapsed (hidden) on small viewports.
+      // 2026-06-10) and the collapsible position:fixed headerRight tray it
+      // controlled was dropped (PR #122): with the toggle gone, leaving the
+      // tray collapsed made every header-right utility — including the opt-in
+      // response-viewer eye button — permanently unreachable on phones. The
+      // utilities now flow INLINE and must stay reachable on small viewports;
+      // nothing interactive may occupy the top-left corner.
       await page.evaluate(() => {
         document.querySelectorAll('.modal.active').forEach((modal) => modal.classList.remove('active'));
-        document.getElementById('headerRight')?.classList.add('mobile-collapsed');
       });
 
       const toggleCount = await page.locator('#mobileHeaderUtilityToggle').count();
@@ -148,7 +151,7 @@ describe('Tab Navigation', () => {
         const tray = document.getElementById('headerRight');
         return tray ? getComputedStyle(tray).display !== 'none' : false;
       });
-      expect(trayVisible).toBe(false);
+      expect(trayVisible).toBe(true);
     });
 
     it('tabs remain visible on large phone and tablet headers', async () => {
