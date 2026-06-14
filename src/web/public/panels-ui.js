@@ -2509,6 +2509,23 @@ Object.assign(CodemanApp.prototype, {
       return;
     }
 
+    // Workspace-path (auto-detected, unregistered) attachments: Office docs are
+    // converted to PDF server-side via the file-preview route; PDFs stream raw.
+    // Both render inline in an iframe. Without this, docx/pptx/pdf fall through
+    // to file-content below, which would dump the binary bytes as mojibake.
+    if (ext === 'docx' || ext === 'pptx') {
+      footerEl.textContent = ext.toUpperCase();
+      const previewSrc = `/api/sessions/${sessionId}/file-preview?path=${encodeURIComponent(filePath)}`;
+      bodyEl.innerHTML = `<iframe src="${escapeHtml(previewSrc)}" title="${escapeHtml(filePath)}"></iframe>`;
+      return;
+    }
+    if (ext === 'pdf') {
+      footerEl.textContent = 'PDF';
+      const rawSrc = `/api/sessions/${sessionId}/file-raw?path=${encodeURIComponent(filePath)}`;
+      bodyEl.innerHTML = `<iframe src="${escapeHtml(rawSrc)}" title="${escapeHtml(filePath)}"></iframe>`;
+      return;
+    }
+
     try {
       const res = await fetch(`/api/sessions/${sessionId}/file-content?path=${encodeURIComponent(filePath)}&lines=500`);
       if (!res.ok) throw new Error('Failed to load file');

@@ -9,11 +9,22 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import { runWithConversionLimit } from './document-conversion-limiter.js';
 
 const execFileAsync = promisify(execFile);
 
 const OFFICE_CONVERSION_TIMEOUT_MS = 5 * 60_000;
 const DOCUMENT_PREVIEW_CACHE_DIR = join(tmpdir(), 'codeman-document-preview-cache');
+/**
+ * Cap on persistent converted-PDF files kept in DOCUMENT_PREVIEW_CACHE_DIR.
+ * The cache key embeds the source mtime, so every edit to a doc orphans its
+ * prior PDF; without a cap the dir grows unbounded across long-running sessions.
+ * Override with CODEMAN_MAX_PREVIEW_CACHE_FILES (clamped to >= 1).
+ */
+const MAX_PREVIEW_CACHE_FILES = (() => {
+  const raw = Number(process.env.CODEMAN_MAX_PREVIEW_CACHE_FILES);
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 100;
+})();
 function buildWordExportPdfScript(sourcePath: string, outputPath: string): string {
   return `
 $ErrorActionPreference = "Stop"
@@ -48,6 +59,40 @@ const inFlightOfficeConversions = new Map<string, Promise<string | null>>();
 
 export function clearDocumentPreviewCache(): void {
   inFlightOfficeConversions.clear();
+}
+
+/**
+ * Best-effort LRU-ish eviction for the persistent converted-PDF cache: keeps at
+ * most MAX_PREVIEW_CACHE_FILES `*.pdf` files in `cacheDir`, deleting the oldest
+ * by mtime once over the cap. Never throws — a pruning failure must not fail the
+ * conversion that triggered it. Only `*.pdf` files are considered, so the
+ * transient `work-*` mkdtemp dirs are ignored.
+ */
+export async function pruneDocumentPreviewCache(cacheDir: string): Promise<void> {
+  try {
+    const entries = await fs.readdir(cacheDir);
+    const pdfs = entries.filter((name) => name.toLowerCase().endsWith('.pdf'));
+    if (pdfs.length <= MAX_PREVIEW_CACHE_FILES) return;
+
+    const stats = await Promise.all(
+      pdfs.map(async (name) => {
+        const fullPath = join(cacheDir, name);
+        try {
+          const stat = await fs.stat(fullPath);
+          return { fullPath, mtimeMs: stat.mtimeMs ?? 0 };
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    const sorted = stats.filter((s): s is { fullPath: string; mtimeMs: number } => s !== null);
+    sorted.sort((a, b) => a.mtimeMs - b.mtimeMs); // oldest first
+    const toRemove = sorted.slice(0, Math.max(0, sorted.length - MAX_PREVIEW_CACHE_FILES));
+    await Promise.all(toRemove.map((entry) => fs.rm(entry.fullPath, { force: true }).catch(() => {})));
+  } catch {
+    // Best-effort: pruning must never break a conversion.
+  }
 }
 
 export async function getOfficePreviewPdfPath(filePath: string, extension: string): Promise<string | null> {
@@ -147,23 +192,26 @@ async function convertWordDocumentToCachedPdf(filePath: string, cachePath: strin
     const sourcePath = wslMountPathToWindowsPath(sourceCopyPath);
     if (!sourcePath) return null;
 
-    await execFileAsync(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-EncodedCommand',
-        encodePowerShellCommand(buildWordExportPdfScript(sourcePath, outputPath)),
-      ],
-      {
-        timeout: OFFICE_CONVERSION_TIMEOUT_MS,
-        maxBuffer: 1024 * 1024,
-      }
+    await runWithConversionLimit(() =>
+      execFileAsync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-EncodedCommand',
+          encodePowerShellCommand(buildWordExportPdfScript(sourcePath, outputPath)),
+        ],
+        {
+          timeout: OFFICE_CONVERSION_TIMEOUT_MS,
+          maxBuffer: 1024 * 1024,
+        }
+      )
     );
 
     if (await fileExists(cachePath)) {
+      await pruneDocumentPreviewCache(dirname(cachePath));
       return cachePath;
     }
 
@@ -186,33 +234,37 @@ async function convertLibreOfficeDocumentToCachedPdf(filePath: string, cachePath
   let workDir: string | undefined;
   try {
     await fs.mkdir(DOCUMENT_PREVIEW_CACHE_DIR, { recursive: true });
-    workDir = await fs.mkdtemp(join(DOCUMENT_PREVIEW_CACHE_DIR, 'work-'));
-    const profileDir = join(workDir, 'profile');
+    const outDir = await fs.mkdtemp(join(DOCUMENT_PREVIEW_CACHE_DIR, 'work-'));
+    workDir = outDir;
+    const profileDir = join(outDir, 'profile');
     await fs.mkdir(profileDir, { recursive: true });
 
-    await execFileAsync(
-      'soffice',
-      [
-        '--headless',
-        '--nologo',
-        '--nofirststartwizard',
-        `-env:UserInstallation=${pathToFileURL(profileDir).href}`,
-        '--convert-to',
-        'pdf',
-        '--outdir',
-        workDir,
-        filePath,
-      ],
-      {
-        timeout: OFFICE_CONVERSION_TIMEOUT_MS,
-        maxBuffer: 1024 * 1024,
-      }
+    await runWithConversionLimit(() =>
+      execFileAsync(
+        'soffice',
+        [
+          '--headless',
+          '--nologo',
+          '--nofirststartwizard',
+          `-env:UserInstallation=${pathToFileURL(profileDir).href}`,
+          '--convert-to',
+          'pdf',
+          '--outdir',
+          outDir,
+          filePath,
+        ],
+        {
+          timeout: OFFICE_CONVERSION_TIMEOUT_MS,
+          maxBuffer: 1024 * 1024,
+        }
+      )
     );
 
-    const converted = (await fs.readdir(workDir)).find((name) => name.toLowerCase().endsWith('.pdf'));
+    const converted = (await fs.readdir(outDir)).find((name) => name.toLowerCase().endsWith('.pdf'));
     if (!converted) return null;
 
     await fs.rename(join(workDir, converted), cachePath);
+    await pruneDocumentPreviewCache(DOCUMENT_PREVIEW_CACHE_DIR);
     return cachePath;
   } catch (err) {
     console.warn(

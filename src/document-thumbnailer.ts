@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { getOfficePreviewPdfPath } from './document-preview-cache.js';
+import { runWithConversionLimit } from './document-conversion-limiter.js';
 
 const execFileAsync = promisify(execFile);
 const THUMBNAIL_CONVERSION_TIMEOUT_MS = 5 * 60_000;
@@ -61,13 +62,11 @@ async function renderPdfFirstPage(filePath: string): Promise<ThumbnailResult | n
   try {
     previewDir = await fs.mkdtemp(join(tmpdir(), 'codeman-thumb-pdf-'));
     const prefix = join(previewDir, basename(filePath, extname(filePath)));
-    await execFileAsync(
-      'pdftoppm',
-      ['-png', '-singlefile', '-f', '1', '-l', '1', '-scale-to', '520', filePath, prefix],
-      {
+    await runWithConversionLimit(() =>
+      execFileAsync('pdftoppm', ['-png', '-singlefile', '-f', '1', '-l', '1', '-scale-to', '520', filePath, prefix], {
         timeout: THUMBNAIL_CONVERSION_TIMEOUT_MS,
         maxBuffer: 1024 * 1024,
-      }
+      })
     );
     const content = await fs.readFile(`${prefix}.png`);
     return { content, contentType: 'image/png' };
