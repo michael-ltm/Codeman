@@ -39,6 +39,9 @@
   <script defer src="vendor/xterm-addon-unicode11.min.js"></script>
   <script defer src="vendor/xterm-zerolag-input.js"></script>
   <script defer src="vendor/marked.min.js"></script>
+  <!-- DOMPurify (allowlist HTML sanitizer for rendered markdown).
+       Must load before sanitize-html.js (which wires it) and app.js (which calls it). -->
+  <script defer src="vendor/dompurify.min.js"></script>
   <!-- Synchronous mobile detection — runs before first paint to prevent panel flash -->
   <script>if(window.innerWidth<768||(('ontouchstart' in window||navigator.maxTouchPoints>0)&&window.innerWidth<1024))document.documentElement.classList.add('mobile-init');</script>
   <!-- Synchronous skin selection — runs before first paint to prevent theme flash -->
@@ -1907,6 +1910,8 @@
   <script defer src="notification-manager.js"></script>
   <script defer src="keyboard-accessory.js"></script>
   <script defer src="input-cjk.js"></script>
+  <!-- Hardened markdown HTML sanitizer (wires DOMPurify). Must precede app.js. -->
+  <script defer src="sanitize-html.js"></script>
   <script defer src="app.js"></script>
   <script defer src="terminal-ui.js"></script>
   <script defer src="respawn-ui.js"></script>
