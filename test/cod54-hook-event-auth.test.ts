@@ -4,15 +4,19 @@
  * The `/api/hook-event` localhost bypass let tunnel traffic (cloudflared
  * --url http://127.0.0.1:port) reach the loopback origin with req.ip ===
  * 127.0.0.1 and drive respawn/Ralph signals unauthenticated. The fix gates
- * the bypass behind a shared hook secret WHEN A TUNNEL IS RUNNING, while
- * keeping the plain localhost bypass for the normal loopback-only case so
- * already-deployed (pre-secret) hooks and the loop's own channel keep working.
+ * the bypass behind a shared hook secret. COD-91 makes that requirement
+ * UNCONDITIONAL — the loopback bypass requires the secret whether or not a
+ * managed tunnel is running, because Codeman can't detect a user's own loopback
+ * reverse proxy (own cloudflared / `tailscale serve` / nginx → 127.0.0.1).
+ * Managed-session hooks always present the secret, so the legitimate channel
+ * keeps working.
  *
  * Tests:
  *  - tunnel running + no secret  → 401 (closes the hole)
  *  - tunnel running + bad secret → 401
  *  - tunnel running + good secret → not 401 (allowed)
- *  - tunnel NOT running + no secret → not 401 (back-compat regression guard)
+ *  - tunnel NOT running + no secret → 401 (COD-91: secret required unconditionally)
+ *  - tunnel NOT running + good secret → not 401 (allowed)
  *  - rate limiting: rapid unauthorized hook POSTs eventually 429
  *
  * Port: 3230 (tunnel-running), 3231 (tunnel-down), 3232 (rate-limit)
@@ -83,7 +87,7 @@ describe('COD-54 hook-event auth — tunnel running requires secret', () => {
   });
 });
 
-describe('COD-54 hook-event auth — tunnel down keeps localhost bypass (back-compat)', () => {
+describe('COD-91 hook-event auth — tunnel down ALSO requires the secret', () => {
   let server: WebServer;
   let baseUrl: string;
   let isRunningSpy: ReturnType<typeof vi.spyOn>;
@@ -105,8 +109,13 @@ describe('COD-54 hook-event auth — tunnel down keeps localhost bypass (back-co
     delete process.env.CODEMAN_USERNAME;
   });
 
-  it('still allows a localhost hook POST WITHOUT a secret (existing hooks + loop channel keep working)', async () => {
+  it('rejects a localhost hook POST WITHOUT a secret even with no tunnel (COD-91)', async () => {
     const res = await postHook(baseUrl);
+    expect(res.status).toBe(401);
+  });
+
+  it('allows a localhost hook POST WITH the correct secret when no tunnel is running', async () => {
+    const res = await postHook(baseUrl, { [HOOK_SECRET_HEADER]: getHookSecret() });
     expect(res.status).not.toBe(401);
   });
 });
