@@ -770,14 +770,31 @@ class CodemanApp {
         if (this.attachmentHistoryDrawerOpen) this.closeAttachmentHistory();
       }
 
-      // Alt+1-9: switch to Codeman session by index
-      if (e.altKey && !e.ctrlKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
-        const idx = parseInt(e.key) - 1;
-        if (idx < this.sessionOrder.length) {
-          e.preventDefault();
-          this.selectSession(this.sessionOrder[idx]);
+      // Option/Alt session navigation uses physical key CODES, not e.key, so macOS
+      // keyboard layouts that emit special characters under Option (Option+1 -> ¡,
+      // Option+[ -> "“") still switch sessions. e.code is the physical key regardless
+      // of layout. Option+1-9 = switch by index; Option+[ / Option+] = prev / next.
+      if (e.altKey && !e.ctrlKey && !e.shiftKey) {
+        const code = e.code || '';
+        const digitMatch = code.match(/^Digit([1-9])$/);
+        if (digitMatch) {
+          const idx = parseInt(digitMatch[1], 10) - 1;
+          if (idx < this.sessionOrder.length) {
+            e.preventDefault();
+            this.selectSession(this.sessionOrder[idx]);
+          }
+          return;
         }
-        return;
+        if (e.code === 'BracketLeft') {
+          e.preventDefault();
+          this.prevSession();
+          return;
+        }
+        if (e.code === 'BracketRight') {
+          e.preventDefault();
+          this.nextSession();
+          return;
+        }
       }
 
       // Match against shortcut table
