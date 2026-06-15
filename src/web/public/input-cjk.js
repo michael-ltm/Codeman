@@ -113,11 +113,9 @@ const CjkInput = (() => {
       // ── Composition tracking ──
       _listeners.compositionstart = () => {
         _composing = true;
-        // Clear phantom so IME sees a clean textarea — some IMEs include
-        // existing text in the composition region which would corrupt input.
-        if (_textarea.value === PHANTOM) {
-          _textarea.value = '';
-        }
+        // Leave textarea.value untouched — programmatic changes during
+        // compositionstart cancel the IME composition on iOS Safari.
+        // The phantom (U+200B) is invisible and _strip() removes it on flush.
       };
       _listeners.compositionend = () => {
         _composing = false;
