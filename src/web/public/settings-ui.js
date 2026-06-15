@@ -313,6 +313,7 @@ Object.assign(CodemanApp.prototype, {
     document.getElementById('appSettingsShowProjectInsights').checked = settings.showProjectInsights ?? defaults.showProjectInsights ?? false;
     document.getElementById('appSettingsShowFileBrowser').checked = settings.showFileBrowser ?? defaults.showFileBrowser ?? false;
     document.getElementById('appSettingsShowSubagents').checked = settings.showSubagents ?? defaults.showSubagents ?? false;
+    document.getElementById('appSettingsShowUltracodeAgents').checked = settings.showUltracodeAgents ?? defaults.showUltracodeAgents ?? false;
     document.getElementById('appSettingsShowMultiMonitorButton').checked = settings.showMultiMonitorButton ?? defaults.showMultiMonitorButton ?? false;
     document.getElementById('appSettingsShowPlanUsageLimits').checked = settings.showPlanUsageLimits ?? defaults.showPlanUsageLimits ?? false;
     // Gesture control lives in the Input section (alongside Local Echo / CJK Input)
@@ -1368,6 +1369,7 @@ Object.assign(CodemanApp.prototype, {
       showProjectInsights: document.getElementById('appSettingsShowProjectInsights').checked,
       showFileBrowser: document.getElementById('appSettingsShowFileBrowser').checked,
       showSubagents: document.getElementById('appSettingsShowSubagents').checked,
+      showUltracodeAgents: document.getElementById('appSettingsShowUltracodeAgents').checked,
       showMultiMonitorButton: document.getElementById('appSettingsShowMultiMonitorButton').checked,
       showPlanUsageLimits: document.getElementById('appSettingsShowPlanUsageLimits').checked,
       gestureControlEnabled: document.getElementById('appSettingsGestureControl').checked,
@@ -1682,6 +1684,7 @@ Object.assign(CodemanApp.prototype, {
         showProjectInsights: false,
         showFileBrowser: false,
         showSubagents: false,
+        showUltracodeAgents: false,
         showMultiMonitorButton: false,
         showPlanUsageLimits: false,
         showAttachmentsButton: false,
@@ -1805,6 +1808,15 @@ Object.assign(CodemanApp.prototype, {
       multiMonitorBtn.classList.toggle('btn-multimonitor--hidden', !showMultiMonitorButton);
     }
 
+    // Ultracode/Workflow agents launcher — hidden by default; reveal when enabled.
+    // Marker class only (base is display:inline-flex !important) so it's auto-excluded
+    // from the mobile-header-buttons-policy guard.
+    const showUltracodeAgents = settings.showUltracodeAgents ?? defaults.showUltracodeAgents ?? false;
+    const ultracodeBtn = document.querySelector('.btn-ultracode-agents');
+    if (ultracodeBtn) {
+      ultracodeBtn.classList.toggle('btn-ultracode-agents--hidden', !showUltracodeAgents);
+    }
+
     // Plan-usage chip — hidden by default (App Settings → Display → "Plan Usage
     // Limits"). Server renders the initial state on reload; this handles a live
     // toggle from a settings save. Marker class (base is display:inline-flex
@@ -1873,6 +1885,18 @@ Object.assign(CodemanApp.prototype, {
         subagentsPanel.classList.remove('hidden');
       } else {
         subagentsPanel.classList.add('hidden');
+      }
+    }
+
+    // Ultracode agents panel visibility (SYNCED setting — not in displayKeys)
+    const showUltracodeAgents = settings.showUltracodeAgents ?? defaults.showUltracodeAgents ?? false;
+    const ultracodePanel = document.getElementById('ultracodeAgentsPanel');
+    if (ultracodePanel) {
+      if (showUltracodeAgents) {
+        ultracodePanel.classList.remove('hidden');
+      } else {
+        ultracodePanel.classList.remove('open');
+        ultracodePanel.classList.add('hidden');
       }
     }
 

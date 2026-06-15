@@ -122,6 +122,7 @@
           <span class="attachment-history-badge" id="attachmentHistoryBadge" style="display:none;">0</span>
         </button>
         <button class="btn-icon-header btn-multimonitor btn-multimonitor--hidden" onclick="app.launchMultiMonitor()" title="Open Codeman across all displays" aria-label="Open Codeman across all displays"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="13" height="9" rx="1.5"/><rect x="11" y="9" width="11" height="8" rx="1.5"/></svg></button>
+        <button class="btn-icon-header btn-ultracode-agents btn-ultracode-agents--hidden" onclick="app.toggleUltracodeAgentsPanel()" title="Ultracode / Workflow agents" aria-label="Open ultracode workflow agents"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M8.2 7.2 15.6 11M8.2 16.8 15.6 13"/></svg></button>
         <div class="header-plan-usage header-plan-usage--hidden" id="planUsageChip" title="Claude plan usage limits">—</div>
         <button class="btn-icon-header btn-notifications" onclick="app.toggleNotifications()" title="Notifications" aria-label="Toggle notifications" style="display:none;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
@@ -600,6 +601,29 @@
       </div>
     </div>
 
+    <!-- Ultracode / Workflow agents master-detail panel (opt-in via showUltracodeAgents) -->
+    <div class="subagents-panel ultracode-agents-panel hidden" id="ultracodeAgentsPanel">
+      <div class="subagents-panel-header">
+        <div class="subagents-panel-title">
+          Ultracode Agents <span id="ultracodeCountBadge" class="subagent-badge"></span>
+        </div>
+        <div class="subagents-panel-actions">
+          <button class="btn-icon-sm" onclick="app.toggleUltracodeAgentsPanel()" title="Toggle panel">&#x25B2;</button>
+          <button class="btn-icon-sm" onclick="app.closeUltracodeAgentsPanel()" title="Close">&times;</button>
+        </div>
+      </div>
+      <div class="subagents-panel-body">
+        <div class="subagent-container">
+          <div class="subagent-list ultracode-run-list" id="ultracodeRunList">
+            <div class="subagent-empty">No ultracode runs detected</div>
+          </div>
+          <div class="subagent-detail ultracode-agent-grid" id="ultracodeAgentGrid">
+            <div class="subagent-empty">Select a run to view its agents</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Session Options Modal (includes Respawn Settings) -->
     <div class="modal" id="sessionOptionsModal">
       <div class="modal-backdrop" onclick="app.closeSessionOptions()"></div>
@@ -1072,6 +1096,13 @@
                 <span class="settings-item-label">Subagents</span>
                 <label class="switch switch-sm">
                   <input type="checkbox" id="appSettingsShowSubagents">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="settings-item" title="Show ultracode / Workflow runs as a master-detail tab (tasks on the left, agents with tokens + tool calls on the right)">
+                <span class="settings-item-label">Ultracode Agents</span>
+                <label class="switch switch-sm">
+                  <input type="checkbox" id="appSettingsShowUltracodeAgents">
                   <span class="slider"></span>
                 </label>
               </div>
@@ -1927,6 +1958,7 @@
   <script defer src="orchestrator-panel.js"></script>
   <script defer src="settings-ui.js"></script>
   <script defer src="panels-ui.js"></script>
+  <script defer src="ultracode-panel.js"></script>
   <script defer src="session-ui.js"></script>
   <script defer src="ralph-wizard.js"></script>
   <script defer src="api-client.js"></script>

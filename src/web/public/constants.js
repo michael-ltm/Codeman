@@ -350,6 +350,11 @@ const SSE_EVENTS = {
   SUBAGENT_TOOL_RESULT: 'subagent:tool_result',
   SUBAGENT_COMPLETED: 'subagent:completed',
 
+  // Workflow runs (ultracode / Workflow tool)
+  WORKFLOW_RUN_DISCOVERED: 'workflow:run_discovered',
+  WORKFLOW_RUN_UPDATED: 'workflow:run_updated',
+  WORKFLOW_RUN_REMOVED: 'workflow:run_removed',
+
   // Images
   IMAGE_DETECTED: 'image:detected',
   ATTACHMENT_DETECTED: 'attachment:detected',

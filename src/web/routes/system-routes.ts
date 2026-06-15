@@ -26,6 +26,7 @@ import {
 } from '../schemas.js';
 import { subagentWatcher } from '../../subagent-watcher.js';
 import { imageWatcher } from '../../image-watcher.js';
+import { workflowRunWatcher } from '../../workflow-run-watcher.js';
 import { applyStatusLineConfig } from '../../hooks-config.js';
 import { getLifecycleLog } from '../../session-lifecycle-log.js';
 import {
@@ -540,6 +541,9 @@ export function registerSystemRoutes(
       // Handle subagent tracking toggle dynamically
       toggleService((settings.subagentTrackingEnabled as boolean) ?? true, subagentWatcher, 'Subagent watcher');
 
+      // Handle ultracode/workflow run watcher toggle dynamically (default OFF)
+      toggleService((settings.showUltracodeAgents as boolean) ?? false, workflowRunWatcher, 'Workflow run watcher');
+
       // Handle image watcher toggle dynamically
       toggleService((settings.imageWatcherEnabled as boolean) ?? false, imageWatcher, 'Image watcher', () => {
         // Re-watch all active sessions that have image watcher enabled
@@ -689,6 +693,27 @@ export function registerSystemRoutes(
     } catch (err) {
       return createErrorResponse(ApiErrorCode.OPERATION_FAILED, getErrorMessage(err));
     }
+  });
+
+  // ========== Workflow Run Monitoring (ultracode) ==========
+
+  // LEFT-pane list: lightweight run summaries (no agents[]).
+  app.get('/api/workflows', async (req) => {
+    const { minutes } = req.query as { minutes?: string };
+    const runs = minutes
+      ? workflowRunWatcher.getRecentRunSummaries(parseInt(minutes, 10))
+      : workflowRunWatcher.getAllRunSummaries();
+    return { success: true, data: runs };
+  });
+
+  // RIGHT-pane detail: full run incl. agents[] (tokens/toolCalls/state per agent).
+  app.get('/api/workflows/:runId', async (req) => {
+    const { runId } = req.params as { runId: string };
+    const run = workflowRunWatcher.getRun(runId);
+    if (!run) {
+      return createErrorResponse(ApiErrorCode.NOT_FOUND, `Workflow run ${runId} not found`);
+    }
+    return { success: true, data: run };
   });
 
   // ========== Subagent Monitoring ==========

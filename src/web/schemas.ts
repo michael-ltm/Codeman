@@ -348,6 +348,8 @@ export const SettingsUpdateSchema = z
     ralphTrackerEnabled: z.boolean().optional(),
     subagentTrackingEnabled: z.boolean().optional(),
     subagentActiveTabOnly: z.boolean().optional(),
+    /** Ultracode/Workflow run visualization (default OFF). Gates workflowRunWatcher + the master-detail tab. SYNCED. */
+    showUltracodeAgents: z.boolean().optional(),
     imageWatcherEnabled: z.boolean().optional(),
     tunnelEnabled: z.boolean().optional(),
     tabTwoRows: z.boolean().optional(),

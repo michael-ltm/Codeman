@@ -44,7 +44,7 @@ import { dataPath } from '../config/instance.js';
 import { getHookSecret } from '../config/hook-secret.js';
 import { EventEmitter } from 'node:events';
 import { Session, isExternalCliMode, type BackgroundTask } from '../session.js';
-import type { ClaudeMode, SessionAttachmentHistoryItem, SessionState } from '../types.js';
+import type { ClaudeMode, SessionAttachmentHistoryItem, SessionState, WorkflowRunInfo } from '../types.js';
 import { RespawnController, RespawnConfig } from '../respawn-controller.js';
 import type { TerminalMultiplexer } from '../mux-interface.js';
 import { createMultiplexer } from '../mux-factory.js';
@@ -60,6 +60,7 @@ import {
   type SubagentToolResult,
 } from '../subagent-watcher.js';
 import { imageWatcher } from '../image-watcher.js';
+import { workflowRunWatcher, summarizeRun } from '../workflow-run-watcher.js';
 import { attachmentRegistry, buildFileThumbnailRoute, registerExternalAttachment } from '../attachment-registry.js';
 import {
   buildDetectedAttachmentHistoryItem,
@@ -259,6 +260,11 @@ export class WebServer extends EventEmitter {
     attachmentDetected: (event: AttachmentDetectedEvent) => void;
     error: (error: Error, sessionId?: string) => void;
   } | null = null;
+  private workflowRunWatcherHandlers: {
+    discovered: (info: WorkflowRunInfo) => void;
+    updated: (info: WorkflowRunInfo) => void;
+    removed: (data: { runId: string }) => void;
+  } | null = null;
   private tunnelManager: TunnelManager = new TunnelManager();
   private authSessions: StaleExpirationMap<string, import('./ports/auth-port.js').AuthSessionRecord> | null = null;
   private authFailures: StaleExpirationMap<string, number> | null = null;
@@ -338,6 +344,7 @@ export class WebServer extends EventEmitter {
 
     // Set up subagent watcher listeners
     this.setupSubagentWatcherListeners();
+    this.setupWorkflowRunWatcherListeners();
 
     // Set up image watcher listeners
     this.setupImageWatcherListeners();
@@ -434,6 +441,31 @@ export class WebServer extends EventEmitter {
       subagentWatcher.off('subagent:completed', this.subagentWatcherHandlers.completed);
       subagentWatcher.off('subagent:error', this.subagentWatcherHandlers.error);
       this.subagentWatcherHandlers = null;
+    }
+  }
+
+  /**
+   * Bridge WorkflowRunWatcher events → SSE. Broadcasts run SUMMARIES (no agents[])
+   * to keep payloads small; the full agents[] is fetched per-run via
+   * GET /api/workflows/:runId when the user selects a run.
+   */
+  private setupWorkflowRunWatcherListeners(): void {
+    this.workflowRunWatcherHandlers = {
+      discovered: (info: WorkflowRunInfo) => this.broadcast(SseEvent.WorkflowRunDiscovered, summarizeRun(info)),
+      updated: (info: WorkflowRunInfo) => this.broadcast(SseEvent.WorkflowRunUpdated, summarizeRun(info)),
+      removed: (data: { runId: string }) => this.broadcast(SseEvent.WorkflowRunRemoved, data),
+    };
+    workflowRunWatcher.on('run_discovered', this.workflowRunWatcherHandlers.discovered);
+    workflowRunWatcher.on('run_updated', this.workflowRunWatcherHandlers.updated);
+    workflowRunWatcher.on('run_removed', this.workflowRunWatcherHandlers.removed);
+  }
+
+  private cleanupWorkflowRunWatcherListeners(): void {
+    if (this.workflowRunWatcherHandlers) {
+      workflowRunWatcher.off('run_discovered', this.workflowRunWatcherHandlers.discovered);
+      workflowRunWatcher.off('run_updated', this.workflowRunWatcherHandlers.updated);
+      workflowRunWatcher.off('run_removed', this.workflowRunWatcherHandlers.removed);
+      this.workflowRunWatcherHandlers = null;
     }
   }
 
@@ -1669,6 +1701,7 @@ export class WebServer extends EventEmitter {
       respawnStatus,
       globalStats: this.store.getAggregateStats(activeSessionTokens),
       subagents: subagentWatcher.getRecentSubagents(15), // 15 min to avoid stale agents
+      workflowRuns: workflowRunWatcher.getAllRunSummaries(), // ultracode run summaries (no agents[]) for the LEFT list
       timestamp: now,
       inputCjkForm: process.env.INPUT_CJK_FORM?.toUpperCase() === 'ON',
       planUsage: getLatestPlanUsage(), // last-known plan-usage telemetry, for the header chip on fresh load
@@ -1937,6 +1970,14 @@ export class WebServer extends EventEmitter {
       console.log('Subagent watcher disabled by user settings');
     }
 
+    // Start workflow run watcher for ultracode / Workflow run visualization (if enabled)
+    if (await this.isWorkflowAgentTrackingEnabled()) {
+      workflowRunWatcher.start();
+      console.log('Workflow run watcher started - monitoring ~/.claude/projects for ultracode run activity');
+    } else {
+      console.log('Workflow run watcher disabled by user settings (showUltracodeAgents off)');
+    }
+
     // Start image watcher for auto-popup of screenshots (if enabled)
     if (await this.isImageWatcherEnabled()) {
       imageWatcher.start();
@@ -1981,6 +2022,23 @@ export class WebServer extends EventEmitter {
       }
     }
     return true; // Default enabled
+  }
+
+  /**
+   * Check if ultracode/workflow run tracking is enabled in settings (default: FALSE — opt-in).
+   */
+  private async isWorkflowAgentTrackingEnabled(): Promise<boolean> {
+    const settingsPath = dataPath('settings.json');
+    try {
+      const content = await fs.readFile(settingsPath, 'utf-8');
+      const settings = JSON.parse(content);
+      return settings.showUltracodeAgents ?? false;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.error('Failed to read showUltracodeAgents setting:', err);
+      }
+    }
+    return false; // Default disabled (opt-in)
   }
 
   /**
@@ -2337,11 +2395,15 @@ export class WebServer extends EventEmitter {
 
     // Clean up watcher listeners to prevent memory leaks
     this.cleanupSubagentWatcherListeners();
+    this.cleanupWorkflowRunWatcherListeners();
     this.cleanupImageWatcherListeners();
     this.cleanupTeamWatcherListeners();
 
     // Stop subagent watcher
     subagentWatcher.stop();
+
+    // Stop workflow run watcher
+    workflowRunWatcher.stop();
 
     // Stop image watcher
     imageWatcher.stop();

@@ -221,6 +221,11 @@ const _SSE_HANDLER_MAP = [
   [SSE_EVENTS.SUBAGENT_TOOL_RESULT, '_onSubagentToolResult'],
   [SSE_EVENTS.SUBAGENT_COMPLETED, '_onSubagentCompleted'],
 
+  // Workflow runs (ultracode)
+  [SSE_EVENTS.WORKFLOW_RUN_DISCOVERED, '_onWorkflowRunDiscovered'],
+  [SSE_EVENTS.WORKFLOW_RUN_UPDATED, '_onWorkflowRunUpdated'],
+  [SSE_EVENTS.WORKFLOW_RUN_REMOVED, '_onWorkflowRunRemoved'],
+
   // Images
   [SSE_EVENTS.IMAGE_DETECTED, '_onImageDetected'],
   [SSE_EVENTS.ATTACHMENT_DETECTED, '_onAttachmentDetected'],
@@ -339,6 +344,12 @@ class CodemanApp {
     this.subagentToolResults = new Map(); // Map<agentId, Map<toolUseId, result>> - tool results by toolUseId
     this.activeSubagentId = null; // Currently selected subagent for detail view
     this.subagentPanelVisible = false;
+
+    // Ultracode / Workflow run visualization (master-detail tab)
+    this.workflowRuns = new Map(); // runId -> run summary (LEFT list)
+    this.workflowRunDetails = new Map(); // runId -> full run with agents[] (RIGHT pane)
+    this.activeWorkflowRunId = null;
+    this.activeWorkflowPhaseIndex = null;
     this.subagentWindows = new Map(); // Map<agentId, { element, position }>
     this.subagentWindowZIndex = ZINDEX_SUBAGENT_BASE;
     this.minimizedSubagents = new Map(); // Map<sessionId, Set<agentId>> - minimized to tab
@@ -2228,6 +2239,11 @@ class CodemanApp {
     // Clear subagent activity/results maps (prevents leaks if data.subagents is missing)
     this.subagentActivity.clear();
     this.subagentToolResults.clear();
+    // Clear ultracode workflow run state (re-seeded from data.workflowRuns below)
+    if (this.workflowRuns) this.workflowRuns.clear();
+    if (this.workflowRunDetails) this.workflowRunDetails.clear();
+    this.activeWorkflowRunId = null;
+    this.activeWorkflowPhaseIndex = null;
     // Clean up mobile/keyboard handlers and re-init (prevents listener accumulation on reconnect)
     MobileDetection.cleanup();
     KeyboardHandler.cleanup();
@@ -2400,6 +2416,11 @@ class CodemanApp {
         // Finally, restore window states (this opens windows with correct parent info)
         this.restoreSubagentWindowStates();
       });
+    }
+
+    // Seed ultracode workflow runs (LEFT-pane summaries) from the snapshot
+    if (data.workflowRuns) {
+      this.seedWorkflowRuns(data.workflowRuns);
     }
 
     // Restore previously active session (survives page reload + SSE reconnect)
