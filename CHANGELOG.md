@@ -1,5 +1,13 @@
 # aicodeman
 
+## 1.1.5
+
+### Patch Changes
+
+- Fix: the Ultracode Agents panel's (×) Close button now fully hides the panel.
+
+  `closeUltracodeAgentsPanel()` only removed the `open` class, which drops the bottom-docked drawer to its collapsed _peek_ state (the 36px header strip stays visible) rather than closing it — so clicking (×) looked like it did nothing. It now also adds the `hidden` class (`display:none`), mirroring `closeSubagentsPanel()`. It deliberately does NOT flip the `showUltracodeAgents` setting (that also gates the run watcher and floating windows); the header launcher button reopens the panel. Verified in a real browser: after (×) the panel computes `display:none`.
+
 ## 1.1.4
 
 ### Patch Changes

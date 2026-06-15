@@ -78,8 +78,15 @@ Object.assign(CodemanApp.prototype, {
     if (panel.classList.contains('open')) this.renderUltracodeAgentsPanel();
   },
   closeUltracodeAgentsPanel() {
+    // The X must FULLY hide the panel. Removing only `open` drops it to the
+    // collapsed peek state (header strip still visible), so add `hidden`
+    // (display:none) too — mirrors closeSubagentsPanel. Not the showUltracodeAgents
+    // setting: that also gates the watcher + floating windows; the launcher reopens.
     const panel = document.getElementById('ultracodeAgentsPanel');
-    if (panel) panel.classList.remove('open');
+    if (panel) {
+      panel.classList.remove('open');
+      panel.classList.add('hidden');
+    }
   },
 
   // ----- Selection -----
