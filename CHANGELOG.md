@@ -1,5 +1,15 @@
 # aicodeman
 
+## 1.1.2
+
+### Patch Changes
+
+- Ultracode/Workflow run visualization + subagent discovery fixes.
+  - **Ultracode / Workflow run visualization** (new, opt-in): App Settings → Display → "Ultracode Agents" (`showUltracodeAgents`, default OFF) adds a master-detail tab that shows ultracode / Workflow-tool runs like Claude Code's "working agents" view — the LEFT pane lists runs and their phases (selectable tasks), the RIGHT pane shows each run's agents with model, live state, tokens burned, and tool calls. Clicking an agent opens its live transcript. Backed by a new standalone workflow-run watcher that reads the per-run state JSON (stripping the heavy embedded script/result/logs so payloads stay small), exposes `GET /api/workflows` and `GET /api/workflows/:runId`, and broadcasts `workflow:run_discovered/updated/removed` SSE events. The header launcher and panel stay hidden until the setting is enabled (the setting is synced across devices, not per-device).
+  - **Subagent tracking discovery fix**: restored subagent tracking after Claude Code changed the on-disk format from `agent-*.jsonl` to `agent-*.meta.json` (background agents were showing 0). Also discovers workflow-nested subagents under `subagents/workflows/<wf>/` and hardens the meta→transcript upgrade path so an agent re-points to its `.jsonl` transcript once it appears.
+  - **File viewer**: opens audio, SVG, and other binary files the same way the attachments viewer does.
+  - **Tooling**: hardened the real-overview screenshot capture script and documented the `deviceScaleFactor` / static-cache gotchas.
+
 ## 1.1.1
 
 ### Patch Changes
