@@ -1,5 +1,15 @@
 # aicodeman
 
+## 1.1.4
+
+### Patch Changes
+
+- Fix: ultracode floating run windows (and the live dock panel) now appear DURING an in-flight Workflow/ultracode run, not only after it finishes.
+
+  The Workflow runtime writes the run-state file `…/workflows/wf_<id>.json` only at completion (always a terminal status); while a run is live, its only on-disk state is the sibling `…/subagents/workflows/wf_<id>/` transcript tree. `workflow-run-watcher` previously scanned only the completion file, so it never observed a run until it was already terminal — and the floating-window auto-pop is gated on an ACTIVE run, so it never fired for a live run (the feature was effectively dead for in-flight runs).
+
+  The watcher now ALSO scans the `subagents/workflows/wf_<id>/` transcript tree and synthesizes a minimal ACTIVE run (status `running`, agent slots keyed by their `agentId` so the agent-card → live-transcript click still works, `lastActivityAt` from the newest agent/journal mtime, per-agent done/running derived from the run journal's `result` events) when no completion file exists yet. When the run finishes, the real `wf_<id>.json` supersedes the synthesized record (same runId), restoring full phase/token detail and the normal finish → 8s-grace auto-close flow. The watcher stays standalone (it never imports subagent-watcher). Verified end-to-end against a real in-flight run; adds unit coverage for live synthesis, agentId preservation, journal-derived state, empty-dir skipping, and completion-file precedence.
+
 ## 1.1.3
 
 ### Patch Changes

@@ -1,19 +1,33 @@
 /**
  * @fileoverview Workflow (ultracode) Run Watcher
  *
- * Watches `~/.claude/projects/<projHash>/<sessionUuid>/workflows/wf_*.json` —
- * the run-state JSON the Workflow tool writes for each ultracode run — and emits
- * events powering the master-detail "working agents" view (tasks/phases on the
- * LEFT, per-agent tokens/tool-calls on the RIGHT).
+ * Emits events powering the master-detail "working agents" view (tasks/phases on
+ * the LEFT, per-agent tokens/tool-calls on the RIGHT) AND the floating run
+ * windows, from TWO disk sources per run:
  *
- * Deliberately STANDALONE: it never imports from or touches subagent-watcher.ts.
- * It globs the run-state tree (`.../workflows/wf_*.json`); subagent-watcher globs
- * the disjoint, deeper transcript tree (`.../subagents/workflows/wf_<id>/agent-*`).
- * Separate singletons, disjoint directories, no shared mutable state.
+ *   1. COMPLETION artifact — `…/workflows/wf_<id>.json`. The Workflow runtime
+ *      writes this with the FULL run state (phases, per-agent tokens/tool-calls,
+ *      result), but — as of the mid-2026 runtime — only when the run FINISHES
+ *      (always a terminal status). It is the authoritative, detailed record.
+ *   2. LIVE transcript dir — `…/subagents/workflows/wf_<id>/` (agent-*.jsonl +
+ *      journal.jsonl). This appears WHILE a run is in flight, before any
+ *      `wf_<id>.json` exists. From it we synthesize a minimal ACTIVE run
+ *      (status 'running', agent slots keyed by agentId, lastActivityAt from file
+ *      mtimes) so the floating window pops DURING the run instead of only after.
+ *
+ * Precedence: when a completion `wf_<id>.json` exists it ALWAYS supersedes the
+ * synthesized live record (same runId), so a finished run shows full detail and
+ * the normal finish→auto-close flow runs. Without source 2 the floating-window
+ * feature is dead for live runs (the completion file only lands at the end, so
+ * the watcher would never see a run while it is active).
+ *
+ * Still STANDALONE: it never imports from or touches subagent-watcher.ts. It
+ * independently reads the same `subagents/workflows/` tree subagent-watcher uses,
+ * but as a separate singleton with no shared mutable state.
  *
  * Discovery is dual: a periodic poll (catches new run dirs + removals) plus a
- * per-run-dir chokidar watcher (live within-run updates). A per-file mtime skip
- * keeps the hot path cheap — the run JSON is rewritten on every agent tick.
+ * per-dir chokidar watcher (live updates). A per-source mtime skip keeps the hot
+ * path cheap — the completion JSON / live dir is re-read only when its mtime moves.
  *
  * @module workflow-run-watcher
  */
@@ -34,8 +48,11 @@ import {
 } from './config/workflow-config.js';
 
 const WORKFLOWS_SUBDIR = 'workflows';
+const SUBAGENTS_SUBDIR = 'subagents';
 const RUN_FILE_PREFIX = 'wf_';
 const RUN_FILE_SUFFIX = '.json';
+const LIVE_JOURNAL_FILE = 'journal.jsonl';
+const LIVE_AGENT_PREFIX = 'agent-';
 
 /** Hard caps on the largest per-agent strings so a 28-agent run stays compact. */
 const PROMPT_PREVIEW_MAX = 200;
@@ -55,6 +72,14 @@ export function summarizeRun(info: WorkflowRunInfo): WorkflowRunSummary {
 
 interface DiscoveredRun {
   filePath: string;
+  projectHash: string;
+  sessionUuid: string;
+  runId: string;
+}
+
+/** An in-flight run discovered from its `subagents/workflows/wf_<id>/` transcript dir. */
+interface DiscoveredLiveRun {
+  dirPath: string;
   projectHash: string;
   sessionUuid: string;
   runId: string;
@@ -94,7 +119,11 @@ export class WorkflowRunWatcher extends EventEmitter {
   private fileMtimes = new Map<string, number>();
   /** runId -> absolute run-file path (for mtime cleanup on removal). */
   private runIdToPath = new Map<string, string>();
-  /** workflows-dir absolute path -> chokidar watcher (one per live run dir). */
+  /** absolute live transcript-dir path -> newest member mtimeMs (skip unchanged live runs). */
+  private liveDirMtimes = new Map<string, number>();
+  /** runId -> absolute live transcript-dir path (for mtime cleanup on removal). */
+  private runIdToLiveDir = new Map<string, string>();
+  /** watched-dir absolute path -> chokidar watcher (workflows/ + subagents/workflows/). */
   private dirWatchers = new Map<string, ChokidarWatcher>();
 
   constructor(projectsDir?: string) {
@@ -129,6 +158,8 @@ export class WorkflowRunWatcher extends EventEmitter {
     this.runs.clear();
     this.fileMtimes.clear();
     this.runIdToPath.clear();
+    this.liveDirMtimes.clear();
+    this.runIdToLiveDir.clear();
   }
 
   /** All cached runs (no recency filter), most-recently-active first. */
@@ -180,42 +211,65 @@ export class WorkflowRunWatcher extends EventEmitter {
   }
 
   private async pollAsync(): Promise<void> {
-    const { files, dirs } = await this.discover();
+    const { files, liveDirs, watchDirs } = await this.discover();
 
-    // Install a live watcher for each run dir; tear down watchers for dirs that vanished.
-    for (const dir of dirs) this.ensureDirWatcher(dir);
+    // Install a live watcher for each watched dir; tear down watchers for dirs that vanished.
+    for (const dir of watchDirs) this.ensureDirWatcher(dir);
     for (const dir of Array.from(this.dirWatchers.keys())) {
-      if (!dirs.has(dir)) this.removeDirWatcher(dir);
+      if (!watchDirs.has(dir)) this.removeDirWatcher(dir);
     }
 
     const seenRunIds = new Set<string>();
+    const realRunIds = new Set<string>();
     for (const file of files) {
       seenRunIds.add(file.runId);
+      realRunIds.add(file.runId);
       await this.maybeParse(file);
     }
 
-    // Removal by set-diff: a cached run whose file disappeared.
+    // In-flight runs: synthesize from the transcript tree ONLY while no completion
+    // wf_*.json exists yet — the real file (full detail + terminal status) supersedes.
+    for (const live of liveDirs) {
+      if (realRunIds.has(live.runId)) continue;
+      seenRunIds.add(live.runId);
+      await this.maybeParseLive(live);
+    }
+
+    // Removal by set-diff: a cached run discoverable from neither source.
     for (const runId of Array.from(this.runs.keys())) {
       if (!seenRunIds.has(runId)) {
         this.runs.delete(runId);
         const path = this.runIdToPath.get(runId);
         if (path) this.fileMtimes.delete(path);
         this.runIdToPath.delete(runId);
+        const liveDir = this.runIdToLiveDir.get(runId);
+        if (liveDir) this.liveDirMtimes.delete(liveDir);
+        this.runIdToLiveDir.delete(runId);
         this.emit('run_removed', { runId });
       }
     }
   }
 
-  /** Walk projects/<projHash>/<sessionUuid>/workflows/ for wf_*.json files. */
-  private async discover(): Promise<{ files: DiscoveredRun[]; dirs: Set<string> }> {
+  /**
+   * Walk projects/<projHash>/<sessionUuid>/ for both run sources:
+   *   - completion files: `workflows/wf_*.json`
+   *   - in-flight runs:   `subagents/workflows/wf_<id>/` (transcript dirs)
+   * Returns the dirs to chokidar-watch (so a new run/file is caught sub-poll).
+   */
+  private async discover(): Promise<{
+    files: DiscoveredRun[];
+    liveDirs: DiscoveredLiveRun[];
+    watchDirs: Set<string>;
+  }> {
     const files: DiscoveredRun[] = [];
-    const dirs = new Set<string>();
+    const liveDirs: DiscoveredLiveRun[] = [];
+    const watchDirs = new Set<string>();
 
     let projectHashes: string[];
     try {
       projectHashes = await readdir(this.projectsDir);
     } catch {
-      return { files, dirs };
+      return { files, liveDirs, watchDirs };
     }
 
     for (const projectHash of projectHashes) {
@@ -226,28 +280,50 @@ export class WorkflowRunWatcher extends EventEmitter {
         continue;
       }
       for (const sessionUuid of sessions) {
-        const workflowsDir = join(this.projectsDir, projectHash, sessionUuid, WORKFLOWS_SUBDIR);
-        let names: string[];
+        const sessionDir = join(this.projectsDir, projectHash, sessionUuid);
+
+        // (1) Completion artifacts: workflows/wf_*.json
+        const workflowsDir = join(sessionDir, WORKFLOWS_SUBDIR);
         try {
-          names = await readdir(workflowsDir);
+          const names = await readdir(workflowsDir);
+          let hasRun = false;
+          for (const name of names) {
+            if (!name.startsWith(RUN_FILE_PREFIX) || !name.endsWith(RUN_FILE_SUFFIX)) continue;
+            hasRun = true;
+            files.push({
+              filePath: join(workflowsDir, name),
+              projectHash,
+              sessionUuid,
+              runId: name.slice(0, -RUN_FILE_SUFFIX.length),
+            });
+          }
+          if (hasRun) watchDirs.add(workflowsDir);
         } catch {
-          continue; // no workflows dir for this session — normal
+          // no workflows dir for this session — normal
         }
-        let hasRun = false;
-        for (const name of names) {
-          if (!name.startsWith(RUN_FILE_PREFIX) || !name.endsWith(RUN_FILE_SUFFIX)) continue;
-          hasRun = true;
-          files.push({
-            filePath: join(workflowsDir, name),
-            projectHash,
-            sessionUuid,
-            runId: name.slice(0, -RUN_FILE_SUFFIX.length),
-          });
+
+        // (2) In-flight runs: subagents/workflows/wf_*/
+        const liveParent = join(sessionDir, SUBAGENTS_SUBDIR, WORKFLOWS_SUBDIR);
+        try {
+          const names = await readdir(liveParent);
+          let hasLive = false;
+          for (const name of names) {
+            if (!name.startsWith(RUN_FILE_PREFIX) || name.endsWith(RUN_FILE_SUFFIX)) continue; // wf_<id> dir, not a file
+            hasLive = true;
+            liveDirs.push({
+              dirPath: join(liveParent, name),
+              projectHash,
+              sessionUuid,
+              runId: name,
+            });
+          }
+          if (hasLive) watchDirs.add(liveParent);
+        } catch {
+          // no subagents/workflows dir for this session — normal
         }
-        if (hasRun) dirs.add(workflowsDir);
       }
     }
-    return { files, dirs };
+    return { files, liveDirs, watchDirs };
   }
 
   private async maybeParse(file: DiscoveredRun): Promise<void> {
@@ -267,6 +343,101 @@ export class WorkflowRunWatcher extends EventEmitter {
     this.runs.set(info.runId, info);
     this.runIdToPath.set(info.runId, file.filePath);
     this.emit(existed ? 'run_updated' : 'run_discovered', info);
+  }
+
+  /**
+   * Re-synthesize an in-flight run from its transcript dir when its newest member
+   * mtime moved (skip otherwise so we don't re-emit run_updated on idle polls).
+   */
+  private async maybeParseLive(live: DiscoveredLiveRun): Promise<void> {
+    const info = await this.parseLiveDir(live);
+    if (!info) return;
+    if (this.liveDirMtimes.get(live.dirPath) === info.lastActivityAt) return;
+    this.liveDirMtimes.set(live.dirPath, info.lastActivityAt);
+
+    const existed = this.runs.has(info.runId);
+    this.runs.set(info.runId, info);
+    this.runIdToLiveDir.set(info.runId, live.dirPath);
+    this.emit(existed ? 'run_updated' : 'run_discovered', info);
+  }
+
+  /**
+   * Build a minimal ACTIVE WorkflowRunInfo from `subagents/workflows/wf_<id>/`.
+   * The transcript tree carries no phases/tokens — those arrive with the
+   * completion wf_*.json — so we expose: the agent slots (keyed by agentId, so the
+   * card→transcript click still works), each marked done/running from journal
+   * `result` lines, and lastActivityAt from the newest agent/journal mtime.
+   */
+  private async parseLiveDir(live: DiscoveredLiveRun): Promise<WorkflowRunInfo | null> {
+    let entries: string[];
+    try {
+      entries = await readdir(live.dirPath);
+    } catch {
+      return null; // vanished between discover and read
+    }
+
+    const agentIds = new Set<string>();
+    let newestMtime = 0;
+    for (const name of entries) {
+      if (name.startsWith(LIVE_AGENT_PREFIX)) {
+        const stem = name.slice(LIVE_AGENT_PREFIX.length).replace(/\.(meta\.json|jsonl)$/, '');
+        if (stem) agentIds.add(stem);
+      }
+      if (name === LIVE_JOURNAL_FILE || name.startsWith(LIVE_AGENT_PREFIX)) {
+        try {
+          const m = (await stat(join(live.dirPath, name))).mtimeMs;
+          if (m > newestMtime) newestMtime = m;
+        } catch {
+          // entry vanished — ignore
+        }
+      }
+    }
+    if (agentIds.size === 0) return null; // nothing to show yet
+
+    const doneIds = await this.readJournalDoneAgents(join(live.dirPath, LIVE_JOURNAL_FILE));
+    const agents: WorkflowAgentInfo[] = Array.from(agentIds)
+      .sort()
+      .map((id, i) => ({
+        index: i + 1,
+        label: `agent ${i + 1}`,
+        phaseIndex: 1,
+        phaseTitle: '',
+        model: '',
+        state: doneIds.has(id) ? 'done' : 'progress',
+        agentId: id,
+      }));
+
+    return {
+      runId: live.runId,
+      status: 'running',
+      agentCount: agents.length,
+      phases: [],
+      agents,
+      sessionUuid: live.sessionUuid,
+      projectHash: live.projectHash,
+      lastActivityAt: newestMtime || 0,
+    };
+  }
+
+  /** Agent ids that already emitted a `result` event in the run journal. */
+  private async readJournalDoneAgents(journalPath: string): Promise<Set<string>> {
+    const done = new Set<string>();
+    let text: string;
+    try {
+      text = await readFile(journalPath, 'utf-8');
+    } catch {
+      return done; // journal not written yet — all agents still in progress
+    }
+    for (const line of text.split('\n')) {
+      if (!line) continue;
+      try {
+        const ev = JSON.parse(line) as { type?: string; agentId?: string };
+        if (ev && ev.type === 'result' && typeof ev.agentId === 'string') done.add(ev.agentId);
+      } catch {
+        // tolerate a partially-written trailing line
+      }
+    }
+    return done;
   }
 
   /**
@@ -360,6 +531,9 @@ export class WorkflowRunWatcher extends EventEmitter {
       watcher.on('add', handler);
       watcher.on('change', handler);
       watcher.on('unlink', handler);
+      // subagents/workflows/ children are wf_<id>/ DIRS — catch their add/remove too.
+      watcher.on('addDir', handler);
+      watcher.on('unlinkDir', handler);
       watcher.on('error', () => {
         // chokidar surfaced an error for this dir — drop the watcher; poll still covers it.
         this.removeDirWatcher(workflowsDir);

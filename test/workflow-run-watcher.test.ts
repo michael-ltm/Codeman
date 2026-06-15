@@ -210,3 +210,110 @@ describe('WorkflowRunWatcher', () => {
     expect(summaries[0].agentCount).toBe(3);
   });
 });
+
+/**
+ * In-flight runs: the Workflow runtime writes the completion wf_<id>.json only when
+ * a run FINISHES, so while it is live the only on-disk state is its
+ * subagents/workflows/wf_<id>/ transcript dir. The watcher synthesizes a minimal
+ * ACTIVE run from that dir so the floating window pops DURING the run.
+ */
+describe('WorkflowRunWatcher — in-flight (live) runs', () => {
+  const LIVE_RUN_ID = 'wf_live5678-xyz';
+  let projectsDir: string;
+  let liveDir: string;
+  let watcher: WorkflowRunWatcher;
+
+  beforeEach(async () => {
+    projectsDir = await mkdtemp(join(tmpdir(), 'wfw-live-'));
+    liveDir = join(projectsDir, PROJECT_HASH, SESSION_UUID, 'subagents', 'workflows', LIVE_RUN_ID);
+    await mkdir(liveDir, { recursive: true });
+    // Two agents started; one already produced a result (journal `result` line).
+    await writeFile(
+      join(liveDir, 'agent-aaa111.meta.json'),
+      JSON.stringify({ agentType: 'workflow-subagent' }),
+      'utf-8'
+    );
+    await writeFile(join(liveDir, 'agent-aaa111.jsonl'), '{"type":"assistant"}\n', 'utf-8');
+    await writeFile(
+      join(liveDir, 'agent-bbb222.meta.json'),
+      JSON.stringify({ agentType: 'workflow-subagent' }),
+      'utf-8'
+    );
+    await writeFile(join(liveDir, 'agent-bbb222.jsonl'), '{"type":"assistant"}\n', 'utf-8');
+    await writeFile(
+      join(liveDir, 'journal.jsonl'),
+      '{"type":"started","agentId":"aaa111"}\n{"type":"started","agentId":"bbb222"}\n{"type":"result","agentId":"aaa111","result":{}}\n',
+      'utf-8'
+    );
+    watcher = new WorkflowRunWatcher(projectsDir);
+  });
+
+  afterEach(async () => {
+    watcher.stop();
+    await rm(projectsDir, { recursive: true, force: true });
+  });
+
+  function firstRun(): Promise<WorkflowRunInfo> {
+    return new Promise<WorkflowRunInfo>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for run_discovered')), 5000);
+      watcher.once('run_discovered', (info: WorkflowRunInfo) => {
+        clearTimeout(timer);
+        resolve(info);
+      });
+      watcher.start();
+    });
+  }
+
+  it('synthesizes an ACTIVE run from the transcript dir when no completion file exists', async () => {
+    const info = await firstRun();
+    expect(info.runId).toBe(LIVE_RUN_ID);
+    expect(info.status).toBe('running'); // active → frontend pops a floating window
+    expect(info.sessionUuid).toBe(SESSION_UUID);
+    expect(info.projectHash).toBe(PROJECT_HASH);
+    expect(info.agents).toHaveLength(2);
+    expect(info.agentCount).toBe(2);
+    expect(info.lastActivityAt).toBeGreaterThan(0);
+  });
+
+  it('preserves agentId per slot (so the card→transcript click join still works)', async () => {
+    const info = await firstRun();
+    const ids = info.agents.map((a) => a.agentId).sort();
+    expect(ids).toEqual(['aaa111', 'bbb222']);
+  });
+
+  it('marks an agent done/progress from journal result lines', async () => {
+    const info = await firstRun();
+    expect(info.agents.find((a) => a.agentId === 'aaa111')!.state).toBe('done'); // has a result line
+    expect(info.agents.find((a) => a.agentId === 'bbb222')!.state).toBe('progress'); // started, no result yet
+  });
+
+  it('counts the live run as running in getStats', async () => {
+    await firstRun();
+    expect(watcher.getStats().running).toBe(1);
+  });
+
+  it('does NOT surface a live dir that has no agent files yet', async () => {
+    const empty = join(projectsDir, PROJECT_HASH, SESSION_UUID, 'subagents', 'workflows', 'wf_empty0000-noo');
+    await mkdir(empty, { recursive: true });
+    await firstRun(); // resolves on the real (populated) live run
+    // The empty run id must never enter the cache.
+    expect(watcher.getRun('wf_empty0000-noo')).toBeUndefined();
+    expect(watcher.getAllRuns().map((r) => r.runId)).toEqual([LIVE_RUN_ID]);
+  });
+
+  it('a completion wf_*.json supersedes the live dir for the same runId (real status wins)', async () => {
+    const workflowsDir = join(projectsDir, PROJECT_HASH, SESSION_UUID, 'workflows');
+    await mkdir(workflowsDir, { recursive: true });
+    await writeFile(
+      join(workflowsDir, `${LIVE_RUN_ID}.json`),
+      JSON.stringify({ runId: LIVE_RUN_ID, status: 'completed', durationMs: 1234, phases: [], workflowProgress: [] }),
+      'utf-8'
+    );
+    const info = await firstRun();
+    expect(info.runId).toBe(LIVE_RUN_ID);
+    expect(info.status).toBe('completed'); // real completion file wins, not synthesized 'running'
+    expect(info.durationMs).toBe(1234);
+    // Only one cached entry for the runId — no live/real duplication.
+    expect(watcher.getAllRuns()).toHaveLength(1);
+  });
+});
