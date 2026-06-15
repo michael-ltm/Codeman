@@ -300,7 +300,10 @@ const KeyboardAccessoryBar = {
     const sendText = () => {
       const text = textarea.value;
       close();
-      if (text) app.sendInput(text);
+      if (text) {
+        app.sendInput(text);
+        setTimeout(() => app.sendInput('\r'), 80);
+      }
     };
 
     // Filter to images, close the dialog, and hand off to the shared

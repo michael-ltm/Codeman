@@ -9307,9 +9307,9 @@ kbd {
   bottom: calc(var(--safe-area-bottom) + 40px);
   z-index: 52;
   display: block;
-  min-height: 44px;
-  max-height: 96px;
-  padding: 12px 10px;
+  min-height: 34px;
+  max-height: 68px;
+  padding: 6px 10px;
   border: 1px solid rgba(80, 120, 190, 0.55);
   border-left: none;
   border-right: none;

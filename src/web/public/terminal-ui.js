@@ -1577,71 +1577,11 @@ Object.assign(CodemanApp.prototype, {
     }
   },
 
+  // CJK textarea already provides visual feedback — bypass local echo
+  // buffering so each composed word reaches the PTY immediately.
   _handleCjkInput(text) {
     if (!this.activeSessionId) return;
-    const sessionId = this.activeSessionId;
-    const session = this.sessions.get(sessionId);
-    const useLocalEcho = !!(this._localEchoEnabled && this._localEchoOverlay && session?.mode !== 'shell');
-    if (!useLocalEcho) {
-      this._sendInputAsync(sessionId, text);
-      return;
-    }
-
-    if (text === '\x7f') {
-      const source = this._localEchoOverlay.removeChar();
-      if (source === 'flushed') {
-        // Sync app-level flushed Maps (per-session state for tab switching),
-        // mirroring the onData backspace path — otherwise switching tabs away
-        // and back restores a stale, too-long flushed overlay.
-        const { count, text: flushedText } = this._localEchoOverlay.getFlushed();
-        if (this._flushedOffsets?.has(sessionId)) {
-          if (count === 0) {
-            this._flushedOffsets.delete(sessionId);
-            this._flushedTexts?.delete(sessionId);
-          } else {
-            this._flushedOffsets.set(sessionId, count);
-            this._flushedTexts?.set(sessionId, flushedText);
-          }
-        }
-        this._sendInputAsync(sessionId, text);
-      }
-      return;
-    }
-
-    if (/[\r\n]+$/.test(text)) {
-      const committed = text.replace(/[\r\n]+$/g, '');
-      if (committed) this._localEchoOverlay.appendText(committed);
-      const pending = this._localEchoOverlay.pendingText || '';
-      this._localEchoOverlay.clear();
-      this._localEchoOverlay.suppressBufferDetection();
-      this._flushedOffsets?.delete(sessionId);
-      this._flushedTexts?.delete(sessionId);
-      if (pending) this._sendInputAsync(sessionId, pending);
-      setTimeout(() => this._sendInputAsync(sessionId, '\r'), pending ? 80 : 0);
-      return;
-    }
-
-    // Multi-byte escape sequence (arrow/Home/End from a hardware keyboard on
-    // the composer) — forward to the PTY without touching overlay state,
-    // mirroring the onData path. Appending it to pending text would type raw
-    // ESC bytes into the prompt on the next Enter.
-    if (text.length > 1 && text.charCodeAt(0) === 27) {
-      this._sendInputAsync(sessionId, text);
-      return;
-    }
-
-    if (text.length === 1 && text.charCodeAt(0) < 32) {
-      const pending = this._localEchoOverlay.pendingText || '';
-      this._localEchoOverlay.clear();
-      this._localEchoOverlay.suppressBufferDetection();
-      this._flushedOffsets?.delete(sessionId);
-      this._flushedTexts?.delete(sessionId);
-      if (pending) this._sendInputAsync(sessionId, pending);
-      this._sendInputAsync(sessionId, text);
-      return;
-    }
-
-    this._localEchoOverlay.appendText(text);
+    this._sendInputAsync(this.activeSessionId, text);
   },
 
   /**
