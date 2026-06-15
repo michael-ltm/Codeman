@@ -31,6 +31,10 @@ Object.assign(CodemanApp.prototype, {
     this._ensureWorkflowState();
     this.workflowRuns.clear();
     (summaries || []).forEach((s) => this.workflowRuns.set(s.runId, s));
+    // Restore floating windows for runs that are still active & recent (additional layer).
+    if (typeof this._syncUltracodeFloatingWindow === 'function') {
+      (summaries || []).forEach((s) => this._syncUltracodeFloatingWindow(s, { fromSeed: true }));
+    }
     this.renderUltracodeAgentsPanel();
   },
 
@@ -47,6 +51,8 @@ Object.assign(CodemanApp.prototype, {
     this.workflowRuns.delete(data.runId);
     this.workflowRunDetails.delete(data.runId);
     if (this.activeWorkflowRunId === data.runId) this.activeWorkflowRunId = null;
+    // Retire the floating run window too (additional layer — ultracode-windows.js).
+    if (typeof this.closeUltracodeWindow === 'function') this.closeUltracodeWindow(data.runId, false);
     this.renderUltracodeAgentsPanel();
   },
 
@@ -58,6 +64,8 @@ Object.assign(CodemanApp.prototype, {
     if (this.activeWorkflowRunId === summary.runId) {
       this._fetchWorkflowRunDetail(summary.runId);
     }
+    // Auto-pop / refresh the floating run window for active runs (additional layer).
+    if (typeof this._syncUltracodeFloatingWindow === 'function') this._syncUltracodeFloatingWindow(summary);
     this.renderUltracodeAgentsPanel();
   },
 
@@ -97,6 +105,8 @@ Object.assign(CodemanApp.prototype, {
       if (run) {
         this.workflowRunDetails.set(runId, run);
         if (this.activeWorkflowRunId === runId) this._renderUltracodeDetail();
+        // Refresh the floating window (if one is open for this run) with the fetched agents[].
+        if (this.ultracodeWindows && this.ultracodeWindows.has(runId)) this.renderUltracodeWindowContent(runId);
       }
     } catch {
       /* transient — next update retries */

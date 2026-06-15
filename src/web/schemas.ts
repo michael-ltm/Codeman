@@ -350,6 +350,8 @@ export const SettingsUpdateSchema = z
     subagentActiveTabOnly: z.boolean().optional(),
     /** Ultracode/Workflow run visualization (default OFF). Gates workflowRunWatcher + the master-detail tab. SYNCED. */
     showUltracodeAgents: z.boolean().optional(),
+    /** Floating ultracode run windows w/ tab connector lines (default OFF). Also starts workflowRunWatcher. SYNCED. */
+    ultracodeFloatingWindows: z.boolean().optional(),
     imageWatcherEnabled: z.boolean().optional(),
     tunnelEnabled: z.boolean().optional(),
     tabTwoRows: z.boolean().optional(),

@@ -455,6 +455,12 @@ Object.assign(CodemanApp.prototype, {
         svg.appendChild(line);
       }
     }
+
+    // Ultracode floating run windows → parent tab (additional layer, ultracode-windows.js).
+    // Drawn into the same SVG and same batched read/write pass; the tab-rect cache is shared.
+    if (typeof this._appendUltracodeConnectionLines === 'function') {
+      this._appendUltracodeConnectionLines(svg, rects);
+    }
   },
 
   // ═══════════════════════════════════════════════════════════════
@@ -974,6 +980,9 @@ Object.assign(CodemanApp.prototype, {
       popupData.element.remove();
     }
     this.imagePopups.clear();
+
+    // Clean up ultracode floating run windows (re-seeded from data.workflowRuns on reconnect)
+    if (typeof this.removeAllUltracodeWindows === 'function') this.removeAllUltracodeWindows();
 
     // Clear orphaned plan generation state
     this.activePlanOrchestratorId = null;

@@ -350,6 +350,11 @@ class CodemanApp {
     this.workflowRunDetails = new Map(); // runId -> full run with agents[] (RIGHT pane)
     this.activeWorkflowRunId = null;
     this.activeWorkflowPhaseIndex = null;
+    // Ultracode floating run windows (additional to the dock panel — ultracode-windows.js)
+    this.ultracodeWindows = new Map(); // runId -> { element, parentSessionId, dragListeners, collapsed }
+    this.ultracodeWindowsClosed = new Set(); // runIds the user explicitly dismissed (don't re-pop)
+    this.ultracodeWindowCloseTimers = new Map(); // runId -> auto-close timeout
+    this.ultracodeWindowZIndex = 1000;
     this.subagentWindows = new Map(); // Map<agentId, { element, position }>
     this.subagentWindowZIndex = ZINDEX_SUBAGENT_BASE;
     this.minimizedSubagents = new Map(); // Map<sessionId, Set<agentId>> - minimized to tab

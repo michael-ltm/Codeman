@@ -541,8 +541,14 @@ export function registerSystemRoutes(
       // Handle subagent tracking toggle dynamically
       toggleService((settings.subagentTrackingEnabled as boolean) ?? true, subagentWatcher, 'Subagent watcher');
 
-      // Handle ultracode/workflow run watcher toggle dynamically (default OFF)
-      toggleService((settings.showUltracodeAgents as boolean) ?? false, workflowRunWatcher, 'Workflow run watcher');
+      // Handle ultracode/workflow run watcher toggle dynamically (default OFF).
+      // Either the docked panel OR the floating windows keep the watcher running.
+      toggleService(
+        ((settings.showUltracodeAgents as boolean) ?? false) ||
+          ((settings.ultracodeFloatingWindows as boolean) ?? false),
+        workflowRunWatcher,
+        'Workflow run watcher'
+      );
 
       // Handle image watcher toggle dynamically
       toggleService((settings.imageWatcherEnabled as boolean) ?? false, imageWatcher, 'Image watcher', () => {

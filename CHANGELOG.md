@@ -1,5 +1,15 @@
 # aicodeman
 
+## 1.1.3
+
+### Patch Changes
+
+- Ultracode floating run windows + a dedicated toggle to control them.
+  - **New: floating ultracode run windows.** When enabled, each active ultracode / Workflow run pops a small draggable window (like the file browser) connected by a glowing line to its originating session tab — the same connector-line idiom as subagent windows. The tab is resolved by matching the run's `sessionUuid` to a session's `claudeSessionId`. The window mirrors the live agent grid (phases, per-agent model / tokens burned / tool calls / state), auto-closes a few seconds after its run finishes, and remembers windows you explicitly dismiss so they don't re-pop. These windows are **additional to** the existing docked "Ultracode Agents" master-detail panel, which is unchanged.
+  - **New setting "Ultracode Floating Windows"** (App Settings → Display), **default OFF**, independent of the "Ultracode Agents" panel toggle. Either toggle now starts the server-side workflow-run watcher (at boot and on live settings change), so the floating windows work even with the docked panel off.
+  - Internals: new frontend module `ultracode-windows.js` (load order 15.5); ultracode connector lines are appended into the shared `#connectionLines` SVG within the existing batched read/write reflow pass in `subagent-windows.js`; new `ultracodeFloatingWindows` app-settings key in `schemas.ts`; watcher gating in `server.ts` + `system-routes.ts` now ORs both ultracode toggles.
+  - Docs: `CLAUDE.md` brought up to date for the 1.1.2 ultracode/workflow-run subsystem (Agents / Frontend / Types / Config inventories, JS load order, a Key Patterns entry) and the new floating-windows feature.
+
 ## 1.1.2
 
 ### Patch Changes

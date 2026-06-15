@@ -314,6 +314,8 @@ Object.assign(CodemanApp.prototype, {
     document.getElementById('appSettingsShowFileBrowser').checked = settings.showFileBrowser ?? defaults.showFileBrowser ?? false;
     document.getElementById('appSettingsShowSubagents').checked = settings.showSubagents ?? defaults.showSubagents ?? false;
     document.getElementById('appSettingsShowUltracodeAgents').checked = settings.showUltracodeAgents ?? defaults.showUltracodeAgents ?? false;
+    document.getElementById('appSettingsUltracodeFloatingWindows').checked =
+      settings.ultracodeFloatingWindows ?? defaults.ultracodeFloatingWindows ?? false;
     document.getElementById('appSettingsShowMultiMonitorButton').checked = settings.showMultiMonitorButton ?? defaults.showMultiMonitorButton ?? false;
     document.getElementById('appSettingsShowPlanUsageLimits').checked = settings.showPlanUsageLimits ?? defaults.showPlanUsageLimits ?? false;
     // Gesture control lives in the Input section (alongside Local Echo / CJK Input)
@@ -1370,6 +1372,7 @@ Object.assign(CodemanApp.prototype, {
       showFileBrowser: document.getElementById('appSettingsShowFileBrowser').checked,
       showSubagents: document.getElementById('appSettingsShowSubagents').checked,
       showUltracodeAgents: document.getElementById('appSettingsShowUltracodeAgents').checked,
+      ultracodeFloatingWindows: document.getElementById('appSettingsUltracodeFloatingWindows').checked,
       showMultiMonitorButton: document.getElementById('appSettingsShowMultiMonitorButton').checked,
       showPlanUsageLimits: document.getElementById('appSettingsShowPlanUsageLimits').checked,
       gestureControlEnabled: document.getElementById('appSettingsGestureControl').checked,
@@ -1685,6 +1688,7 @@ Object.assign(CodemanApp.prototype, {
         showFileBrowser: false,
         showSubagents: false,
         showUltracodeAgents: false,
+        ultracodeFloatingWindows: false,
         showMultiMonitorButton: false,
         showPlanUsageLimits: false,
         showAttachmentsButton: false,
@@ -1898,6 +1902,15 @@ Object.assign(CodemanApp.prototype, {
         ultracodePanel.classList.remove('open');
         ultracodePanel.classList.add('hidden');
       }
+    }
+    // Floating ultracode run windows have their OWN opt-in (default OFF), independent of the
+    // docked panel above: pop active runs when enabled, tear them all down when disabled
+    // (additional layer — ultracode-windows.js).
+    const ultracodeFloatingWindows = settings.ultracodeFloatingWindows ?? defaults.ultracodeFloatingWindows ?? false;
+    if (ultracodeFloatingWindows) {
+      if (typeof this.syncAllUltracodeFloatingWindows === 'function') this.syncAllUltracodeFloatingWindows();
+    } else if (typeof this.removeAllUltracodeWindows === 'function') {
+      this.removeAllUltracodeWindows();
     }
 
     // File browser panel visibility

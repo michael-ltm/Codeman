@@ -2026,13 +2026,15 @@ export class WebServer extends EventEmitter {
 
   /**
    * Check if ultracode/workflow run tracking is enabled in settings (default: FALSE — opt-in).
+   * The watcher feeds BOTH the docked Ultracode Agents panel (`showUltracodeAgents`) and the
+   * floating run windows (`ultracodeFloatingWindows`), so either toggle starts it.
    */
   private async isWorkflowAgentTrackingEnabled(): Promise<boolean> {
     const settingsPath = dataPath('settings.json');
     try {
       const content = await fs.readFile(settingsPath, 'utf-8');
       const settings = JSON.parse(content);
-      return settings.showUltracodeAgents ?? false;
+      return (settings.showUltracodeAgents ?? false) || (settings.ultracodeFloatingWindows ?? false);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
         console.error('Failed to read showUltracodeAgents setting:', err);
