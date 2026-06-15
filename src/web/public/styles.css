@@ -8486,6 +8486,13 @@ kbd {
   padding: 0.4rem 0.5rem;
   margin-bottom: 0.35rem;
 }
+.ultracode-agent-card--clickable {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.ultracode-agent-card--clickable:hover {
+  background: var(--bg-card);
+}
 .ultracode-agent-top {
   display: flex;
   align-items: center;

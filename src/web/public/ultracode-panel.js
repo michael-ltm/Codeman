@@ -103,6 +103,39 @@ Object.assign(CodemanApp.prototype, {
     }
   },
 
+  // Phase 4: open an agent's live transcript by agentId. The workflow agent's
+  // agentId is byte-identical to the agent-<id>.jsonl stem already tracked by
+  // subagent-watcher, so we reuse the existing transcript route — no watcher edits.
+  // Graceful when the agent isn't tracked yet / aged out / tracking disabled.
+  async openWorkflowAgentTranscript(agentId) {
+    if (!agentId) return;
+    let data = null;
+    try {
+      const res = await fetch(`/api/subagents/${encodeURIComponent(agentId)}/transcript?format=formatted`);
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    const ok = data && data.success && data.data;
+    const formatted = ok ? data.data.formatted : null;
+    const entryCount = ok ? data.data.entryCount || 0 : 0;
+    if (!formatted || !entryCount) {
+      alert(
+        'No transcript available for this agent yet — it may be queued, aged out of tracking, or subagent tracking is disabled.'
+      );
+      return;
+    }
+    const win = window.open('', '_blank', 'width=860,height=640');
+    if (!win) return; // popup blocked
+    win.document.write(
+      `<html><head><title>Workflow agent ${escapeHtml(agentId)} transcript</title>` +
+        `<style>body{background:#1a1a2e;color:#eee;font-family:monospace;padding:20px}pre{white-space:pre-wrap;word-wrap:break-word}</style>` +
+        `</head><body><h2>Workflow agent ${escapeHtml(agentId)} (${entryCount} entries)</h2>` +
+        `<pre>${escapeHtml(formatted.join('\n'))}</pre></body></html>`
+    );
+    win.document.close();
+  },
+
   // ----- Render (debounced) -----
   renderUltracodeAgentsPanel() {
     clearTimeout(this._ultracodeRenderTimer);
@@ -220,8 +253,16 @@ Object.assign(CodemanApp.prototype, {
     } else if (a.lastToolName) {
       secondary = escapeHtml(a.lastToolName + (a.lastToolSummary ? ' · ' + a.lastToolSummary : ''));
     }
+    // Phase 4: cards with an agentId open the live transcript (the agentId is byte-identical
+    // to the agent-<id>.jsonl stem already tracked by subagent-watcher). 'start' agents have
+    // no agentId yet, so they stay non-clickable.
+    const clickable = !!a.agentId;
+    const cardAttrs = clickable
+      ? ` class="ultracode-agent-card ultracode-agent-card--clickable" role="button" tabindex="0"` +
+        ` title="View transcript" onclick="app.openWorkflowAgentTranscript('${escapeHtml(a.agentId)}')"`
+      : ` class="ultracode-agent-card"`;
     return (
-      `<div class="ultracode-agent-card">` +
+      `<div${cardAttrs}>` +
       `<div class="ultracode-agent-top">` +
       `<span class="ultracode-agent-label">${escapeHtml(a.label || 'agent')}</span>` +
       `<span class="ultracode-agent-state ${stateCls}">${escapeHtml(stateLabel)}</span>` +
