@@ -354,6 +354,11 @@ export const SettingsUpdateSchema = z
     ultracodeFloatingWindows: z.boolean().optional(),
     imageWatcherEnabled: z.boolean().optional(),
     tunnelEnabled: z.boolean().optional(),
+    // Action field (NOT persisted): explicit per-request acknowledgment that the
+    // operator accepts exposing an UNAUTHENTICATED public tunnel (no CODEMAN_PASSWORD).
+    // Lets the UI enable a tunnel after a confirm dialog without the
+    // CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK env var. Stripped before persisting.
+    acknowledgeUnauthTunnel: z.boolean().optional(),
     tabTwoRows: z.boolean().optional(),
     agentTeamsEnabled: z.boolean().optional(),
     /** Model for new Claude sessions (e.g. "claude-fable-5[1m]", "opus[1m]"); takes precedence over opusContext1mEnabled */

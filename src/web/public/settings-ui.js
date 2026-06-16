@@ -1176,6 +1176,48 @@ Object.assign(CodemanApp.prototype, {
     } catch {
       /* non-JSON body — use the default message */
     }
+    // 403 = the no-password safety refusal (COD-55). Warn loudly and let the
+    // operator acknowledge the risk; on confirm, retry with explicit acknowledgment.
+    if (res.status === 403) {
+      const confirmed = confirm(
+        '⚠️ SECURITY WARNING — no password set\n\n' +
+          'Enabling the Cloudflare tunnel will publish THIS machine to a public URL with ' +
+          'NO login. Anyone who gets the URL has full terminal control — effectively remote ' +
+          'code execution on your computer.\n\n' +
+          'Strongly recommended: set CODEMAN_PASSWORD instead.\n\n' +
+          'Enable the unauthenticated public tunnel anyway?'
+      );
+      if (!confirmed) {
+        this._dismissTunnelConnecting?.();
+        this.showToast('Tunnel not enabled', 'info');
+        return true;
+      }
+      try {
+        const retry = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tunnelEnabled: true, acknowledgeUnauthTunnel: true }),
+        });
+        if (retry.ok) {
+          this.showToast('Public tunnel enabling — no password set ⚠️', 'warning');
+          return false; // proceed with the caller's success/connecting path
+        }
+        let m = 'Failed to enable tunnel.';
+        try {
+          const b = await retry.json();
+          if (b && b.error) m = b.error;
+        } catch {
+          /* non-JSON */
+        }
+        this._dismissTunnelConnecting?.();
+        this.showToast(m, 'error');
+        return true;
+      } catch {
+        this._dismissTunnelConnecting?.();
+        this.showToast('Failed to enable tunnel', 'error');
+        return true;
+      }
+    }
     this._dismissTunnelConnecting?.();
     this.showToast(message, 'error');
     return true;

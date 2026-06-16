@@ -1,5 +1,13 @@
 # aicodeman
 
+## 1.1.9
+
+### Patch Changes
+
+- Two welcome-screen tunnel changes:
+  - **UI (Daylight Blue skin):** the **Cloudflare Tunnel** button is now purple (was orange/yellow), keeping the three welcome buttons visually distinct — Claude blue, Tunnel purple, OpenCode green.
+  - **Enable a tunnel without `CODEMAN_PASSWORD`, with a warning.** Previously enabling the Cloudflare tunnel with no password set was hard-refused unless you set `CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK=1`. Now you can opt in straight from the browser: clicking the tunnel toggle without a password pops a **security confirm dialog** ("publishes this machine to a public URL with no login — effectively remote code execution; set CODEMAN_PASSWORD instead"), and only on confirm does it enable, sending an explicit per-request `acknowledgeUnauthTunnel:true`. The server logs a loud warning whenever a passwordless public tunnel starts. curl/API/CLI callers are unchanged — still refused unless they set a password, set the env var, or pass `acknowledgeUnauthTunnel:true` — so nothing gets exposed accidentally. The acknowledgment is an action field and is never persisted to settings.json.
+
 ## 1.1.8
 
 ### Patch Changes

@@ -117,6 +117,35 @@ describe('COD-55 tunnel password guard (PUT /api/settings tunnelEnabled)', () =>
     expect(tunnel.start).toHaveBeenCalledTimes(1);
   });
 
+  it('ALLOWS tunnel-enable with per-request acknowledgeUnauthTunnel:true (start called, 200, flag not persisted)', async () => {
+    const res = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/settings',
+      payload: { tunnelEnabled: true, acknowledgeUnauthTunnel: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(tunnel.start).toHaveBeenCalledTimes(1);
+    // The action flag must NOT be persisted to settings.json.
+    expect(mockedWriteFile).toHaveBeenCalled();
+    const persisted = JSON.parse(mockedWriteFile.mock.calls[0][1] as string);
+    expect(persisted.acknowledgeUnauthTunnel).toBeUndefined();
+    expect(persisted.tunnelEnabled).toBe(true);
+  });
+
+  it('still REFUSES when acknowledgeUnauthTunnel is false (4xx, start not called)', async () => {
+    const res = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/settings',
+      payload: { tunnelEnabled: true, acknowledgeUnauthTunnel: false },
+    });
+
+    expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    expect(res.statusCode).toBeLessThan(500);
+    expect(tunnel.start).not.toHaveBeenCalled();
+    expect(mockedWriteFile).not.toHaveBeenCalled();
+  });
+
   it('does not guard tunnel-disable (tunnelEnabled:false always allowed)', async () => {
     tunnel = makeTunnelManager(true);
     (harness.ctx as unknown as { tunnelManager: unknown }).tunnelManager = tunnel;

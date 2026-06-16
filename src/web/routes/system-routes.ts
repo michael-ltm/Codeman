@@ -505,20 +505,34 @@ export function registerSystemRoutes(
     // control = effectively RCE) to a public *.trycloudflare.com URL. Because the
     // tunnel binds to loopback, server.ts's non-loopback bind guard never trips, and
     // with no CODEMAN_PASSWORD the auth middleware is inactive — so the tunnel URL is
-    // unauthenticated. Refuse to start a tunnel unless auth is configured OR the
-    // operator has acknowledged unauthenticated-network exposure. A public tunnel is
-    // higher-stakes than a LAN bind, so this is REFUSE (vs the bind guard's warn).
+    // unauthenticated. Refuse to start a tunnel unless auth is configured OR exposure
+    // is acknowledged: either the CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK env var, or an
+    // explicit per-request `acknowledgeUnauthTunnel:true` (the UI sends this after a
+    // confirm dialog). This keeps curl/API/CLI callers protected by default while
+    // letting an operator opt in from the browser without setting the env var.
     // Guard runs BEFORE persisting so a refused tunnelEnabled:true is not saved.
-    if (settings.tunnelEnabled === true && !ctx.tunnelManager.isRunning() && !isUnauthenticatedNetworkAcknowledged()) {
-      const msg =
-        'Refusing to start the Cloudflare tunnel without authentication: it would publish ' +
-        'full terminal control to a public URL with no password. Set CODEMAN_PASSWORD to ' +
-        'require login, or set CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK=1 to acknowledge an ' +
-        'unauthenticated public tunnel.';
-      throw Object.assign(new Error(msg), {
-        statusCode: 403,
-        body: createErrorResponse(ApiErrorCode.OPERATION_FAILED, msg),
-      });
+    if (settings.tunnelEnabled === true && !ctx.tunnelManager.isRunning()) {
+      const acknowledged = isUnauthenticatedNetworkAcknowledged() || settings.acknowledgeUnauthTunnel === true;
+      if (!acknowledged) {
+        const msg =
+          'Refusing to start the Cloudflare tunnel without authentication: it would publish ' +
+          'full terminal control to a public URL with no password. Set CODEMAN_PASSWORD to ' +
+          'require login, set CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK=1, or resend with ' +
+          'acknowledgeUnauthTunnel:true to acknowledge an unauthenticated public tunnel.';
+        throw Object.assign(new Error(msg), {
+          statusCode: 403,
+          body: createErrorResponse(ApiErrorCode.OPERATION_FAILED, msg),
+        });
+      }
+      // Loud warning whenever a public tunnel is started with no password — whether
+      // acknowledged via env var or the per-request UI confirmation.
+      if (!process.env.CODEMAN_PASSWORD) {
+        console.warn(
+          '⚠️  [tunnel] Starting an UNAUTHENTICATED public Cloudflare tunnel — no CODEMAN_PASSWORD set. ' +
+            'Anyone with the tunnel URL gets full terminal control (effectively RCE). ' +
+            'Set CODEMAN_PASSWORD to require login.'
+        );
+      }
     }
 
     try {
@@ -532,9 +546,9 @@ export function registerSystemRoutes(
       } catch {
         /* ignore */
       }
-      // statusLineTelemetry is an ACTION field (reconcile the plan-usage exporter),
-      // not a stored setting — strip it before persisting so settings.json stays clean.
-      const { statusLineTelemetry, ...settingsToStore } = settings;
+      // statusLineTelemetry and acknowledgeUnauthTunnel are ACTION fields (not stored
+      // settings) — strip them before persisting so settings.json stays clean.
+      const { statusLineTelemetry, acknowledgeUnauthTunnel, ...settingsToStore } = settings;
       const merged = { ...existing, ...settingsToStore };
       await fs.writeFile(SETTINGS_PATH, JSON.stringify(merged, null, 2));
 

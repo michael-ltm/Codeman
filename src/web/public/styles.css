@@ -10201,10 +10201,10 @@ html:not([data-skin="og"]) {
 }
 
 /* ---- Daylight Blue: distinct identity per welcome action button ----
-   Run Claude Code keeps the blue accent; Cloudflare Tunnel takes Cloudflare's
-   brand orange; Run OpenCode takes an emerald green — so the three are clearly
-   different colors instead of all reading blue. Scoped to daylight-blue only;
-   placed after the shared daylight block to win on equal specificity. ---- */
+   Run Claude Code keeps the blue accent; Cloudflare Tunnel is purple; Run
+   OpenCode is emerald green — so the three are clearly different colors instead
+   of all reading blue. Scoped to daylight-blue only; placed after the shared
+   daylight block to win on equal specificity. ---- */
 html[data-skin="daylight-blue"] .welcome-btn-opencode {
   background: linear-gradient(135deg, #0d9f6e, #2fbf85);
   border-color: rgba(16, 185, 129, 0.5);
@@ -10216,21 +10216,21 @@ html[data-skin="daylight-blue"] .welcome-btn-opencode:hover {
   box-shadow: 0 0 28px -4px rgba(16, 185, 129, 0.4);
 }
 html[data-skin="daylight-blue"] .welcome-btn-tunnel {
-  background: linear-gradient(135deg, #ef7611, #fbad41);
-  border-color: rgba(246, 130, 31, 0.5);
-  color: #2e1503;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  border-color: rgba(168, 85, 247, 0.5);
+  color: #f5f3ff;
 }
 html[data-skin="daylight-blue"] .welcome-btn-tunnel:hover {
-  background: linear-gradient(135deg, #fb8b2a, #ffc05a);
-  border-color: rgba(251, 173, 65, 0.6);
-  box-shadow: 0 0 28px -4px rgba(246, 130, 31, 0.45);
+  background: linear-gradient(135deg, #8b5cf6, #c084fc);
+  border-color: rgba(192, 132, 252, 0.6);
+  box-shadow: 0 0 28px -4px rgba(124, 58, 237, 0.45);
 }
 html[data-skin="daylight-blue"] .welcome-btn-tunnel.active {
-  background: linear-gradient(135deg, #d9650b, #f6821f);
-  border-color: rgba(246, 130, 31, 0.6);
-  color: #fff7ed;
+  background: linear-gradient(135deg, #6d28d9, #7c3aed);
+  border-color: rgba(124, 58, 237, 0.6);
+  color: #f5f3ff;
 }
 html[data-skin="daylight-blue"] .welcome-btn-tunnel.active:hover {
-  background: linear-gradient(135deg, #ef7611, #fb8b2a);
-  box-shadow: 0 0 28px -4px rgba(246, 130, 31, 0.5);
+  background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+  box-shadow: 0 0 28px -4px rgba(124, 58, 237, 0.5);
 }
