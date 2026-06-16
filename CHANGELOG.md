@@ -1,5 +1,15 @@
 # aicodeman
 
+## 1.1.6
+
+### Patch Changes
+
+- Fix: ultracode floating run windows now pop on a fresh device/browser that loads while a run is already active.
+
+  `ultracodeFloatingWindows` syncs from the server (it's a non-display setting), but on a first-time device the SSE `getLightState` run snapshot can seed the run list BEFORE the async settings load resolves — so the floating-window gate read `false` at that instant and skipped any already-active run, leaving the window un-popped until the next ~10s watcher tick. The app now re-runs `syncAllUltracodeFloatingWindows()` once server settings finish loading (in the `loadAppSettingsFromServer().then()` callback), so an in-flight run pops its window immediately. Idempotent: open windows are left as-is, and if the setting is off any premature windows are torn down. Verified end-to-end against a real in-flight run on an isolated instance — a pristine browser (empty localStorage) seeds the setting from the server and pops the active run's window ~0.4s after first paint.
+
+  Also corrected a stale `@fileoverview` comment in `ultracode-windows.js` that claimed the floating windows are gated on `showUltracodeAgents`; they are gated on the dedicated `ultracodeFloatingWindows` toggle (only the docked "Ultracode Agents" panel uses `showUltracodeAgents`).
+
 ## 1.1.5
 
 ### Patch Changes

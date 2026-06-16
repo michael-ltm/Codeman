@@ -4,7 +4,9 @@
  *
  * This is the "floating thing" companion to the docked master-detail panel in
  * `ultracode-panel.js` (the dock panel stays — these windows are ADDITIONAL).
- * When the `showUltracodeAgents` setting is on, a small floating window pops up
+ * When the `ultracodeFloatingWindows` setting is on (a DEDICATED toggle, separate
+ * from the dock panel's `showUltracodeAgents` — see `_ultracodeFloatingEnabled`),
+ * a small floating window pops up
  * for each ACTIVE ultracode/Workflow run (status not completed/killed/failed),
  * mirroring the live agent grid, and is connected by a glowing line to the
  * Codeman tab whose `claudeSessionId` matches the run's `sessionUuid` — the same

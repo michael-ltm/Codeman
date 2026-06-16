@@ -665,6 +665,16 @@ class CodemanApp {
       this.applySkin();
       this.applyTabWrapSettings();
       this.applyMonitorVisibility();
+      // ultracodeFloatingWindows syncs from the server (non-display key), but on a
+      // FRESH device the getLightState run snapshot can seed workflowRuns BEFORE this
+      // async settings load resolves — so the floating-window gate read false then and
+      // skipped any already-active run. Re-sync now that the real setting is loaded so
+      // an in-flight run pops its window immediately instead of waiting for the next
+      // ~10s SSE tick. Idempotent: open windows are left as-is; if the setting is off
+      // it tears any premature windows down.
+      if (typeof this.syncAllUltracodeFloatingWindows === 'function') {
+        this.syncAllUltracodeFloatingWindows();
+      }
     });
     // Hide loading skeleton now that the app shell is ready
     document.body.classList.add('app-loaded');
