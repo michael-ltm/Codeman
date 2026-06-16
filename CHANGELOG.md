@@ -1,5 +1,11 @@
 # aicodeman
 
+## 1.1.8
+
+### Patch Changes
+
+- UI (Daylight Blue skin): give the welcome-screen action buttons distinct colors instead of all reading blue. **Run Claude Code** keeps the blue accent, **Cloudflare Tunnel** now uses Cloudflare's brand orange, and **Run OpenCode** uses an emerald green — so the three are visually distinguishable at a glance. Scoped to the default `daylight-blue` skin only (daylight-green and OG are unchanged), with matching hover/active states and dark ink for contrast. Verified in a real browser: the three buttons compute to blue / orange / green gradients on the welcome overlay.
+
 ## 1.1.7
 
 ### Patch Changes

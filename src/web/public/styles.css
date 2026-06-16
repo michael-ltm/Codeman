@@ -10199,3 +10199,38 @@ html:not([data-skin="og"]) {
 /* ---- Focus rings (driven by --accent, now emerald) stay accessible ---- */
 :focus-visible { outline-color: var(--accent); }
 }
+
+/* ---- Daylight Blue: distinct identity per welcome action button ----
+   Run Claude Code keeps the blue accent; Cloudflare Tunnel takes Cloudflare's
+   brand orange; Run OpenCode takes an emerald green — so the three are clearly
+   different colors instead of all reading blue. Scoped to daylight-blue only;
+   placed after the shared daylight block to win on equal specificity. ---- */
+html[data-skin="daylight-blue"] .welcome-btn-opencode {
+  background: linear-gradient(135deg, #0d9f6e, #2fbf85);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #04291b;
+}
+html[data-skin="daylight-blue"] .welcome-btn-opencode:hover {
+  background: linear-gradient(135deg, #10b981, #34d399);
+  border-color: rgba(52, 211, 153, 0.6);
+  box-shadow: 0 0 28px -4px rgba(16, 185, 129, 0.4);
+}
+html[data-skin="daylight-blue"] .welcome-btn-tunnel {
+  background: linear-gradient(135deg, #ef7611, #fbad41);
+  border-color: rgba(246, 130, 31, 0.5);
+  color: #2e1503;
+}
+html[data-skin="daylight-blue"] .welcome-btn-tunnel:hover {
+  background: linear-gradient(135deg, #fb8b2a, #ffc05a);
+  border-color: rgba(251, 173, 65, 0.6);
+  box-shadow: 0 0 28px -4px rgba(246, 130, 31, 0.45);
+}
+html[data-skin="daylight-blue"] .welcome-btn-tunnel.active {
+  background: linear-gradient(135deg, #d9650b, #f6821f);
+  border-color: rgba(246, 130, 31, 0.6);
+  color: #fff7ed;
+}
+html[data-skin="daylight-blue"] .welcome-btn-tunnel.active:hover {
+  background: linear-gradient(135deg, #ef7611, #fb8b2a);
+  box-shadow: 0 0 28px -4px rgba(246, 130, 31, 0.5);
+}
