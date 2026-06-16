@@ -136,6 +136,21 @@ export function isExternalCliMode(mode: SessionMode): boolean {
   return mode === 'opencode' || mode === 'codex';
 }
 
+/**
+ * Modes whose TUI emits alt-screen / scrollback-erase / mouse-tracking sequences
+ * that we strip so the browser keeps everything in the main buffer with scrollback
+ * reachable (the strip runs on both the live stream and the buffer replay).
+ *
+ * Codex and Claude Code are known, controlled TUIs that repaint via cursor
+ * positioning, so dropping the alt-screen switch is safe — content stays in the
+ * normal buffer. Excluded: `shell` (arbitrary programs like vim/less/htop
+ * legitimately need the alt screen) and `opencode` (renders its own TUI that
+ * may rely on it). Keep parity with the replay-side strip in session-routes.ts.
+ */
+export function isAltScreenStripMode(mode: SessionMode): boolean {
+  return mode === 'codex' || mode === 'claude';
+}
+
 // Note: Claude CLI PATH resolution moved to session-cli-builder.ts (buildClaudeEnv)
 
 /** PTY fallback geometry when tmux can't be queried (matches pre-#80 hardcoded values). */
@@ -265,9 +280,10 @@ export class Session extends EventEmitter {
   private _messages: ClaudeMessage[] = [];
   private _lineBuffer: string = '';
   private _lineBufferFlushTimer: NodeJS.Timeout | null = null;
-  // Codex only: trailing partial CSI held back so sequences split across PTY
-  // chunks can't slip past the alt-screen/scrollback strip (see _handleTerminalOutput)
-  private _codexSeqCarry: string = '';
+  // Alt-screen-strip modes (Codex/Claude): trailing partial CSI held back so
+  // sequences split across PTY chunks can't slip past the alt-screen/scrollback
+  // strip (see _handleTerminalOutput / isAltScreenStripMode)
+  private _altScreenSeqCarry: string = '';
   private resolvePromise: ((value: { result: string; cost: number }) => void) | null = null;
   private rejectPromise: ((reason: Error) => void) | null = null;
   private _promptResolved: boolean = false; // Guard against race conditions in runPrompt
@@ -1134,35 +1150,40 @@ export class Session extends EventEmitter {
   }
 
   private _handleTerminalOutput(data: string): void {
-    // Codex emits sequences that wipe xterm.js scrollback, plus mouse-tracking
-    // enables that hijack the scroll wheel so the user can't reach scrollback:
+    // Codex AND Claude Code emit sequences that wipe xterm.js scrollback, plus
+    // mouse-tracking enables that hijack the scroll wheel so the user can't reach
+    // scrollback. Claude Code does this intermittently (e.g. full-screen pickers /
+    // dialogs), which is why terminal scroll-up "randomly" breaks for Claude
+    // sessions on mobile and desktop until the dialog closes:
     //   - \x1b[?1049h / \x1b[?47h / \x1b[?1047h: switch to the alt buffer (no
     //     scrollback) — \x1b[?...l switches back.
     //   - \x1b[3J: erase saved lines (scrollback). (\x1b[2J / \x1b[J — erase
     //     the visible viewport — are left intact; the TUI repaints those rows.)
     //   - \x1b[?1000h / 1002h / 1003h / 1005h / 1006h / 1007h: mouse-tracking
     //     modes (X10, button-event, any-event, UTF-8, SGR, alt-scroll). Once on,
-    //     xterm.js forwards wheel events to codex instead of scrolling the
+    //     xterm.js forwards wheel events to the CLI instead of scrolling the
     //     viewport, so the conversation is in scrollback but unreachable.
     //     (Focus events at ?1004 are left alone — codeman uses them for
     //     active-tab detection.)
     // Strip them at the source so neither the persisted buffer nor the live
     // SSE/WS stream carries them, keeping everything in the main buffer with
-    // scrollback intact. Codex's cursor-positioned redraws overwrite only the
-    // cells they actually target, so the non-erased rows keep their content.
-    if (this.mode === 'codex') {
+    // scrollback intact. These are controlled TUIs whose cursor-positioned
+    // redraws overwrite only the cells they target, so non-erased rows keep
+    // their content. Gated to Codex/Claude (isAltScreenStripMode) — shell must
+    // keep the alt screen for vim/less/htop.
+    if (isAltScreenStripMode(this.mode)) {
       // Reassemble sequences split across PTY chunk boundaries first: a chunk
       // ending mid-sequence ('\x1b[?104' now, '9h' next) would slip past the
       // strip below and leave xterm stuck in the scrollback-less alt buffer
       // until the next buffer replay. Hold back an incomplete digit-only CSI
       // tail (≤7 chars — the longest strippable intro is '\x1b[?1049') and
       // prepend it to the next chunk; complete sequences are never held.
-      data = this._codexSeqCarry + data;
-      this._codexSeqCarry = '';
+      data = this._altScreenSeqCarry + data;
+      this._altScreenSeqCarry = '';
       // eslint-disable-next-line no-control-regex
       const splitTail = data.match(/\x1b(?:\[\??[0-9]{0,4})?$/);
       if (splitTail) {
-        this._codexSeqCarry = splitTail[0];
+        this._altScreenSeqCarry = splitTail[0];
         data = data.slice(0, -splitTail[0].length);
         if (!data) return;
       }
@@ -1809,7 +1830,7 @@ export class Session extends EventEmitter {
     this._errorBuffer = '';
     this._messages = [];
     this._lineBuffer = '';
-    this._codexSeqCarry = '';
+    this._altScreenSeqCarry = '';
     this._lastActivityAt = Date.now();
   }
 

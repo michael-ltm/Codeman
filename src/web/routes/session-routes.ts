@@ -18,7 +18,7 @@ import {
   type ApiResponse,
   type SessionColor,
 } from '../../types.js';
-import { Session } from '../../session.js';
+import { Session, isAltScreenStripMode } from '../../session.js';
 import { SseEvent } from '../sse-events.js';
 import {
   CreateSessionSchema,
@@ -79,12 +79,13 @@ const LEADING_WHITESPACE_PATTERN = /^[\s\r\n]+/;
  *   (1049 also saves cursor and clears the alt buffer).
  * - CSI 3 J = erase saved lines (scrollback).
  *
- * Codex emits `\x1b[?1049h` and clear-scrollback sequences during startup and
- * on repaint. xterm.js obeys them by switching to the alt buffer (no native
- * scrollback) and wiping saved lines, so the user's conversation history
- * disappears on every tab switch / pane refresh. Stripping these from the
- * replayed byte stream keeps everything in the main buffer with scrollback
- * intact. Mirrors the live-stream strip in Session._handleTerminalOutput.
+ * Codex AND Claude Code emit `\x1b[?1049h` and clear-scrollback sequences (the
+ * latter intermittently, e.g. full-screen pickers/dialogs). xterm.js obeys them
+ * by switching to the alt buffer (no native scrollback) and wiping saved lines,
+ * so the user's conversation history disappears on every tab switch / pane
+ * refresh (and scroll-up breaks live). Stripping these from the replayed byte
+ * stream keeps everything in the main buffer with scrollback intact. Mirrors the
+ * live-stream strip in Session._handleTerminalOutput (isAltScreenStripMode).
  */
 // eslint-disable-next-line no-control-regex
 const ALT_SCREEN_TOGGLE_PATTERN = /\x1b\[\?(?:47|1047|1049)[hl]/g;
@@ -989,10 +990,11 @@ export function registerSessionRoutes(
     // the terminal appears empty when switching tabs.
     let strippedBuffer = stripInkRedrawBloat(rawBuffer);
 
-    // Strip alt-screen toggles and scrollback-erase from codex byte streams.
-    // xterm.js obeys them by switching to its scrollback-less alt buffer and
-    // wiping saved lines, so conversation history disappears on tab switch.
-    if (session.mode === 'codex') {
+    // Strip alt-screen toggles and scrollback-erase from Codex/Claude byte
+    // streams. xterm.js obeys them by switching to its scrollback-less alt
+    // buffer and wiping saved lines, so conversation history disappears on tab
+    // switch. Same gate as the live-stream strip in session.ts.
+    if (isAltScreenStripMode(session.mode)) {
       strippedBuffer = strippedBuffer
         .replace(ALT_SCREEN_TOGGLE_PATTERN, '')
         .replace(ERASE_SCROLLBACK_PATTERN, '')

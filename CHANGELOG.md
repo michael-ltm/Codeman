@@ -1,5 +1,17 @@
 # aicodeman
 
+## 1.1.7
+
+### Patch Changes
+
+- Fix: terminal scroll-up (scrollback) intermittently breaking for **Claude** sessions — most visible on iPhone, where you suddenly "can't scroll up the Claude console."
+
+  Root cause: Claude Code periodically emits alternate-screen switches (`\x1b[?1049h`/`\x1b[?47h`/`\x1b[?1047h`), scrollback-erase (`\x1b[3J`), and mouse-tracking enables — typically when it draws a full-screen UI (pickers/dialogs, the boot welcome). xterm.js obeys these by moving to the scrollback-less alternate buffer (or wiping saved lines / hijacking the wheel), so the conversation history becomes unreachable until Claude returns to its normal view. Codeman already stripped these sequences so history stays scrollable, but the strip was gated to **Codex mode only** — Claude (and the equivalent buffer-replay path) let them through.
+
+  The strip is now shared via a single `isAltScreenStripMode(mode)` predicate (`codex || claude`) applied at BOTH sites that were Codex-only: the live PTY stream (`Session._handleTerminalOutput`, including the split-across-chunks carry reassembly) and the `/terminal` buffer replay used on tab-switch/reconnect. `shell` is deliberately excluded so full-screen TUIs run from a shell (vim/less/htop) keep their alternate screen; `opencode` is also unchanged.
+
+  Verified end-to-end on an isolated instance against a real Claude session: the replayed buffer and live stream now carry zero alt-screen/scrollback-erase/mouse sequences, the terminal stays in the normal buffer with scrollback intact, and touch swipe-up scrolls correctly. Covered by new unit tests (`test/claude-scrollback-strip.test.ts`); the existing Codex strip tests are unchanged.
+
 ## 1.1.6
 
 ### Patch Changes
