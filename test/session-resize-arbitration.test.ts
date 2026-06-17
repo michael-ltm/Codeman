@@ -113,6 +113,15 @@ describe('Session resize arbitration', () => {
     expect(resize).toHaveBeenCalledWith(100, 30);
   });
 
+  it('applies forced resizes even when the dimensions did not change', () => {
+    const session = new Session({ workingDir: '/tmp', mode: 'shell' });
+    const resize = attachFakePty(session, 120, 40);
+
+    session.resize(120, 40, { force: true });
+
+    expect(resize).toHaveBeenCalledWith(120, 40);
+  });
+
   describe('idle-desktop override (whoever is active wins)', () => {
     afterEach(() => {
       vi.useRealTimers();

@@ -1973,9 +1973,10 @@ Object.assign(CodemanApp.prototype, {
     }
 
     try {
-      // Send resize to restore proper dimensions (with minimum enforcement).
-      // The PTY's SIGWINCH on real dim change is enough for Ink to redraw.
-      await this.sendResize(this.activeSessionId);
+      // Force resize even when dimensions match the server's last known state —
+      // another device may have changed the PTY size since this client last sent,
+      // and force guarantees a SIGWINCH → Ink redraw at the current device's size.
+      await this.sendResize(this.activeSessionId, { force: true });
 
       this.showToast(`Terminal restored to ${dims.cols}x${dims.rows}`, 'success');
     } catch (err) {
@@ -2137,8 +2138,8 @@ Object.assign(CodemanApp.prototype, {
   /**
    * Send resize to a session with minimum dimension enforcement.
    * @param {string} sessionId
-   * @param {{ forceHttp?: boolean }} [options]
-   * @returns {Promise<void>}
+   * @param {{ forceHttp?: boolean, force?: boolean }} [options]
+   * @returns {Promise<boolean>} Whether dimensions changed from the last send
    */
   async sendResize(sessionId, options = {}) {
     // Fit terminal to container before reading dimensions — ensures local
@@ -2167,16 +2168,20 @@ Object.assign(CodemanApp.prototype, {
     // Fast path: WebSocket resize
     if (!options.forceHttp && this._wsReady && this._wsSessionId === sessionId) {
       try {
-        this._ws.send(JSON.stringify({ t: 'z', c: dims.cols, r: dims.rows, v: viewportType }));
+        const msg = { t: 'z', c: dims.cols, r: dims.rows, v: viewportType };
+        if (options.force) msg.f = true;
+        this._ws.send(JSON.stringify(msg));
         return changed;
       } catch {
         // Fall through to HTTP POST
       }
     }
+    const body = { ...dims, viewportType };
+    if (options.force) body.force = true;
     await fetch(`/api/sessions/${sessionId}/resize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...dims, viewportType }),
+      body: JSON.stringify(body),
     });
     return changed;
   },

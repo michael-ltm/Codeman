@@ -2321,7 +2321,7 @@ export class Session extends EventEmitter {
    * @param cols - Number of columns (width in characters)
    * @param rows - Number of rows (height in lines)
    */
-  resize(cols: number, rows: number, options: { viewportType?: ResizeViewportType } = {}): void {
+  resize(cols: number, rows: number, options: { viewportType?: ResizeViewportType; force?: boolean } = {}): void {
     const isSmallViewport = options.viewportType === 'mobile' || options.viewportType === 'tablet';
     if (options.viewportType === 'desktop') {
       this._lastDesktopDims = { cols, rows };
@@ -2334,7 +2334,8 @@ export class Session extends EventEmitter {
       }
       this._mobileSizeOverride = true;
     }
-    if (this.ptyProcess && (cols !== this._ptyCols || rows !== this._ptyRows)) {
+    const dimsChanged = cols !== this._ptyCols || rows !== this._ptyRows;
+    if (this.ptyProcess && (dimsChanged || options.force)) {
       this._ptyCols = cols;
       this._ptyRows = rows;
       if (this._mux && this._muxSession) {

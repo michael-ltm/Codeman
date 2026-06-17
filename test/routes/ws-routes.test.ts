@@ -285,7 +285,7 @@ describe('ws-routes', () => {
         ws.send(JSON.stringify({ t: 'z', c: 120, r: 40 }));
 
         await vi.waitFor(() => {
-          expect(session.resize).toHaveBeenCalledWith(120, 40);
+          expect(session.resize).toHaveBeenCalledWith(120, 40, { viewportType: undefined, force: false });
         });
       } finally {
         ws.close();
@@ -300,7 +300,22 @@ describe('ws-routes', () => {
         ws.send(JSON.stringify({ t: 'z', c: 48, r: 28, v: 'mobile' }));
 
         await vi.waitFor(() => {
-          expect(session.resize).toHaveBeenCalledWith(48, 28, { viewportType: 'mobile' });
+          expect(session.resize).toHaveBeenCalledWith(48, 28, { viewportType: 'mobile', force: false });
+        });
+      } finally {
+        ws.close();
+      }
+    });
+
+    it('passes force resize through for redraw requests', async () => {
+      const ws = await connectWs('/ws/sessions/ws-test-session/terminal');
+      try {
+        const session = ctx._session;
+
+        ws.send(JSON.stringify({ t: 'z', c: 120, r: 40, f: true }));
+
+        await vi.waitFor(() => {
+          expect(session.resize).toHaveBeenCalledWith(120, 40, { viewportType: undefined, force: true });
         });
       } finally {
         ws.close();
@@ -342,7 +357,7 @@ describe('ws-routes', () => {
         ws.send(JSON.stringify({ t: 'z', c: 1, r: 1 }));
 
         await vi.waitFor(() => {
-          expect(session.resize).toHaveBeenCalledWith(1, 1);
+          expect(session.resize).toHaveBeenCalledWith(1, 1, { viewportType: undefined, force: false });
         });
       } finally {
         ws.close();
@@ -357,7 +372,7 @@ describe('ws-routes', () => {
         ws.send(JSON.stringify({ t: 'z', c: 500, r: 200 }));
 
         await vi.waitFor(() => {
-          expect(session.resize).toHaveBeenCalledWith(500, 200);
+          expect(session.resize).toHaveBeenCalledWith(500, 200, { viewportType: undefined, force: false });
         });
       } finally {
         ws.close();

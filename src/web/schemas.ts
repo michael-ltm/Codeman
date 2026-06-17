@@ -186,6 +186,7 @@ export const ResizeSchema = z.object({
   cols: z.number().int().min(1).max(500),
   rows: z.number().int().min(1).max(200),
   viewportType: z.enum(['mobile', 'tablet', 'desktop']).optional(),
+  force: z.boolean().optional(),
 });
 
 /**
@@ -384,6 +385,7 @@ export const SettingsUpdateSchema = z
     // (client-side), but telemetry COLLECTION is server-side, so the per-device
     // toggle signals it out-of-band here rather than via showPlanUsageLimits.
     statusLineTelemetry: z.boolean().optional(),
+    showRedrawButton: z.boolean().optional(),
     // Input
     gestureControlEnabled: z.boolean().optional(),
     // Claude CLI settings

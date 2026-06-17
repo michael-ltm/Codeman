@@ -746,14 +746,10 @@ export function registerSessionRoutes(
 
   app.post('/api/sessions/:id/resize', async (req) => {
     const { id } = req.params as { id: string };
-    const { cols, rows, viewportType } = parseBody(ResizeSchema, req.body);
+    const { cols, rows, viewportType, force } = parseBody(ResizeSchema, req.body);
     const session = findSessionOrFail(ctx, id);
 
-    if (viewportType) {
-      session.resize(cols, rows, { viewportType });
-    } else {
-      session.resize(cols, rows);
-    }
+    session.resize(cols, rows, { viewportType, force });
     return {};
   });
 
