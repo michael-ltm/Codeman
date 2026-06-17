@@ -14,13 +14,21 @@
  * This means compositionstart fires even for English text, and compositionend
  * may not fire until the user explicitly confirms (space, candidate tap).
  *
- * We use InputEvent.inputType to distinguish:
- * - `insertCompositionText`: tentative text, may change (CJK candidates, pinyin)
- * - `insertText`: final committed text (confirmed word, punctuation, space)
+ * During composition, all input events are ignored — only compositionend
+ * triggers a flush (CJK candidate selection).
  *
- * During composition, `insertText` events are flushed immediately (punctuation,
- * English words confirmed by IME). `insertCompositionText` waits for
- * compositionend (CJK candidate selection).
+ * ## iOS dictation challenge (WebKit Bug 261764)
+ *
+ * iOS/iPadOS voice dictation does NOT fire composition events. Text arrives
+ * as bare input events with isComposing === false. Dictation refinement is
+ * a delete→reinsert cycle (deleteContentBackward + insertReplacementText),
+ * all within a few ms. Flushing on every input event would send irrevocable
+ * provisional text to the PTY, causing duplication when the IME replaces it.
+ *
+ * Solution: outside composition, flush is DEBOUNCED (200ms). The entire
+ * delete→reinsert cycle collapses into one flush of the final textarea value.
+ * Keyboard typing of single printable characters still goes through the
+ * keydown handler (immediate, no debounce).
  *
  * ## Phantom character for Android backspace
  *
@@ -41,16 +49,30 @@
 // eslint-disable-next-line no-unused-vars
 const CjkInput = (() => {
   let _textarea = null;
-  let _terminalContainer = null;
-  let _xtermTextarea = null;
   let _send = null;
   let _initialized = false;
   let _composing = false;
+  let _flushTimer = null;
+  let _dictationActive = false;
+  let _dictationDecayTimer = null;
+  let _keydownSentAt = 0;
   const _listeners = {};
 
-  // Zero-width space: always present in textarea so Android backspace has
-  // something to delete, triggering the `input` event we need to detect it.
-  const PHANTOM = '\u200B';
+  const PHANTOM = '​';
+
+  // Two-tier debounce for non-composition input:
+  // - KEYBOARD: short debounce (third-party IMEs like Doubao may not fire
+  //   composition events even for keyboard CJK typing)
+  // - DICTATION: long debounce (iOS voice dictation sends delete→reinsert
+  //   refinement cycles without composition events — WebKit Bug 261764)
+  //
+  // Dictation is detected by deleteContentBackward on non-empty text or
+  // insertReplacementText — signals that the IME is rewriting provisional
+  // text. Once detected, dictation mode persists for 3s (covers multi-word
+  // dictation with natural pauses between words).
+  const DEBOUNCE_KEYBOARD_MS = 150;
+  const DEBOUNCE_DICTATION_MS = 1500;
+  const DICTATION_DECAY_MS = 3000;
 
   const PASSTHROUGH_KEYS = {
     ArrowUp:    '\x1b[A',
@@ -66,35 +88,15 @@ const CjkInput = (() => {
     c: '\x03', d: '\x04', l: '\x0c', z: '\x1a', a: '\x01', e: '\x05',
   };
 
-  /** Strip phantom characters from a string */
   function _strip(str) {
-    return str.replace(/\u200B/g, '');
+    return str.replace(/​/g, '');
   }
 
-  /** Reset textarea to phantom-only state with cursor at end */
   function _resetToPhantom() {
     _textarea.value = PHANTOM;
     _textarea.setSelectionRange(1, 1);
   }
 
-  function _isMobileComposer() {
-    return !!(
-      _textarea &&
-      typeof MobileDetection !== 'undefined' &&
-      MobileDetection.isTouchDevice() &&
-      _textarea.classList.contains('cjk-input-visible')
-    );
-  }
-
-  function _resetInput() {
-    if (_isMobileComposer()) {
-      _textarea.value = '';
-    } else {
-      _resetToPhantom();
-    }
-  }
-
-  /** Check if textarea contains only phantom(s) or is empty — no real user text */
   function _isEffectivelyEmpty() {
     return !_strip(_textarea.value);
   }
@@ -108,61 +110,73 @@ const CjkInput = (() => {
     _resetToPhantom();
   }
 
+  /** Cancel any pending debounced flush */
+  function _cancelDebouncedFlush() {
+    if (_flushTimer) {
+      clearTimeout(_flushTimer);
+      _flushTimer = null;
+    }
+  }
+
+  /** Mark that dictation rewriting is in progress */
+  function _enterDictationMode() {
+    _dictationActive = true;
+    clearTimeout(_dictationDecayTimer);
+    _dictationDecayTimer = setTimeout(() => {
+      _dictationActive = false;
+      _dictationDecayTimer = null;
+    }, DICTATION_DECAY_MS);
+  }
+
+  /** Schedule a flush after input settles */
+  function _debouncedFlush() {
+    _cancelDebouncedFlush();
+    const delay = _dictationActive ? DEBOUNCE_DICTATION_MS : DEBOUNCE_KEYBOARD_MS;
+    _flushTimer = setTimeout(() => {
+      _flushTimer = null;
+      _flush();
+    }, delay);
+  }
+
   return {
     init({ send }) {
       if (_initialized) this.destroy();
 
       _send = send;
       _composing = false;
+      _flushTimer = null;
       _textarea = document.getElementById('cjkInput');
       if (!_textarea) return this;
-      _terminalContainer = document.getElementById('terminalContainer');
 
-      // Seed the phantom character for the hidden/immediate CJK path.
-      _resetInput();
+      _resetToPhantom();
 
       _listeners.mousedown = (e) => { e.stopPropagation(); };
       _listeners.focus = () => {
         window.cjkActive = true;
-        if (_isMobileComposer() && _textarea.value === PHANTOM) {
-          _textarea.value = '';
-          return;
-        }
-        // Restore phantom if textarea was emptied while blurred
-        if (!_textarea.value && !_isMobileComposer()) _resetToPhantom();
+        if (!_textarea.value) _resetToPhantom();
       };
-      _listeners.blur = () => { window.cjkActive = false; };
+      _listeners.blur = () => {
+        // Keep cjkActive while CJK input is visible — iOS dictation and system
+        // UI may steal focus temporarily, and clearing the flag during that
+        // window lets xterm's onData process duplicated input.
+        if (!_textarea.classList.contains('cjk-input-visible')) {
+          window.cjkActive = false;
+        }
+      };
       _textarea.addEventListener('mousedown', _listeners.mousedown);
       _textarea.addEventListener('focus', _listeners.focus);
       _textarea.addEventListener('blur', _listeners.blur);
 
-      _listeners.xtermFocusRedirect = () => {
-        if (!_isMobileComposer()) return;
-        _textarea.focus();
-      };
-      if (_terminalContainer) {
-        _xtermTextarea = _terminalContainer.querySelector('.xterm-helper-textarea');
-        if (_xtermTextarea) {
-          _xtermTextarea.addEventListener('focus', _listeners.xtermFocusRedirect, { capture: true });
-        }
-      }
-
-      // ── Composition tracking ──
+      // ── Composition tracking (keyboard IME — works for CJK typing) ──
       _listeners.compositionstart = () => {
         _composing = true;
-        if (_isMobileComposer()) {
-          if (_textarea.value === PHANTOM) _textarea.value = '';
-          return;
-        }
-        // Clear phantom so IME sees a clean textarea — some IMEs include
-        // existing text in the composition region which would corrupt input.
-        if (_textarea.value === PHANTOM) {
-          _textarea.value = '';
-        }
+        _cancelDebouncedFlush();
+        // Leave textarea.value untouched — programmatic changes during
+        // compositionstart cancel the IME composition on iOS Safari.
       };
       _listeners.compositionend = () => {
         _composing = false;
-        if (_isMobileComposer()) return;
+        _cancelDebouncedFlush();
         // Defer flush: some Android IMEs haven't committed text to textarea
         // when compositionend fires. setTimeout(0) ensures we read the final value.
         setTimeout(_flush, 0);
@@ -172,32 +186,28 @@ const CjkInput = (() => {
 
       // ── Keydown: special keys work REGARDLESS of composition state ──
       _listeners.keydown = (e) => {
-        // Enter: flush accumulated text (or bare Enter if empty).
-        // No isComposing guard — Android IMEs set isComposing=true for English
-        // prediction, but Enter should ALWAYS send. We preventDefault to stop
-        // the IME from also handling Enter (which could double-send or do nothing).
         if (e.key === 'Enter') {
           e.preventDefault();
           _composing = false;
+          _cancelDebouncedFlush();
           const val = _strip(_textarea.value);
           if (val) {
             _send(val + '\r');
           } else {
             _send('\r');
           }
-          _resetInput();
+          _resetToPhantom();
           return;
         }
 
-        // Escape: clear textarea (always works)
         if (e.key === 'Escape') {
           e.preventDefault();
           _composing = false;
-          _resetInput();
+          _cancelDebouncedFlush();
+          _resetToPhantom();
           return;
         }
 
-        // Ctrl combos: forward to PTY (always works)
         if (e.ctrlKey && CTRL_KEYS[e.key]) {
           e.preventDefault();
           _send(CTRL_KEYS[e.key]);
@@ -207,21 +217,7 @@ const CjkInput = (() => {
         // Below: only when NOT composing (composing keystrokes belong to IME)
         if (_composing) return;
 
-        if (_isMobileComposer()) {
-          if (e.key === 'Backspace' && _isEffectivelyEmpty()) {
-            e.preventDefault();
-            _send('\x7f');
-            return;
-          }
-          if (PASSTHROUGH_KEYS[e.key] && _isEffectivelyEmpty()) {
-            e.preventDefault();
-            _send(PASSTHROUGH_KEYS[e.key]);
-          }
-          return;
-        }
-
         // Backspace: forward to PTY when no real text in textarea
-        // (Desktop path — Android uses the input event + phantom approach)
         if (e.key === 'Backspace' && _isEffectivelyEmpty()) {
           e.preventDefault();
           _send('\x7f');
@@ -236,62 +232,62 @@ const CjkInput = (() => {
           return;
         }
 
-        // Single printable character: send immediately to PTY
-        // (Desktop keyboards with physical keys — Android sends 'Unidentified')
+        // Single printable character: send immediately to PTY.
+        // Third-party IMEs on iOS may ignore preventDefault, so the char
+        // still enters the textarea and fires an input event — _keydownSentAt
+        // tells the input handler to skip that echo.
         if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey && _isEffectivelyEmpty()) {
           e.preventDefault();
           _send(e.key);
+          _keydownSentAt = performance.now();
+          _resetToPhantom();
           return;
         }
       };
       _textarea.addEventListener('keydown', _listeners.keydown);
 
-      // ── Input event: the primary path for Android virtual keyboards ──
-      // Android sends keyCode 229 + key "Unidentified" for virtual key presses,
-      // making keydown unreliable. input fires AFTER character insertion and
-      // carries inputType which tells us whether the text is final or tentative.
+      // ── Input event: primary path for virtual keyboards + dictation ──
       _listeners.input = (e) => {
-        if (_isMobileComposer()) {
-          if (_textarea.value.includes(PHANTOM)) {
-            _textarea.value = _strip(_textarea.value);
-          }
-          return;
-        }
-
         // ── Backspace / delete detection ──
-        // Android long-press backspace generates rapid deleteContentBackward events.
-        // The phantom character ensures the textarea is never truly empty, so each
-        // press/repeat fires an input event that we can catch here.
         if (e.inputType === 'deleteContentBackward' || e.inputType === 'deleteWordBackward') {
+          if (_composing) return;
           if (_isEffectivelyEmpty()) {
-            // No real text left — forward backspace to PTY
+            _cancelDebouncedFlush();
             _send('\x7f');
             _resetToPhantom();
             return;
           }
-          // User is editing their own text in the textarea — let it be.
-          // Ensure phantom is still present for the NEXT backspace.
+          // Delete on non-empty text outside composition = dictation rewrite.
+          // The IME is revising provisional text — switch to long debounce.
+          _enterDictationMode();
           if (!_textarea.value.startsWith(PHANTOM)) {
             _textarea.value = PHANTOM + _textarea.value;
             _textarea.setSelectionRange(1, 1);
           }
+          _debouncedFlush();
           return;
         }
 
-        if (_composing) {
-          // insertText during composition = IME committed final text
-          // (e.g., punctuation key inserts 。directly, or IME confirms a word).
-          // Flush immediately — this text won't change.
-          if (e.inputType === 'insertText') {
-            _flush();
-            return;
-          }
-          // insertCompositionText = IME is still working (pinyin, candidates,
-          // English prediction). Wait for compositionend to flush.
+        // insertReplacementText = dictation/autocorrect refinement
+        if (e.inputType === 'insertReplacementText') {
+          _enterDictationMode();
+          _debouncedFlush();
           return;
         }
-        // Outside composition: send immediately
-        _flush();
+
+        if (_composing) return;
+
+        // Keydown handler already sent this character — just clear the
+        // textarea echo that the IME inserted despite preventDefault.
+        if (performance.now() - _keydownSentAt < 100) {
+          _resetToPhantom();
+          return;
+        }
+
+        // Outside composition: keyboard typing or voice dictation.
+        // If dictation mode was detected (delete/replacement events seen
+        // recently), use long debounce. Otherwise short debounce for keyboard.
+        _debouncedFlush();
       };
       _textarea.addEventListener('input', _listeners.input);
 
@@ -300,18 +296,16 @@ const CjkInput = (() => {
     },
 
     destroy() {
+      _cancelDebouncedFlush();
+      clearTimeout(_dictationDecayTimer);
+      _dictationActive = false;
       if (_textarea) {
         for (const [event, handler] of Object.entries(_listeners)) {
           if (handler) _textarea.removeEventListener(event, handler);
         }
       }
-      if (_xtermTextarea && _listeners.xtermFocusRedirect) {
-        _xtermTextarea.removeEventListener('focus', _listeners.xtermFocusRedirect, { capture: true });
-      }
       window.cjkActive = false;
       _composing = false;
-      _terminalContainer = null;
-      _xtermTextarea = null;
       for (const key of Object.keys(_listeners)) delete _listeners[key];
       _initialized = false;
     },

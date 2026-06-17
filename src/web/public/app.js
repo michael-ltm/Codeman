@@ -2206,7 +2206,6 @@ class CodemanApp {
     document.body.classList.toggle('cjk-input-visible', !!showCjk);
     cjkEl.style.display = showCjk ? 'block' : 'none';
     cjkEl.setAttribute('aria-hidden', showCjk ? 'false' : 'true');
-    if (showCjk && cjkEl.value === '\u200B') cjkEl.value = '';
     if (!showCjk) window.cjkActive = false;
     if (typeof KeyboardHandler !== 'undefined') KeyboardHandler.updateLayoutForKeyboard();
   }
