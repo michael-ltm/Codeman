@@ -23,7 +23,7 @@
  *     {"t":"r"}           — needs refresh (reload buffer)
  *   Client -> Server:
  *     {"t":"i","d":"..."} — input (keystroke or paste)
- *     {"t":"z","c":N,"r":N} — resize terminal
+ *     {"t":"z","c":N,"r":N,"f":bool} — resize terminal (f=true forces SIGWINCH even if dims unchanged)
  */
 
 import { FastifyInstance } from 'fastify';
@@ -146,11 +146,8 @@ export function registerWsRoutes(app: FastifyInstance, ctx: SessionPort, getHost
             session.releaseDesktopSizing(sizingToken);
             holdsDesktopClaim = false;
           }
-          if (viewportType) {
-            session.resize(msg.c, msg.r, { viewportType });
-          } else {
-            session.resize(msg.c, msg.r);
-          }
+          const force = msg.f === true;
+          session.resize(msg.c, msg.r, { viewportType, force });
         }
       } catch {
         // Ignore malformed messages

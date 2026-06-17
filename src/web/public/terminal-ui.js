@@ -19,6 +19,10 @@
   // suppressed, so high-frequency Codex status redraws don't snap the viewport
   // back to the bottom while the user is inspecting earlier output.
   const USER_SCROLL_STICKY_SUPPRESS_MS = 1500;
+  // Mobile browsers synthesize trusted mouse events after touchend. During this
+  // short window, only the app's synthetic tap-to-position mouse event should
+  // reach xterm.
+  const TOUCH_COMPAT_MOUSE_SUPPRESS_MS = 450;
 
   function isTerminalQueryResponse(data) {
     return TERMINAL_QUERY_RESPONSE_PATTERN.test(data) || TERMINAL_OSC_RESPONSE_PATTERN.test(data);
@@ -46,6 +50,7 @@
     isTerminalQueryResponse,
     shouldSuppressTerminalQueryResponse,
     USER_SCROLL_STICKY_SUPPRESS_MS,
+    TOUCH_COMPAT_MOUSE_SUPPRESS_MS,
   };
   global.CODEMAN_XTERM_THEMES = CODEMAN_XTERM_THEMES;
   global.codemanCurrentXtermTheme = currentXtermTheme;
@@ -107,6 +112,7 @@ Object.assign(CodemanApp.prototype, {
 
     const container = document.getElementById('terminalContainer');
     this.terminal.open(container);
+    this._installMobileTapMouseGuard();
 
     // Suppress xterm key handling during CJK IME composition.
     // Without this, xterm processes raw keyDown events (e.g., "Process" key)
@@ -365,11 +371,14 @@ Object.assign(CodemanApp.prototype, {
       let pixelAccum = 0;
 
       let didScroll = false; // track whether touchmove fired (tap vs scroll)
+      let touchStartY = 0;
+      const TAP_THRESHOLD = 8; // px — ignore micro-drift to distinguish tap from scroll
       container.addEventListener(
         'touchstart',
         (ev) => {
           if (ev.touches.length === 1) {
             touchLastY = ev.touches[0].clientY;
+            touchStartY = touchLastY;
             velocity = 0;
             pixelAccum = 0;
             isTouching = true;
@@ -388,9 +397,18 @@ Object.assign(CodemanApp.prototype, {
         'touchmove',
         (ev) => {
           if (ev.touches.length === 1 && isTouching) {
-            ev.preventDefault();
-            didScroll = true;
             const touchY = ev.touches[0].clientY;
+            if (!didScroll && Math.abs(touchY - touchStartY) >= TAP_THRESHOLD) {
+              didScroll = true;
+            }
+            // Below the tap threshold, treat the gesture as a potential tap:
+            // don't preventDefault (iOS needs click synthesis to show the
+            // keyboard) and don't accumulate scroll distance or velocity. Without
+            // this guard, sub-threshold micro-drift still scrolls a line and
+            // leaves a non-zero velocity that touchend turns into a momentum
+            // fling, so a jittery tap would both position the cursor AND scroll.
+            if (!didScroll) return;
+            ev.preventDefault();
             const delta = touchLastY - touchY; // positive = scroll down
             pixelAccum += delta;
             velocity = delta * 1.2;
@@ -410,20 +428,38 @@ Object.assign(CodemanApp.prototype, {
 
       container.addEventListener(
         'touchend',
-        () => {
+        (ev) => {
           isTouching = false;
           if (!scrollFrame && Math.abs(velocity) > 0.3) {
             scrollFrame = requestAnimationFrame(scrollLoop);
           }
-          // Tap (no scroll): refocus xterm's hidden textarea so keyboard input
-          // routes back to the terminal. Without this, a tap on the terminal area
-          // consumes the touch event but xterm's textarea never regains focus.
           if (!didScroll && this.terminal) {
+            // ── Tap-to-position cursor ──────────────────────────────────
+            // Synthesize a click from the real touch point so the foreground app
+            // moves its cursor to the tapped cell (iOS doesn't reliably do this
+            // itself under touch-action:none). CRITICAL: only when mouse tracking
+            // is ON. xterm disables its local SelectionService while mouse events
+            // are active, so the synthetic click is forwarded to the PTY as an SGR
+            // report (cursor moves). But when tracking is OFF, that same click
+            // drives xterm's LOCAL selection (detail 1/2/3 → char/word/line) — a
+            // tap on CJK text would select & copy it instead of positioning. So
+            // gate strictly on the live mouse-tracking mode.
+            const touch = ev.changedTouches && ev.changedTouches[0];
+            const mouseMode = this.terminal.modes?.mouseTrackingMode;
+            const mouseTrackingOn = !!mouseMode && mouseMode !== 'none';
+            if (touch) {
+              this._suppressTrustedTapMouseEvents();
+            }
+            if (touch && mouseTrackingOn) {
+              this._dispatchSyntheticTerminalClick(touch.clientX, touch.clientY);
+            }
+            this._syncMobileHelperTextareaToCursor();
+            // Route subsequent typing to the right place: keep the CJK input
+            // field focused when Chinese input is on, otherwise the terminal.
             const cjkInput = document.getElementById('cjkInput');
             if (cjkInput?.classList.contains('cjk-input-visible')) {
               cjkInput.focus();
             } else {
-              this._syncMobileHelperTextareaToCursor();
               this.terminal.focus();
             }
           }
@@ -585,8 +621,13 @@ Object.assign(CodemanApp.prototype, {
     // survives tab switches and reconnects.
 
     this.terminal.onData((data) => {
-      // CJK input has focus — block xterm from sending to PTY
-      if (window.cjkActive || document.activeElement?.id === 'cjkInput') return;
+      // Mouse SGR reports (tap-to-position) are NOT IME input — they must reach
+      // the PTY even while the CJK input field owns focus. Without this exception
+      // tapping to move the cursor silently does nothing whenever Chinese input
+      // is on, because cjkActive stays true the whole time the field is visible.
+      const isMouseReport = /^\x1b\[<\d+;\d+;\d+[Mm]$/.test(data);
+      // CJK input has focus — block xterm from sending keystrokes to PTY
+      if (!isMouseReport && (window.cjkActive || document.activeElement?.id === 'cjkInput')) return;
       if (this.activeSessionId) {
         // Filter terminal query replies generated by xterm.js itself.
         // Forwarding them through the WebSocket injects DA/DSR/CPR replies
@@ -1935,9 +1976,10 @@ Object.assign(CodemanApp.prototype, {
     }
 
     try {
-      // Send resize to restore proper dimensions (with minimum enforcement).
-      // The PTY's SIGWINCH on real dim change is enough for Ink to redraw.
-      await this.sendResize(this.activeSessionId);
+      // Force resize even when dimensions match the server's last known state —
+      // another device may have changed the PTY size since this client last sent,
+      // and force guarantees a SIGWINCH → Ink redraw at the current device's size.
+      await this.sendResize(this.activeSessionId, { force: true });
 
       this.showToast(`Terminal restored to ${dims.cols}x${dims.rows}`, 'success');
     } catch (err) {
@@ -1994,6 +2036,62 @@ Object.assign(CodemanApp.prototype, {
     } catch {}
   },
 
+  // ═══════════════════════════════════════════════════════════════
+  // Synthetic tap → mouse report
+  // ═══════════════════════════════════════════════════════════════
+  // Dispatch a mousedown+mouseup pair at viewport coords (clientX/clientY) to
+  // xterm's root element. xterm's mouse-reporting handler reads the event's
+  // client coords, maps them to a terminal cell relative to .xterm-screen, and
+  // — when the foreground app has mouse tracking active (DECSET 1000/1002/1006,
+  // which Claude's input enables) — encodes an SGR mouse report to the PTY.
+  // That is the same path a real desktop click takes; on touch devices the
+  // browser's own compatibility-event synthesis is unreliable (and suppressed
+  // by touch-action:none), so we drive it explicitly. With mouse tracking off
+  // it degrades to a harmless zero-length click (no drag → no text selection).
+  _dispatchSyntheticTerminalClick(clientX, clientY) {
+    const el = this.terminal?.element;
+    if (!el || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+    // xterm registers its mouseup listener on document during mousedown, so a
+    // bubbling mouseup reaches it; dispatch both to the root element in order.
+    const base = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX,
+      clientY,
+      screenX: clientX,
+      screenY: clientY,
+      button: 0,
+      detail: 1,
+    };
+    try {
+      el.dispatchEvent(new MouseEvent('mousedown', { ...base, buttons: 1 }));
+      el.dispatchEvent(new MouseEvent('mouseup', { ...base, buttons: 0 }));
+    } catch {
+      /* MouseEvent constructor unavailable — tap-to-position simply no-ops */
+    }
+  },
+
+  _installMobileTapMouseGuard() {
+    const el = this.terminal?.element;
+    if (!el || el._codemanTapMouseGuardInstalled) return;
+    if (typeof MobileDetection !== 'undefined' && MobileDetection.isTouchDevice && !MobileDetection.isTouchDevice()) return;
+    el._codemanTapMouseGuardInstalled = true;
+    const suppressTrustedCompatMouse = (ev) => {
+      const suppressUntil = this._trustedTapMouseSuppressUntil || 0;
+      if (!ev.isTrusted || performance.now() > suppressUntil) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+    };
+    el.addEventListener('mousedown', suppressTrustedCompatMouse, true);
+    el.addEventListener('mouseup', suppressTrustedCompatMouse, true);
+  },
+
+  _suppressTrustedTapMouseEvents() {
+    const ms = window.CodemanTerminalInput?.TOUCH_COMPAT_MOUSE_SUPPRESS_MS || 450;
+    this._trustedTapMouseSuppressUntil = performance.now() + ms;
+  },
+
   increaseFontSize() {
     const current = this.terminal.options.fontSize || 14;
     this.setFontSize(Math.min(current + 2, 24));
@@ -2043,8 +2141,8 @@ Object.assign(CodemanApp.prototype, {
   /**
    * Send resize to a session with minimum dimension enforcement.
    * @param {string} sessionId
-   * @param {{ forceHttp?: boolean }} [options]
-   * @returns {Promise<void>}
+   * @param {{ forceHttp?: boolean, force?: boolean }} [options]
+   * @returns {Promise<boolean>} Whether dimensions changed from the last send
    */
   async sendResize(sessionId, options = {}) {
     // Fit terminal to container before reading dimensions — ensures local
@@ -2073,16 +2171,20 @@ Object.assign(CodemanApp.prototype, {
     // Fast path: WebSocket resize
     if (!options.forceHttp && this._wsReady && this._wsSessionId === sessionId) {
       try {
-        this._ws.send(JSON.stringify({ t: 'z', c: dims.cols, r: dims.rows, v: viewportType }));
+        const msg = { t: 'z', c: dims.cols, r: dims.rows, v: viewportType };
+        if (options.force) msg.f = true;
+        this._ws.send(JSON.stringify(msg));
         return changed;
       } catch {
         // Fall through to HTTP POST
       }
     }
+    const body = { ...dims, viewportType };
+    if (options.force) body.force = true;
     await fetch(`/api/sessions/${sessionId}/resize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...dims, viewportType }),
+      body: JSON.stringify(body),
     });
     return changed;
   },

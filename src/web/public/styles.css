@@ -996,6 +996,12 @@ body {
   display: none !important;
 }
 
+/* Redraw terminal header button: hidden by default (opt-in via App Settings →
+   Display → "Header Displays"). Pure client-side toggle. */
+.btn-redraw-terminal--hidden {
+  display: none !important;
+}
+
 .btn-icon-header.btn-settings {
   width: 30px;
   height: 30px;
@@ -2229,6 +2235,34 @@ body.solo-mode .btn-lifecycle-log {
   background: transparent !important;
 }
 
+/* Touch devices: prevent browser from claiming the touch gesture before
+   our JS touchmove handler fires. Without this, the browser starts native
+   scrolling during the first few px of finger travel and ignores our
+   subsequent preventDefault() — breaking custom terminal scroll. */
+.touch-device .terminal-container,
+.touch-device .terminal-container .xterm,
+.touch-device .terminal-container .xterm-viewport,
+.touch-device .terminal-container .xterm-screen {
+  touch-action: none;
+}
+
+/* Mobile terminal taps are cursor-positioning gestures, not text-selection gestures.
+   xterm re-enables selectable DOM text in its accessibility tree, so force the
+   whole terminal subtree back to non-selectable on touch devices. Synthetic mouse
+   events for tap-to-position still dispatch normally through JavaScript. */
+body.touch-device .terminal-container .xterm,
+body.touch-device .terminal-container .xterm .xterm-viewport,
+body.touch-device .terminal-container .xterm .xterm-screen,
+body.touch-device .terminal-container .xterm .xterm-rows,
+body.touch-device .terminal-container .xterm .xterm-accessibility-tree,
+body.touch-device .terminal-container .xterm .xterm-accessibility-tree *,
+body.touch-device .terminal-container .xterm .xterm-selection,
+body.touch-device .terminal-container .xterm .xterm-helper-textarea {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+
 /* Welcome Overlay */
 .welcome-overlay {
   position: absolute;
@@ -3012,6 +3046,11 @@ body.solo-mode .btn-lifecycle-log {
   color: #ffd54f;
   font-size: 0.65rem;
   white-space: nowrap;
+}
+
+/* Touch devices (iPad, tablets): show stop button — no physical Ctrl+C */
+.touch-device .btn-toolbar.btn-stop {
+  display: flex;
 }
 
 /* Mobile app settings gear - hidden on desktop, shown on mobile */
