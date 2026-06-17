@@ -2719,6 +2719,13 @@ body.solo-mode .btn-lifecycle-log {
   contain: style;
 }
 
+/* backdrop-filter creates a stacking context, trapping the popover's
+   z-index inside the toolbar. When the popover is open, raise the toolbar
+   above the CJK input (z-index 52) so the popover is interactable. */
+.toolbar:has(.case-settings-popover:not(.hidden)) {
+  z-index: 100;
+}
+
 .toolbar-left,
 .toolbar-right {
   display: flex;
