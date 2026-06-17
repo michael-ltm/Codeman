@@ -4,10 +4,10 @@
  * Defines two exports:
  *
  * - KeyboardAccessoryBar (singleton object) — Quick action buttons shown above the virtual
- *   keyboard on mobile: arrow up/down, /init, /clear, paste, Esc, and dismiss.
+ *   keyboard on mobile: arrow up/down, /init, /clear, /compact, paste, Esc, and dismiss.
  *   The paste button opens a dialog that handles both text paste and image attach
  *   (native picker + best-effort image paste, routed through app._uploadAndInsertImages).
- *   Destructive actions (/clear) require double-tap confirmation (2s amber state).
+ *   Destructive actions (/clear, /compact) require double-tap confirmation (2s amber state).
  *   Commands are sent as text + Enter separately for Ink compatibility.
  *   Only initializes on touch devices (MobileDetection.isTouchDevice guard).
  *
@@ -58,6 +58,7 @@ const KeyboardAccessoryBar = {
         </svg>
       </button>
       <button class="accessory-btn" data-action="esc" title="Escape">Esc</button>
+      <button class="accessory-btn" data-action="compact" title="/compact">/compact</button>
       <button class="accessory-btn accessory-btn-dismiss" data-action="dismiss" title="Dismiss keyboard">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
           <path d="M19 9l-7 7-7-7"/>
@@ -100,6 +101,7 @@ const KeyboardAccessoryBar = {
       <button class="accessory-btn" data-action="esc" title="Escape">Esc</button>
       <button class="accessory-btn" data-action="init" title="/init">/init</button>
       <button class="accessory-btn" data-action="clear" title="/clear">/clear</button>
+      <button class="accessory-btn" data-action="compact" title="/compact">/compact</button>
       <button class="accessory-btn accessory-btn-dismiss" data-action="dismiss" title="Dismiss keyboard">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
           <path d="M19 9l-7 7-7-7"/>
@@ -129,7 +131,7 @@ const KeyboardAccessoryBar = {
       // Refocus terminal so keyboard stays open (tap blurs terminal → keyboard dismisses → toolbar shifts)
       const refocusActions = new Set(['scroll-up', 'scroll-down', 'arrow-left', 'arrow-right', 'tab', 'shift-tab', 'ctrl-o', 'opt-enter', 'esc', 'effort-max']);
       if (refocusActions.has(action) ||
-          (action === 'clear' && this._confirmAction)) {
+          ((action === 'clear' || action === 'compact') && this._confirmAction)) {
         if (typeof app !== 'undefined' && app.terminal) {
           app.terminal.focus();
         }
@@ -192,11 +194,12 @@ const KeyboardAccessoryBar = {
       case 'init':
         this.sendCommand('/init');
         break;
-      case 'clear': {
-        // Require double-tap: first tap turns amber, second tap within 2s sends
+      case 'clear':
+      case 'compact': {
+        const cmd = action === 'clear' ? '/clear' : '/compact';
         if (this._confirmAction === action && this._confirmTimer) {
           this.clearConfirm();
-          this.sendCommand('/clear');
+          this.sendCommand(cmd);
         } else {
           this.setConfirm(action, btn);
         }
