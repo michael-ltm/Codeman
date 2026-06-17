@@ -291,57 +291,50 @@ const KeyboardHandler = {
   updateLayoutForKeyboard() {
     if (!window.visualViewport) return;
 
-    // Only adjust on mobile
-    if (!MobileDetection.isSmallScreen() && !MobileDetection.isMediumScreen()) {
+    if (!MobileDetection.isTouchDevice()) {
       this.resetLayout();
       return;
     }
 
-    const toolbar = document.querySelector('.toolbar');
-    const accessoryBar = document.querySelector('.keyboard-accessory-bar');
     const cjkInput = document.getElementById('cjkInput');
-    const main = document.querySelector('.main');
+    const isSmallMedium = MobileDetection.isSmallScreen() || MobileDetection.isMediumScreen();
 
     if (this.keyboardVisible) {
-      // Calculate how far the toolbar (position:fixed, bottom:0) needs to
-      // translate up so it sits at the bottom of the visual viewport.
-      // This formula accounts for iOS scrolling the visual viewport (offsetTop)
-      // when the user types in xterm's hidden textarea.
-      //
-      // MUST measure against the LAYOUT viewport (window.innerHeight): the
-      // bars are position:fixed, which anchors to the layout viewport — on
-      // iOS that keeps its full height while the keyboard is open. Measuring
-      // the shrunken .app instead (its height tracks --app-height = visual
-      // viewport) made the offset compute to 0 on iOS, leaving the toolbar
-      // and accessory bar behind the OS keyboard (0.9.8 regression). On
-      // Android the layout viewport itself shrinks with the keyboard, so
-      // innerHeight === visualBottom and the offset is naturally 0 there.
-      const layoutHeight = window.innerHeight;
-      const visualBottom = window.visualViewport.offsetTop + window.visualViewport.height;
-      const keyboardOffset = Math.max(0, layoutHeight - visualBottom);
-
-      // Move toolbar and accessory bar above keyboard.
-      // When keyboardOffset is 0 (viewport scrolled to layout bottom),
-      // the bars are naturally positioned via their CSS bottom values —
-      // just clear the transforms.  Never dismiss keyboard state here;
-      // that's handleViewportResize's job.
-      if (toolbar) {
-        toolbar.style.transform = keyboardOffset > 0 ? `translateY(${-keyboardOffset}px)` : '';
-      }
-      if (accessoryBar) {
-        accessoryBar.style.transform = keyboardOffset > 0 ? `translateY(${-keyboardOffset}px)` : '';
-      }
-      if (cjkInput?.classList.contains('cjk-input-visible')) {
-        cjkInput.style.transform = keyboardOffset > 0 ? `translateY(${-keyboardOffset}px)` : '';
-      }
-
-      // Reserve only Codeman's visible controls. The OS keyboard is outside
-      // the visual viewport; adding its height here creates a large blank area
-      // above the mobile toolbar on iPhone.
       const keyboardHeight = this.initialViewportHeight - (window.visualViewport.height || window.innerHeight);
-      if (main && keyboardHeight > 0) {
-        const cjkInputHeight = cjkInput?.classList.contains('cjk-input-visible') ? 44 : 0;
-        main.style.paddingBottom = `${84 + cjkInputHeight}px`;
+
+      // Toolbar and accessory bar: only transform on phones/small tablets where
+      // they are position:fixed. On iPad (≥768px) they're in normal flow inside
+      // the shrunk .app container and already sit above the keyboard.
+      if (isSmallMedium) {
+        const toolbar = document.querySelector('.toolbar');
+        const accessoryBar = document.querySelector('.keyboard-accessory-bar');
+        const main = document.querySelector('.main');
+
+        const layoutHeight = window.innerHeight;
+        const visualBottom = window.visualViewport.offsetTop + window.visualViewport.height;
+        const keyboardOffset = Math.max(0, layoutHeight - visualBottom);
+
+        if (toolbar) {
+          toolbar.style.transform = keyboardOffset > 0 ? `translateY(${-keyboardOffset}px)` : '';
+        }
+        if (accessoryBar) {
+          accessoryBar.style.transform = keyboardOffset > 0 ? `translateY(${-keyboardOffset}px)` : '';
+        }
+        if (main && keyboardHeight > 0) {
+          const cjkInputHeight = cjkInput?.classList.contains('cjk-input-visible') ? 44 : 0;
+          main.style.paddingBottom = `${84 + cjkInputHeight}px`;
+        }
+      }
+
+      // CJK textarea: position on ALL touch devices (it's always position:fixed).
+      // Uses keyboard HEIGHT directly — independent of visualViewport.offsetTop
+      // which iOS adjusts when the CJK textarea receives focus/dictation.
+      if (cjkInput?.classList.contains('cjk-input-visible') && keyboardHeight > 0) {
+        // On phones, sit above toolbar+accessory (84px). On tablets in normal
+        // flow, the toolbar/accessory are in-flow so use a smaller offset.
+        const bottomOffset = isSmallMedium ? 84 : 44;
+        cjkInput.style.bottom = `${keyboardHeight + bottomOffset}px`;
+        cjkInput.style.transform = '';
       }
     } else {
       this.resetLayout();
@@ -363,6 +356,7 @@ const KeyboardHandler = {
     }
     if (cjkInput) {
       cjkInput.style.transform = '';
+      cjkInput.style.bottom = '';
     }
     if (main) {
       main.style.paddingBottom = '';
