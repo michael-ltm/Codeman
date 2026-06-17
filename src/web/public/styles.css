@@ -3014,6 +3014,11 @@ body.solo-mode .btn-lifecycle-log {
   white-space: nowrap;
 }
 
+/* Touch devices (iPad, tablets): show stop button — no physical Ctrl+C */
+.touch-device .btn-toolbar.btn-stop {
+  display: flex;
+}
+
 /* Mobile app settings gear - hidden on desktop, shown on mobile */
 .btn-settings-mobile {
   display: none;
