@@ -2246,6 +2246,23 @@ body.solo-mode .btn-lifecycle-log {
   touch-action: none;
 }
 
+/* Mobile terminal taps are cursor-positioning gestures, not text-selection gestures.
+   xterm re-enables selectable DOM text in its accessibility tree, so force the
+   whole terminal subtree back to non-selectable on touch devices. Synthetic mouse
+   events for tap-to-position still dispatch normally through JavaScript. */
+body.touch-device .terminal-container .xterm,
+body.touch-device .terminal-container .xterm .xterm-viewport,
+body.touch-device .terminal-container .xterm .xterm-screen,
+body.touch-device .terminal-container .xterm .xterm-rows,
+body.touch-device .terminal-container .xterm .xterm-accessibility-tree,
+body.touch-device .terminal-container .xterm .xterm-accessibility-tree *,
+body.touch-device .terminal-container .xterm .xterm-selection,
+body.touch-device .terminal-container .xterm .xterm-helper-textarea {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+
 /* Welcome Overlay */
 .welcome-overlay {
   position: absolute;
