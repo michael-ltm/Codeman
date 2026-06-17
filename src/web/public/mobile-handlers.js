@@ -326,15 +326,26 @@ const KeyboardHandler = {
         }
       }
 
-      // CJK textarea: position on ALL touch devices (it's always position:fixed).
-      // Uses keyboard HEIGHT directly — independent of visualViewport.offsetTop
-      // which iOS adjusts when the CJK textarea receives focus/dictation.
+      // CJK textarea positioning (always position:fixed on touch devices).
       if (cjkInput?.classList.contains('cjk-input-visible') && keyboardHeight > 0) {
-        // On phones, sit above toolbar+accessory (84px). On tablets in normal
-        // flow, the toolbar/accessory are in-flow so use a smaller offset.
-        const bottomOffset = isSmallMedium ? 84 : 44;
-        cjkInput.style.bottom = `${keyboardHeight + bottomOffset}px`;
-        cjkInput.style.transform = '';
+        if (isSmallMedium) {
+          // Phones: use translateY like toolbar/accessory bar. The CSS bottom
+          // (84px) is relative to the layout viewport; translateY lifts it
+          // above the keyboard. This works on phones where iOS doesn't
+          // auto-scroll the visual viewport for the CJK textarea.
+          const layoutHeight = window.innerHeight;
+          const visualBottom = window.visualViewport.offsetTop + window.visualViewport.height;
+          const keyboardOffset = Math.max(0, layoutHeight - visualBottom);
+          cjkInput.style.transform = keyboardOffset > 0 ? `translateY(${-keyboardOffset}px)` : '';
+          cjkInput.style.bottom = '';
+        } else {
+          // iPad: use direct bottom positioning from keyboard height.
+          // translateY breaks on iPad because iOS auto-scrolls the visual
+          // viewport when the CJK textarea receives focus, making
+          // keyboardOffset unreliable (approaches 0).
+          cjkInput.style.bottom = `${keyboardHeight + 44}px`;
+          cjkInput.style.transform = '';
+        }
       }
     } else {
       this.resetLayout();
