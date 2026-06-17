@@ -1,5 +1,27 @@
 # aicodeman
 
+## 1.1.10
+
+### Patch Changes
+
+- Mobile CJK input, iPad keyboard accessory bar, and terminal touch interaction fixes (PRs #130, #131).
+
+  Mobile / CJK (#130):
+  - Restore reliable real-time CJK (e.g. Pinyin) composition in the always-visible textarea, and refocus input when the terminal is tapped.
+  - Stop clearing the textarea during `compositionstart` — some IMEs include existing text in the composition region, and clearing it mid-composition corrupted input.
+  - iPad-specific fixes: `#cjkInput` positioning, paste-dialog placement, and duplicated voice-dictation output.
+  - Split CJK keyboard positioning by device size (phones vs iPad use different keyboard offsets).
+  - iPad accessory-bar styling/positioning: moved the accessory-bar and paste-overlay base styles out of the `max-width:1023px`-gated mobile stylesheet so iPad landscape (≥1024px) renders them correctly.
+  - Raise the toolbar stacking context while the case-settings popover is open so the popover is no longer hidden behind the toolbar.
+  - Restore the `/compact` button to the keyboard accessory bar (with double-tap confirmation, like `/clear`); the paste dialog now submits pasted text on "Send".
+
+  Terminal touch + forced redraw (#131):
+  - Enable terminal touch interaction on all touch devices and show the stop button on touch devices.
+  - Add an 8px tap threshold so micro-drift is treated as a tap, not a scroll, fixing cases where a tap failed to register.
+  - Tap-to-position the cursor via a synthesized mouse report, gated on the live mouse-tracking mode so it never triggers local text selection when tracking is off; let SGR mouse reports through to the PTY even while the CJK input field owns focus.
+  - Suppress the cursor/momentum side effects of a sub-threshold tap so a jittery tap no longer both positions the cursor and starts a momentum fling.
+  - New opt-in, per-device "Redraw Terminal" header button (`showRedrawButton`, default off) that forces an xterm redraw via a resize jitter to clear occasional rendering glitches; the resize path now accepts a `force` flag (threaded through the session, HTTP, and WebSocket resize routes) that guarantees a SIGWINCH/redraw at the current device's size without bypassing multi-client resize arbitration.
+
 ## 1.1.9
 
 ### Patch Changes
