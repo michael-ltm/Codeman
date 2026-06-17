@@ -401,11 +401,14 @@ Object.assign(CodemanApp.prototype, {
             if (!didScroll && Math.abs(touchY - touchStartY) >= TAP_THRESHOLD) {
               didScroll = true;
             }
-            // Only preventDefault once it's a real scroll — preventing micro-drift
-            // touchmove kills click synthesis, which iOS needs to show the keyboard.
-            if (didScroll) {
-              ev.preventDefault();
-            }
+            // Below the tap threshold, treat the gesture as a potential tap:
+            // don't preventDefault (iOS needs click synthesis to show the
+            // keyboard) and don't accumulate scroll distance or velocity. Without
+            // this guard, sub-threshold micro-drift still scrolls a line and
+            // leaves a non-zero velocity that touchend turns into a momentum
+            // fling, so a jittery tap would both position the cursor AND scroll.
+            if (!didScroll) return;
+            ev.preventDefault();
             const delta = touchLastY - touchY; // positive = scroll down
             pixelAccum += delta;
             velocity = delta * 1.2;
