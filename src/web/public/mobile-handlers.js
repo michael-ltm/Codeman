@@ -301,13 +301,12 @@ const KeyboardHandler = {
 
     if (this.keyboardVisible) {
       const keyboardHeight = this.initialViewportHeight - (window.visualViewport.height || window.innerHeight);
+      const accessoryBar = document.querySelector('.keyboard-accessory-bar');
 
-      // Toolbar and accessory bar: only transform on phones/small tablets where
-      // they are position:fixed. On iPad (≥768px) they're in normal flow inside
-      // the shrunk .app container and already sit above the keyboard.
       if (isSmallMedium) {
+        // Phones/small tablets: toolbar and accessory bar are position:fixed
+        // via CSS. Use translateY to lift them above the keyboard.
         const toolbar = document.querySelector('.toolbar');
-        const accessoryBar = document.querySelector('.keyboard-accessory-bar');
         const main = document.querySelector('.main');
 
         const layoutHeight = window.innerHeight;
@@ -324,25 +323,25 @@ const KeyboardHandler = {
           const cjkInputHeight = cjkInput?.classList.contains('cjk-input-visible') ? 44 : 0;
           main.style.paddingBottom = `${84 + cjkInputHeight}px`;
         }
+      } else if (keyboardHeight > 0) {
+        // iPad: use direct bottom positioning (translateY unreliable —
+        // iOS auto-scrolls the visual viewport, making keyboardOffset ≈ 0).
+        if (accessoryBar) {
+          accessoryBar.style.bottom = `${keyboardHeight}px`;
+        }
       }
 
       // CJK textarea positioning (always position:fixed on touch devices).
       if (cjkInput?.classList.contains('cjk-input-visible') && keyboardHeight > 0) {
         if (isSmallMedium) {
-          // Phones: use translateY like toolbar/accessory bar. The CSS bottom
-          // (84px) is relative to the layout viewport; translateY lifts it
-          // above the keyboard. This works on phones where iOS doesn't
-          // auto-scroll the visual viewport for the CJK textarea.
+          // Phones: use translateY like toolbar/accessory bar.
           const layoutHeight = window.innerHeight;
           const visualBottom = window.visualViewport.offsetTop + window.visualViewport.height;
           const keyboardOffset = Math.max(0, layoutHeight - visualBottom);
           cjkInput.style.transform = keyboardOffset > 0 ? `translateY(${-keyboardOffset}px)` : '';
           cjkInput.style.bottom = '';
         } else {
-          // iPad: use direct bottom positioning from keyboard height.
-          // translateY breaks on iPad because iOS auto-scrolls the visual
-          // viewport when the CJK textarea receives focus, making
-          // keyboardOffset unreliable (approaches 0).
+          // iPad: direct bottom = keyboard + accessory bar height.
           cjkInput.style.bottom = `${keyboardHeight + 44}px`;
           cjkInput.style.transform = '';
         }
@@ -364,6 +363,7 @@ const KeyboardHandler = {
     }
     if (accessoryBar) {
       accessoryBar.style.transform = '';
+      accessoryBar.style.bottom = '';
     }
     if (cjkInput) {
       cjkInput.style.transform = '';
