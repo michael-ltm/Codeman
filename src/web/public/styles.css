@@ -2229,6 +2229,15 @@ body.solo-mode .btn-lifecycle-log {
   background: transparent !important;
 }
 
+/* Touch devices: JS touch handler owns scroll/tap — prevent browser
+   from consuming touch events before touchmove preventDefault fires. */
+.touch-device .terminal-container,
+.touch-device .terminal-container .xterm,
+.touch-device .terminal-container .xterm-viewport,
+.touch-device .terminal-container .xterm-screen {
+  touch-action: none;
+}
+
 /* Welcome Overlay */
 .welcome-overlay {
   position: absolute;
