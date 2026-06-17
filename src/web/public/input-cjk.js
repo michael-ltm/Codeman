@@ -162,6 +162,10 @@ const CjkInput = (() => {
         if (!_textarea.classList.contains('cjk-input-visible')) {
           window.cjkActive = false;
         }
+        // Reset composing state — some IMEs fire compositionstart without a
+        // matching compositionend, leaving _composing stuck true and blocking
+        // all subsequent input events.
+        _composing = false;
       };
       _textarea.addEventListener('mousedown', _listeners.mousedown);
       _textarea.addEventListener('focus', _listeners.focus);
@@ -214,8 +218,10 @@ const CjkInput = (() => {
           return;
         }
 
-        // Below: only when NOT composing (composing keystrokes belong to IME)
-        if (_composing) return;
+        // Below: only when NOT composing (composing keystrokes belong to IME).
+        // Also check isComposing/keyCode 229 — the first keydown of a CJK
+        // sequence arrives BEFORE compositionstart, so _composing is still false.
+        if (_composing || e.isComposing || e.keyCode === 229) return;
 
         // Backspace: forward to PTY when no real text in textarea
         if (e.key === 'Backspace' && _isEffectivelyEmpty()) {

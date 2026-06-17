@@ -365,11 +365,14 @@ Object.assign(CodemanApp.prototype, {
       let pixelAccum = 0;
 
       let didScroll = false; // track whether touchmove fired (tap vs scroll)
+      let touchStartY = 0;
+      const TAP_THRESHOLD = 8; // px — ignore micro-drift to distinguish tap from scroll
       container.addEventListener(
         'touchstart',
         (ev) => {
           if (ev.touches.length === 1) {
             touchLastY = ev.touches[0].clientY;
+            touchStartY = touchLastY;
             velocity = 0;
             pixelAccum = 0;
             isTouching = true;
@@ -388,9 +391,15 @@ Object.assign(CodemanApp.prototype, {
         'touchmove',
         (ev) => {
           if (ev.touches.length === 1 && isTouching) {
-            ev.preventDefault();
-            didScroll = true;
             const touchY = ev.touches[0].clientY;
+            if (!didScroll && Math.abs(touchY - touchStartY) >= TAP_THRESHOLD) {
+              didScroll = true;
+            }
+            // Only preventDefault once it's a real scroll — preventing micro-drift
+            // touchmove kills click synthesis, which iOS needs to show the keyboard.
+            if (didScroll) {
+              ev.preventDefault();
+            }
             const delta = touchLastY - touchY; // positive = scroll down
             pixelAccum += delta;
             velocity = delta * 1.2;
@@ -410,19 +419,21 @@ Object.assign(CodemanApp.prototype, {
 
       container.addEventListener(
         'touchend',
-        () => {
+        (ev) => {
           isTouching = false;
           if (!scrollFrame && Math.abs(velocity) > 0.3) {
             scrollFrame = requestAnimationFrame(scrollLoop);
           }
-          // Tap (no scroll): refocus xterm's hidden textarea so keyboard input
-          // routes back to the terminal. Without this, a tap on the terminal area
-          // consumes the touch event but xterm's textarea never regains focus.
           if (!didScroll && this.terminal) {
             const cjkInput = document.getElementById('cjkInput');
             if (cjkInput?.classList.contains('cjk-input-visible')) {
               cjkInput.focus();
             } else {
+              // Don't synthesize mousedown — the browser does it naturally
+              // because we don't preventDefault() for taps (< TAP_THRESHOLD).
+              // touch-action:none blocks native scroll but NOT click synthesis.
+              // The browser's mousedown carries detail:1 + correct coordinates,
+              // so xterm's SelectionService._handleSingleClick picks it up.
               this._syncMobileHelperTextareaToCursor();
               this.terminal.focus();
             }

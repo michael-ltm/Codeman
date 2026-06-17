@@ -996,6 +996,12 @@ body {
   display: none !important;
 }
 
+/* Redraw terminal header button: hidden by default (opt-in via App Settings →
+   Display → "Header Displays"). Pure client-side toggle. */
+.btn-redraw-terminal--hidden {
+  display: none !important;
+}
+
 .btn-icon-header.btn-settings {
   width: 30px;
   height: 30px;
@@ -2229,8 +2235,10 @@ body.solo-mode .btn-lifecycle-log {
   background: transparent !important;
 }
 
-/* Touch devices: JS touch handler owns scroll/tap — prevent browser
-   from consuming touch events before touchmove preventDefault fires. */
+/* Touch devices: prevent browser from claiming the touch gesture before
+   our JS touchmove handler fires. Without this, the browser starts native
+   scrolling during the first few px of finger travel and ignores our
+   subsequent preventDefault() — breaking custom terminal scroll. */
 .touch-device .terminal-container,
 .touch-device .terminal-container .xterm,
 .touch-device .terminal-container .xterm-viewport,
