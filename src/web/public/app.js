@@ -2773,6 +2773,10 @@ class CodemanApp {
       const minimizedCount = minimizedAgents?.size || 0;
       const subagentBadge = minimizedCount > 0 ? this.renderSubagentTabBadge(id, minimizedAgents) : '';
 
+      // Ultracode runs + agent transcripts minimized to this tab (ultracode-windows.js
+      // renders one merged ULTRA badge; returns '' when nothing is minimized).
+      const ultracodeBadge = this.renderUltracodeTabBadge ? this.renderUltracodeTabBadge(id) : '';
+
       // Show folder name if session has a custom name AND tall tabs setting is enabled
       const folderName = session.workingDir ? session.workingDir.split('/').pop() || '' : '';
       const tallTabsEnabled = this._tallTabsEnabled ?? false;
@@ -2792,6 +2796,7 @@ class CodemanApp {
           </span>
           ${hasRunningTasks ? `<span class="tab-badge" onclick="event.stopPropagation(); app.toggleTaskPanel()" aria-label="${taskStats.running} running tasks">${taskStats.running}</span>` : ''}
           ${subagentBadge}
+          ${ultracodeBadge}
           <span class="tab-gear" onclick="event.stopPropagation(); app.openSessionOptions('${escapeHtml(id)}')" title="Session options" aria-label="Session options" tabindex="0">&#x2699;</span>
           <span class="tab-detach" onclick="event.stopPropagation(); app.detachSession('${escapeHtml(id)}')" title="Open in a new window" aria-label="Open session in a new window" tabindex="0">&#x29C9;</span>
           <span class="tab-close" onclick="event.stopPropagation(); app.requestCloseSession('${escapeHtml(id)}')" title="Close session" aria-label="Close session" tabindex="0">&times;</span>

@@ -1,5 +1,14 @@
 # aicodeman
 
+## 1.1.14
+
+### Patch Changes
+
+- Ultracode (Workflow-tool) floating windows — agent transcripts in-page, and minimize-to-tab.
+  - **Agent transcripts open in-page, connected, instead of a detached browser popup.** Clicking an agent card (in a run window or the dock panel) now opens the agent's live transcript as its own draggable floating window, tied by a connector line to its parent run window (falling back to the run's session tab if that window has since closed) — the same line idiom the run windows use. Re-clicking a card focuses the existing window; closing it removes the window and its line. (Previously this spawned a separate `window.open` browser popup.)
+  - **The window "−" button now minimizes into the originating session tab**, mirroring the subagent-window idiom. The window genie-animates into its tab and is tracked there; the tab shows an `ULTRA` badge whose hover/click dropdown lists each minimized item (🧬 run windows, 📄 agent transcripts). Click an item to restore its floating window, or dismiss it with ×. A run minimized while still active keeps tracking in the background and its badge auto-clears shortly after the run finishes. Both run windows and agent-transcript windows minimize into the same merged badge.
+  - Removed the old collapse-to-header behavior that the "−" button previously triggered (now superseded by minimize-to-tab).
+
 ## 1.1.13
 
 ### Patch Changes

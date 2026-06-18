@@ -5573,6 +5573,45 @@ kbd {
   letter-spacing: 0.03em;
 }
 
+/* Ultracode run minimized-to-tab badge — same chip shape as the subagent badge but a
+   distinct purple (matches the ultracode window accent), and a SEPARATE class so the
+   incremental tab-update path (which keys on .tab-subagent-badge) never touches it.
+   Reuses the shared .subagent-dropdown for its restore/dismiss list. */
+.session-tab .tab-ultracode-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 0.6rem;
+  cursor: pointer;
+  background: #a855f7;
+  color: white;
+  margin-left: 4px;
+  transition: transform 0.1s, background 0.15s;
+}
+@media (hover: hover) {
+  .session-tab .tab-ultracode-badge:hover {
+    background: #9333ea;
+    transform: scale(1.05);
+  }
+}
+.session-tab .tab-ultracode-badge .subagent-label {
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+/* Per-item type glyph in the ULTRA dropdown (🧬 run vs 📄 transcript). */
+.subagent-dropdown-item .ultracode-dd-icon {
+  font-size: 0.7rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-right: 1px;
+}
+
 /* Subagent Dropdown - compact, hover-triggered */
 .subagent-dropdown {
   display: none;
@@ -8647,13 +8686,6 @@ kbd {
   transform: scale(0.92);
   opacity: 0;
 }
-.ultracode-window.collapsed {
-  height: auto !important;
-  resize: none;
-}
-.ultracode-window.collapsed .ultracode-window-body {
-  display: none;
-}
 .ultracode-window-header {
   display: flex;
   align-items: center;
@@ -8742,6 +8774,32 @@ kbd {
 @keyframes ultracode-conn-pulse {
   0%, 100% { opacity: 0.8; }
   50% { opacity: 1; }
+}
+
+/* Agent-transcript window: spawned from an agent card (in a run window or the dock
+   panel), tied to its parent run window by its own connector line. Reuses the
+   .ultracode-window chrome; wider with a monospace transcript body. */
+.ultracode-agent-window {
+  width: 470px;
+  height: 420px;
+  border-color: #38bdf8;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(56, 189, 248, 0.18);
+}
+.ultracode-agent-window .ultracode-window-body .uw-transcript {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+/* Distinguish the parent→agent line from the tab→run line: solid cyan, no dashes.
+   Must follow .ultracode-connection (equal specificity → source order wins). */
+.connection-line.ultracode-agent-connection {
+  stroke: #38bdf8;
+  stroke-dasharray: none;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8)) drop-shadow(0 0 5px rgba(56, 189, 248, 0.85));
 }
 
 /* Plan-usage chip (App Settings → Display → "Plan Usage Limits"). Shows the

@@ -33,9 +33,12 @@
 Object.assign(CodemanApp.prototype, {
   /** Lazily seed the floating-window state maps (constructor also seeds them). */
   _ensureUltracodeWindowState() {
-    if (!this.ultracodeWindows) this.ultracodeWindows = new Map(); // runId -> { element, parentSessionId, dragListeners, collapsed }
+    if (!this.ultracodeWindows) this.ultracodeWindows = new Map(); // runId -> { element, parentSessionId, dragListeners }
     if (!this.ultracodeWindowsClosed) this.ultracodeWindowsClosed = new Set(); // runIds the user dismissed
     if (!this.ultracodeWindowCloseTimers) this.ultracodeWindowCloseTimers = new Map(); // runId -> setTimeout id
+    if (!this.ultracodeAgentWindows) this.ultracodeAgentWindows = new Map(); // agentId -> { element, runId, dragListeners }
+    if (!this.minimizedUltracodeRuns) this.minimizedUltracodeRuns = new Map(); // sessionId -> Set<runId> minimized to a tab
+    if (!this.minimizedUltracodeAgents) this.minimizedUltracodeAgents = new Map(); // sessionId -> Map<agentId,{runId,label}>
     if (this.ultracodeWindowZIndex === undefined) this.ultracodeWindowZIndex = 1000;
   },
 
@@ -86,6 +89,21 @@ Object.assign(CodemanApp.prototype, {
 
     const active = this._isWorkflowRunActive(run);
 
+    // Minimized to a tab — keep it there (don't re-pop a window). Clear the tab badge a
+    // short while after the run finishes, mirroring the floating window's finish grace.
+    if (this._isUltracodeRunMinimized(runId)) {
+      if (!active && !this.ultracodeWindowCloseTimers.has(runId)) {
+        const timer = setTimeout(() => {
+          this.ultracodeWindowCloseTimers.delete(runId);
+          this._removeMinimizedUltracodeRun(runId);
+          this.renderSessionTabs();
+          this.updateConnectionLines();
+        }, 8000);
+        this.ultracodeWindowCloseTimers.set(runId, timer);
+      }
+      return;
+    }
+
     if (active) {
       // Run is alive — cancel any pending auto-close.
       const pending = this.ultracodeWindowCloseTimers.get(runId);
@@ -134,11 +152,11 @@ Object.assign(CodemanApp.prototype, {
     const run = this.workflowRuns && this.workflowRuns.get(runId);
     if (!run) return;
     this.ultracodeWindowsClosed.delete(runId); // an explicit open overrides a past dismissal
+    this._removeMinimizedUltracodeRun(runId); // …and a past minimize-to-tab
     const existing = this.ultracodeWindows.get(runId);
     if (existing) {
-      // Already open — bring to front, expand if collapsed, refresh.
+      // Already open — bring to front and refresh.
       existing.element.style.zIndex = ++this.ultracodeWindowZIndex;
-      if (existing.collapsed) this.toggleUltracodeWindowCollapse(runId);
       this.renderUltracodeWindowContent(runId);
       this._fetchWorkflowRunDetail(runId);
       this.updateConnectionLines();
@@ -167,7 +185,7 @@ Object.assign(CodemanApp.prototype, {
           <span class="uw-status"></span>
         </div>
         <div class="ultracode-window-actions">
-          <button class="uw-min" type="button" title="Collapse">─</button>
+          <button class="uw-min" type="button" title="Minimize to tab">─</button>
           <button class="uw-close" type="button" title="Close">&times;</button>
         </div>
       </div>
@@ -198,7 +216,7 @@ Object.assign(CodemanApp.prototype, {
 
     win.querySelector('.uw-min').addEventListener('click', (e) => {
       e.stopPropagation();
-      this.toggleUltracodeWindowCollapse(runId);
+      this.minimizeUltracodeWindowToTab(runId);
     });
     win.querySelector('.uw-close').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -211,19 +229,261 @@ Object.assign(CodemanApp.prototype, {
       nameEl.addEventListener('click', () => this.selectSession(parentSessionId));
     }
 
-    this.ultracodeWindows.set(runId, { element: win, parentSessionId, dragListeners, collapsed: false });
+    this.ultracodeWindows.set(runId, { element: win, parentSessionId, dragListeners });
 
     this.renderUltracodeWindowContent(runId);
     this._fetchWorkflowRunDetail(runId); // pull agents[] for the body
     this.updateConnectionLines();
   },
 
-  /** Collapse/expand the window to header-only (line stays connected). */
-  toggleUltracodeWindowCollapse(runId) {
+  // ── Minimize a run window into its originating tab (same idiom as subagent windows) ──
+
+  /** Is this run currently minimized to a tab (so auto-pop should leave it alone)? */
+  _isUltracodeRunMinimized(runId) {
+    if (!this.minimizedUltracodeRuns) return false;
+    for (const set of this.minimizedUltracodeRuns.values()) {
+      if (set.has(runId)) return true;
+    }
+    return false;
+  },
+
+  /** Drop a run from the minimized-to-tab tracking (all sessions, or a specific one). */
+  _removeMinimizedUltracodeRun(runId, sessionId) {
+    if (!this.minimizedUltracodeRuns) return;
+    if (sessionId) {
+      const set = this.minimizedUltracodeRuns.get(sessionId);
+      if (set) {
+        set.delete(runId);
+        if (!set.size) this.minimizedUltracodeRuns.delete(sessionId);
+      }
+      return;
+    }
+    for (const [sid, set] of this.minimizedUltracodeRuns) {
+      if (set.delete(runId) && !set.size) this.minimizedUltracodeRuns.delete(sid);
+    }
+  },
+
+  /**
+   * Minimize the floating run window into its originating session tab: record it as
+   * minimized (so a badge renders on the tab), genie-animate the window toward that
+   * tab, then remove the floating element. Restorable from the tab badge dropdown.
+   */
+  minimizeUltracodeWindowToTab(runId) {
+    this._ensureUltracodeWindowState();
     const data = this.ultracodeWindows.get(runId);
     if (!data) return;
-    data.collapsed = !data.collapsed;
-    data.element.classList.toggle('collapsed', data.collapsed);
+
+    let parentSessionId = data.parentSessionId;
+    if (!parentSessionId) {
+      const summary = this.workflowRuns && this.workflowRuns.get(runId);
+      parentSessionId = summary ? this._resolveUltracodeParentSession(summary) : null;
+    }
+    // No tab to fly into → fall back to a plain close so the window isn't orphaned.
+    if (!parentSessionId) {
+      this.closeUltracodeWindow(runId, true);
+      return;
+    }
+
+    // Cancel any pending finish auto-close — the badge owns the run's lifecycle now.
+    const pending = this.ultracodeWindowCloseTimers.get(runId);
+    if (pending) {
+      clearTimeout(pending);
+      this.ultracodeWindowCloseTimers.delete(runId);
+    }
+
+    if (!this.minimizedUltracodeRuns.has(parentSessionId)) this.minimizedUltracodeRuns.set(parentSessionId, new Set());
+    this.minimizedUltracodeRuns.get(parentSessionId).add(runId);
+
+    const element = data.element;
+    const dragListeners = data.dragListeners;
+    this._animateUltracodeWindowToTab(element, parentSessionId, () => {
+      this._teardownUltracodeDrag(dragListeners);
+      if (element) element.remove();
+      this.ultracodeWindows.delete(runId);
+      // Full rebuild so the tab badge renders (the incremental path only knows subagent badges).
+      this._fullRenderSessionTabs();
+      this.updateConnectionLines();
+    });
+  },
+
+  /** Genie the window toward the center of its tab, then invoke `done` to tear it down. */
+  _animateUltracodeWindowToTab(element, sessionId, done) {
+    const tab = sessionId ? document.querySelector(`.session-tab[data-id="${sessionId}"]`) : null;
+    if (!tab || !element) {
+      done();
+      return;
+    }
+    const w = element.getBoundingClientRect();
+    const t = tab.getBoundingClientRect();
+    const dx = t.left + t.width / 2 - (w.left + w.width / 2);
+    const dy = t.top + t.height / 2 - (w.top + w.height / 2);
+    element.style.transformOrigin = 'center center';
+    element.style.transition = 'transform 0.26s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.26s ease';
+    element.style.pointerEvents = 'none';
+    requestAnimationFrame(() => {
+      element.style.transform = `translate(${dx}px, ${dy}px) scale(0.06)`;
+      element.style.opacity = '0';
+    });
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      done();
+    };
+    element.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 320); // fallback in case transitionend doesn't fire
+  },
+
+  /** Tab badge (with restore/dismiss dropdown) for runs minimized to this session's tab. */
+  renderUltracodeTabBadge(sessionId) {
+    this._ensureUltracodeWindowState();
+    const runSet = this.minimizedUltracodeRuns.get(sessionId);
+    const agentMap = this.minimizedUltracodeAgents.get(sessionId);
+    const total = (runSet ? runSet.size : 0) + (agentMap ? agentMap.size : 0);
+    if (total === 0) return '';
+
+    const trunc = (s) => (s.length > 25 ? s.slice(0, 25) + '…' : s);
+    const items = [];
+    // Minimized run windows (🧬) first…
+    if (runSet) {
+      for (const runId of runSet) {
+        const run = this.workflowRuns && this.workflowRuns.get(runId);
+        const name = run ? run.workflowName || run.summary || runId : runId;
+        const statusCls = this._workflowStatusClass(run ? String(run.status || '') : '');
+        items.push(
+          `<div class="subagent-dropdown-item" onclick="event.stopPropagation(); app.restoreUltracodeRunFromTab('${escapeHtml(runId)}','${escapeHtml(sessionId)}')" title="Click to restore run">` +
+            `<span class="subagent-dropdown-status ${statusCls}"></span>` +
+            `<span class="ultracode-dd-icon">🧬</span>` +
+            `<span class="subagent-dropdown-name">${escapeHtml(trunc(name))}</span>` +
+            `<span class="subagent-dropdown-close" onclick="event.stopPropagation(); app.dismissMinimizedUltracodeRun('${escapeHtml(runId)}','${escapeHtml(sessionId)}')" title="Dismiss">&times;</span>` +
+            `</div>`
+        );
+      }
+    }
+    // …then minimized agent transcripts (📄).
+    if (agentMap) {
+      for (const [agentId, entry] of agentMap) {
+        const name = (entry && entry.label) || agentId;
+        items.push(
+          `<div class="subagent-dropdown-item" onclick="event.stopPropagation(); app.restoreUltracodeAgentFromTab('${escapeHtml(agentId)}','${escapeHtml(sessionId)}')" title="Click to restore transcript">` +
+            `<span class="subagent-dropdown-status"></span>` +
+            `<span class="ultracode-dd-icon">📄</span>` +
+            `<span class="subagent-dropdown-name">${escapeHtml(trunc(name))}</span>` +
+            `<span class="subagent-dropdown-close" onclick="event.stopPropagation(); app.dismissMinimizedUltracodeAgent('${escapeHtml(agentId)}','${escapeHtml(sessionId)}')" title="Dismiss">&times;</span>` +
+            `</div>`
+        );
+      }
+    }
+    const label = total === 1 ? 'ULTRA' : `ULTRA (${total})`;
+    return (
+      `<span class="tab-ultracode-badge" onmouseenter="app.showSubagentDropdown(this)" onmouseleave="app.scheduleHideSubagentDropdown(this)" onclick="event.stopPropagation(); app.pinSubagentDropdown(this);">` +
+      `<span class="subagent-label">${label}</span>` +
+      `<div class="subagent-dropdown" onmouseenter="app.cancelHideSubagentDropdown()" onmouseleave="app.scheduleHideSubagentDropdown(this.parentElement)">${items.join('')}</div>` +
+      `</span>`
+    );
+  },
+
+  /** Restore a minimized run from its tab badge: re-open the floating window. */
+  restoreUltracodeRunFromTab(runId, sessionId) {
+    this._ensureUltracodeWindowState();
+    this._removeMinimizedUltracodeRun(runId, sessionId);
+    this._fullRenderSessionTabs();
+    this.openUltracodeWindowForRun(runId);
+  },
+
+  /** Dismiss a minimized run from its tab badge (don't re-pop it). */
+  dismissMinimizedUltracodeRun(runId, sessionId) {
+    this._ensureUltracodeWindowState();
+    this._removeMinimizedUltracodeRun(runId, sessionId);
+    this.ultracodeWindowsClosed.add(runId);
+    this._fullRenderSessionTabs();
+    this.updateConnectionLines();
+  },
+
+  // ── Minimize an agent transcript window into its tab (same idiom as run windows) ──
+
+  /** Is this agent transcript currently minimized to a tab? */
+  _isUltracodeAgentMinimized(agentId) {
+    if (!this.minimizedUltracodeAgents) return false;
+    for (const map of this.minimizedUltracodeAgents.values()) {
+      if (map.has(agentId)) return true;
+    }
+    return false;
+  },
+
+  /** Look up a minimized agent's {runId,label} entry (across sessions). */
+  _getMinimizedUltracodeAgent(agentId) {
+    if (!this.minimizedUltracodeAgents) return null;
+    for (const map of this.minimizedUltracodeAgents.values()) {
+      if (map.has(agentId)) return map.get(agentId);
+    }
+    return null;
+  },
+
+  /** Drop an agent from minimized tracking (all sessions, or a specific one). */
+  _removeMinimizedUltracodeAgent(agentId, sessionId) {
+    if (!this.minimizedUltracodeAgents) return;
+    if (sessionId) {
+      const map = this.minimizedUltracodeAgents.get(sessionId);
+      if (map) {
+        map.delete(agentId);
+        if (!map.size) this.minimizedUltracodeAgents.delete(sessionId);
+      }
+      return;
+    }
+    for (const [sid, map] of this.minimizedUltracodeAgents) {
+      if (map.delete(agentId) && !map.size) this.minimizedUltracodeAgents.delete(sid);
+    }
+  },
+
+  /** Minimize an agent transcript window into the run's originating session tab. */
+  minimizeUltracodeAgentWindowToTab(agentId) {
+    this._ensureUltracodeWindowState();
+    const info = this.ultracodeAgentWindows.get(agentId);
+    if (!info) return;
+    const runId = info.runId;
+    const summary = runId && this.workflowRuns ? this.workflowRuns.get(runId) : null;
+    let parentSessionId = summary ? this._resolveUltracodeParentSession(summary) : null;
+    if (!parentSessionId && this.activeSessionId && this.sessions && this.sessions.has(this.activeSessionId)) {
+      parentSessionId = this.activeSessionId;
+    }
+    // No tab to fly into → plain close rather than orphan it.
+    if (!parentSessionId) {
+      this.closeUltracodeAgentWindow(agentId);
+      return;
+    }
+    const labelEl = info.element.querySelector('.uw-name');
+    const label = labelEl ? labelEl.textContent : agentId;
+    if (!this.minimizedUltracodeAgents.has(parentSessionId))
+      this.minimizedUltracodeAgents.set(parentSessionId, new Map());
+    this.minimizedUltracodeAgents.get(parentSessionId).set(agentId, { runId, label });
+
+    const element = info.element;
+    const dragListeners = info.dragListeners;
+    this._animateUltracodeWindowToTab(element, parentSessionId, () => {
+      this._teardownUltracodeDrag(dragListeners);
+      if (element) element.remove();
+      this.ultracodeAgentWindows.delete(agentId);
+      this._fullRenderSessionTabs();
+      this.updateConnectionLines();
+    });
+  },
+
+  /** Restore a minimized agent transcript from its tab badge: re-open its window. */
+  restoreUltracodeAgentFromTab(agentId, sessionId) {
+    this._ensureUltracodeWindowState();
+    const entry = this._getMinimizedUltracodeAgent(agentId);
+    const runId = entry ? entry.runId : null;
+    this._removeMinimizedUltracodeAgent(agentId, sessionId);
+    this._fullRenderSessionTabs();
+    this.openUltracodeAgentWindow(agentId, runId);
+  },
+
+  /** Dismiss a minimized agent transcript from its tab badge. */
+  dismissMinimizedUltracodeAgent(agentId, sessionId) {
+    this._ensureUltracodeWindowState();
+    this._removeMinimizedUltracodeAgent(agentId, sessionId);
+    this._fullRenderSessionTabs();
     this.updateConnectionLines();
   },
 
@@ -260,19 +520,149 @@ Object.assign(CodemanApp.prototype, {
     }
   },
 
+  // ── Agent-transcript windows ────────────────────────────────────────────────
+  // Clicking an agent card (in a run window OR the dock panel) opens the agent's
+  // live transcript as its OWN in-page floating window, line-tied to its parent run
+  // window (or the run's session tab when that window is closed). Replaces the old
+  // detached `window.open` browser popup so the transcript stays inside the same
+  // draggable, connector-line floating-window system as the run windows.
+
+  /** Open (or focus) the floating transcript window for a workflow agent. */
+  async openUltracodeAgentWindow(agentId, runId) {
+    this._ensureUltracodeWindowState();
+    if (!agentId) return;
+    this._removeMinimizedUltracodeAgent(agentId); // an explicit open overrides a past minimize
+    const existing = this.ultracodeAgentWindows.get(agentId);
+    if (existing && existing.element) {
+      // Already open — bring to front and refresh transcript.
+      existing.element.style.zIndex = ++this.ultracodeWindowZIndex;
+      this.updateConnectionLines();
+    } else if (!this.createUltracodeAgentWindow(agentId, runId)) {
+      return;
+    }
+    // Body shows a loading state until the fetch lands (re-fetch on focus too, so a
+    // still-running agent's transcript grows as you re-click).
+    const data = this._fetchWorkflowAgentTranscript ? await this._fetchWorkflowAgentTranscript(agentId) : null;
+    this.renderUltracodeAgentWindowContent(agentId, data);
+  },
+
+  /** Build and mount the floating agent-transcript window shell near its parent. */
+  createUltracodeAgentWindow(agentId, runId) {
+    this._ensureUltracodeWindowState();
+    if (this.ultracodeAgentWindows.has(agentId)) return this.ultracodeAgentWindows.get(agentId).element;
+
+    const label = this._ultracodeAgentLabel(agentId, runId) || agentId;
+    const win = document.createElement('div');
+    win.className = 'ultracode-window ultracode-agent-window spawning';
+    win.id = `ultracode-agent-window-${agentId}`;
+    win.style.zIndex = ++this.ultracodeWindowZIndex;
+    win.innerHTML = `
+      <div class="ultracode-window-header">
+        <div class="ultracode-window-title" title="${escapeHtml(label)} — transcript">
+          <span class="icon">📄</span>
+          <span class="uw-name">${escapeHtml(label)}</span>
+        </div>
+        <div class="ultracode-window-actions">
+          <button class="uw-min" type="button" title="Minimize to tab">─</button>
+          <button class="uw-close" type="button" title="Close">&times;</button>
+        </div>
+      </div>
+      <div class="ultracode-window-body">
+        <div class="subagent-empty">Loading transcript…</div>
+      </div>
+    `;
+
+    // Position: offset from the parent run window if it's open, else cascade.
+    const parentWin = runId ? this.ultracodeWindows.get(runId) : null;
+    if (parentWin && parentWin.element) {
+      const r = parentWin.element.getBoundingClientRect();
+      win.style.left = `${Math.max(8, Math.min(r.left + 40, window.innerWidth - 472))}px`;
+      win.style.top = `${Math.max(8, Math.min(r.top + 40, window.innerHeight - 160))}px`;
+    } else {
+      const n = this.ultracodeAgentWindows.size;
+      win.style.left = `${Math.min(140 + n * 28, Math.max(8, window.innerWidth - 472))}px`;
+      win.style.top = `${110 + n * 28}px`;
+    }
+
+    document.body.appendChild(win);
+    requestAnimationFrame(() => win.classList.remove('spawning'));
+
+    const header = win.querySelector('.ultracode-window-header');
+    const dragListeners = this.makeWindowDraggable(win, header);
+    win.querySelector('.uw-min').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.minimizeUltracodeAgentWindowToTab(agentId);
+    });
+    win.querySelector('.uw-close').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.closeUltracodeAgentWindow(agentId);
+    });
+
+    this.ultracodeAgentWindows.set(agentId, { element: win, runId, dragListeners });
+    this.updateConnectionLines();
+    return win;
+  },
+
+  /** Resolve a human label for an agent from the run's fetched detail.agents[]. */
+  _ultracodeAgentLabel(agentId, runId) {
+    const detail = this.workflowRunDetails && runId ? this.workflowRunDetails.get(runId) : null;
+    const agents = detail && Array.isArray(detail.agents) ? detail.agents : null;
+    if (agents) {
+      const found = agents.find((a) => a.agentId === agentId);
+      if (found && found.label) return found.label;
+    }
+    return null;
+  },
+
+  /** Fill an agent window's body with the fetched transcript (or a friendly empty state). */
+  renderUltracodeAgentWindowContent(agentId, data) {
+    const info = this.ultracodeAgentWindows.get(agentId);
+    if (!info || !info.element) return;
+    const body = info.element.querySelector('.ultracode-window-body');
+    if (!body) return;
+    if (!data || !data.formatted || !data.entryCount) {
+      body.innerHTML =
+        '<div class="subagent-empty">No transcript available yet — the agent may be queued, aged out of tracking, or subagent tracking is disabled.</div>';
+      return;
+    }
+    const text = escapeHtml(data.formatted.join('\n'));
+    body.innerHTML = `<div class="uw-summary">${data.entryCount} entries</div><pre class="uw-transcript">${text}</pre>`;
+  },
+
+  /** Close one floating agent-transcript window. */
+  closeUltracodeAgentWindow(agentId) {
+    this._ensureUltracodeWindowState();
+    const info = this.ultracodeAgentWindows.get(agentId);
+    if (!info) return;
+    this._teardownUltracodeDrag(info.dragListeners);
+    if (info.element) info.element.remove();
+    this.ultracodeAgentWindows.delete(agentId);
+    this.updateConnectionLines();
+  },
+
   /** Tear down every floating window (called on SSE reconnect; keeps user dismissals). */
   removeAllUltracodeWindows() {
     this._ensureUltracodeWindowState();
-    const had = this.ultracodeWindows.size > 0;
+    const hadMinimized = this.minimizedUltracodeRuns.size > 0 || this.minimizedUltracodeAgents.size > 0;
+    const had = this.ultracodeWindows.size > 0 || this.ultracodeAgentWindows.size > 0;
     for (const [, data] of this.ultracodeWindows) {
       this._teardownUltracodeDrag(data.dragListeners);
       if (data.element) data.element.remove();
     }
     this.ultracodeWindows.clear();
+    for (const [, info] of this.ultracodeAgentWindows) {
+      this._teardownUltracodeDrag(info.dragListeners);
+      if (info.element) info.element.remove();
+    }
+    this.ultracodeAgentWindows.clear();
     for (const t of this.ultracodeWindowCloseTimers.values()) clearTimeout(t);
     this.ultracodeWindowCloseTimers.clear();
+    this.minimizedUltracodeRuns.clear();
+    this.minimizedUltracodeAgents.clear();
     // Redraw so the now-orphaned connector lines are cleared from the shared SVG.
     if (had) this.updateConnectionLines();
+    // Drop any now-stale tab badges.
+    if (hadMinimized) this.renderSessionTabs();
   },
 
   /** When the feature is toggled on, pop windows for any currently-active runs. */
@@ -355,7 +745,7 @@ Object.assign(CodemanApp.prototype, {
         const header =
           `<div class="ultracode-phase-header"><span>${escapeHtml(title)}</span>` +
           `<span class="ultracode-phase-sub">${this._fmtNum(tok)} tok · ${tools} tools</span></div>`;
-        return header + group.map((a) => this._workflowAgentCardHtml(a)).join('');
+        return header + group.map((a) => this._workflowAgentCardHtml(a, run.runId)).join('');
       })
       .join('');
     return head + grid;
@@ -405,6 +795,53 @@ Object.assign(CodemanApp.prototype, {
       line.setAttribute('class', 'connection-line ultracode-connection');
       line.setAttribute('data-run-id', runId);
       line.setAttribute('data-parent-tab', parentSessionId);
+      svg.appendChild(line);
+    }
+  },
+
+  /**
+   * Append agent-window → parent connector lines into the shared SVG. Parent is the
+   * agent's run floating window when open, else the run's session tab. Called right
+   * after `_appendUltracodeConnectionLines` so it shares the same batched pass + the
+   * tab-rect cache.
+   */
+  _appendUltracodeAgentConnectionLines(svg, rects) {
+    this._ensureUltracodeWindowState();
+    if (!svg || !this.ultracodeAgentWindows.size) return;
+    if (!rects) rects = new Map();
+
+    for (const [agentId, info] of this.ultracodeAgentWindows) {
+      if (!info.element) continue;
+      const winRect = info.element.getBoundingClientRect();
+      // Anchor: parent run window bottom-center if open, else the run's tab.
+      let px, py;
+      const runWin = info.runId ? this.ultracodeWindows.get(info.runId) : null;
+      if (runWin && runWin.element) {
+        const pr = runWin.element.getBoundingClientRect();
+        px = pr.left + pr.width / 2;
+        py = pr.bottom;
+      } else {
+        const summary = info.runId && this.workflowRuns ? this.workflowRuns.get(info.runId) : null;
+        const parentSessionId = summary ? this._resolveUltracodeParentSession(summary) : null;
+        if (!parentSessionId) continue;
+        const tabKey = 'tab:' + parentSessionId;
+        if (!rects.has(tabKey)) {
+          const tab = document.querySelector(`.session-tab[data-id="${parentSessionId}"]`);
+          if (tab) rects.set(tabKey, tab.getBoundingClientRect());
+        }
+        const tabRect = rects.get(tabKey);
+        if (!tabRect) continue;
+        px = tabRect.left + tabRect.width / 2;
+        py = tabRect.bottom;
+      }
+      const x2 = winRect.left + winRect.width / 2;
+      const y2 = winRect.top;
+      const midY = (py + y2) / 2;
+      const path = `M ${px} ${py} C ${px} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      line.setAttribute('d', path);
+      line.setAttribute('class', 'connection-line ultracode-connection ultracode-agent-connection');
+      line.setAttribute('data-agent-id', agentId);
       svg.appendChild(line);
     }
   },

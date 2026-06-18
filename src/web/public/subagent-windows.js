@@ -461,6 +461,10 @@ Object.assign(CodemanApp.prototype, {
     if (typeof this._appendUltracodeConnectionLines === 'function') {
       this._appendUltracodeConnectionLines(svg, rects);
     }
+    // Agent-transcript windows → their run window / tab (ultracode-windows.js).
+    if (typeof this._appendUltracodeAgentConnectionLines === 'function') {
+      this._appendUltracodeAgentConnectionLines(svg, rects);
+    }
   },
 
   // ═══════════════════════════════════════════════════════════════

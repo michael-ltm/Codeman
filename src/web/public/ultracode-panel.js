@@ -131,12 +131,15 @@ Object.assign(CodemanApp.prototype, {
     }
   },
 
-  // Phase 4: open an agent's live transcript by agentId. The workflow agent's
+  // Phase 4: fetch an agent's live transcript by agentId. The workflow agent's
   // agentId is byte-identical to the agent-<id>.jsonl stem already tracked by
   // subagent-watcher, so we reuse the existing transcript route — no watcher edits.
-  // Graceful when the agent isn't tracked yet / aged out / tracking disabled.
-  async openWorkflowAgentTranscript(agentId) {
-    if (!agentId) return;
+  // Returns { formatted: string[], entryCount } or null when nothing is available
+  // (queued / aged out of tracking / tracking disabled). Rendering into a connected
+  // in-page floating window lives in ultracode-windows.js (openUltracodeAgentWindow) —
+  // we no longer spawn a detached browser popup.
+  async _fetchWorkflowAgentTranscript(agentId) {
+    if (!agentId) return null;
     let data = null;
     try {
       const res = await fetch(`/api/subagents/${encodeURIComponent(agentId)}/transcript?format=formatted`);
@@ -147,21 +150,8 @@ Object.assign(CodemanApp.prototype, {
     const ok = data && data.success && data.data;
     const formatted = ok ? data.data.formatted : null;
     const entryCount = ok ? data.data.entryCount || 0 : 0;
-    if (!formatted || !entryCount) {
-      alert(
-        'No transcript available for this agent yet — it may be queued, aged out of tracking, or subagent tracking is disabled.'
-      );
-      return;
-    }
-    const win = window.open('', '_blank', 'width=860,height=640');
-    if (!win) return; // popup blocked
-    win.document.write(
-      `<html><head><title>Workflow agent ${escapeHtml(agentId)} transcript</title>` +
-        `<style>body{background:#1a1a2e;color:#eee;font-family:monospace;padding:20px}pre{white-space:pre-wrap;word-wrap:break-word}</style>` +
-        `</head><body><h2>Workflow agent ${escapeHtml(agentId)} (${entryCount} entries)</h2>` +
-        `<pre>${escapeHtml(formatted.join('\n'))}</pre></body></html>`
-    );
-    win.document.close();
+    if (!formatted || !entryCount) return null;
+    return { formatted, entryCount };
   },
 
   // ----- Render (debounced) -----
@@ -262,13 +252,13 @@ Object.assign(CodemanApp.prototype, {
         const header =
           `<div class="ultracode-phase-header"><span>${escapeHtml(title)}</span>` +
           `<span class="ultracode-phase-sub">${this._fmtNum(tok)} tok · ${tools} tools</span></div>`;
-        return header + group.map((a) => this._workflowAgentCardHtml(a)).join('');
+        return header + group.map((a) => this._workflowAgentCardHtml(a, runId)).join('');
       })
       .join('');
     detail.innerHTML = html;
   },
 
-  _workflowAgentCardHtml(a) {
+  _workflowAgentCardHtml(a, runId) {
     const state = String(a.state || 'start');
     const stateCls = this._workflowAgentStateClass(state);
     const stateLabel = state === 'start' ? 'queued' : state === 'progress' ? 'running' : state;
@@ -289,7 +279,7 @@ Object.assign(CodemanApp.prototype, {
     const cardStateCls = state === 'done' ? ' uw-state-done' : state === 'progress' ? ' uw-state-working' : '';
     const cardAttrs = clickable
       ? ` class="ultracode-agent-card ultracode-agent-card--clickable${cardStateCls}" role="button" tabindex="0"` +
-        ` title="View transcript" onclick="app.openWorkflowAgentTranscript('${escapeHtml(a.agentId)}')"`
+        ` title="View transcript" onclick="app.openUltracodeAgentWindow('${escapeHtml(a.agentId)}','${escapeHtml(runId || '')}')"`
       : ` class="ultracode-agent-card${cardStateCls}"`;
     return (
       `<div${cardAttrs}>` +
