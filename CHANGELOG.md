@@ -1,5 +1,11 @@
 # aicodeman
 
+## 1.1.13
+
+### Patch Changes
+
+- Keep the `/compact` button in the extended (full) mobile keyboard accessory bar; only the simple bar drops it. (1.1.12 had removed it from both.)
+
 ## 1.1.12
 
 ### Patch Changes
