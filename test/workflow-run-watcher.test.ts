@@ -317,3 +317,99 @@ describe('WorkflowRunWatcher — in-flight (live) runs', () => {
     expect(watcher.getAllRuns()).toHaveLength(1);
   });
 });
+
+/**
+ * Live ENRICHMENT: while a run is in-flight the watcher now parses each agent
+ * transcript for real tokens/tool-calls/model, maps state→colour from the journal,
+ * and derives the run name/summary/phases from the persisted script — so the
+ * floating window/panel show real data mid-run instead of "0 tok / agent N".
+ */
+describe('WorkflowRunWatcher — live enrichment (tokens/state/name)', () => {
+  const RUN = 'wf_enrich01-abc';
+  let projectsDir: string;
+  let watcher: WorkflowRunWatcher;
+
+  beforeEach(async () => {
+    projectsDir = await mkdtemp(join(tmpdir(), 'wfw-enrich-'));
+    const sessionDir = join(projectsDir, PROJECT_HASH, SESSION_UUID);
+    const liveDir = join(sessionDir, 'subagents', 'workflows', RUN);
+    await mkdir(liveDir, { recursive: true });
+    const scriptsDir = join(sessionDir, 'workflows', 'scripts');
+    await mkdir(scriptsDir, { recursive: true });
+
+    // Agent aaa: a user prompt + two assistant turns with usage + two tool_use blocks.
+    await writeFile(
+      join(liveDir, 'agent-aaa.jsonl'),
+      [
+        '{"type":"user","message":{"role":"user","content":"Audit the docs"}}',
+        '{"type":"assistant","message":{"model":"claude-opus-4-8","usage":{"input_tokens":1000,"output_tokens":40},"content":[{"type":"tool_use","name":"Bash"}]}}',
+        '{"type":"assistant","message":{"model":"claude-opus-4-8","usage":{"input_tokens":2000,"cache_read_input_tokens":500,"output_tokens":80},"content":[{"type":"tool_use","name":"Edit"},{"type":"text","text":"done"}]}}',
+      ].join('\n') + '\n',
+      'utf-8'
+    );
+    await writeFile(join(liveDir, 'agent-aaa.meta.json'), JSON.stringify({ agentType: 'workflow-subagent' }), 'utf-8');
+    // Agent bbb: started, no result yet, minimal transcript (no usage).
+    await writeFile(join(liveDir, 'agent-bbb.jsonl'), '{"type":"assistant","message":{"content":[]}}\n', 'utf-8');
+    // bbb starts BEFORE aaa, so journal launch order ['bbb','aaa'] differs from the
+    // old alphabetical sort ['aaa','bbb'] — the ordering assertion below is adversarial.
+    await writeFile(
+      join(liveDir, 'journal.jsonl'),
+      '{"type":"started","agentId":"bbb"}\n{"type":"started","agentId":"aaa"}\n{"type":"result","agentId":"aaa","result":{}}\n',
+      'utf-8'
+    );
+    // Persisted script — name from filename, summary/phases from the meta literal.
+    await writeFile(
+      join(scriptsDir, `my-cool-workflow-${RUN}.js`),
+      "export const meta = {\n  name: 'my-cool-workflow',\n  description: 'Audit and update the docs',\n  phases: [ { title: 'Plan', detail: 'plan it' }, { title: 'Do', detail: 'do it' } ],\n}\n",
+      'utf-8'
+    );
+    watcher = new WorkflowRunWatcher(projectsDir);
+  });
+
+  afterEach(async () => {
+    watcher.stop();
+    await rm(projectsDir, { recursive: true, force: true });
+  });
+
+  function firstRun(): Promise<WorkflowRunInfo> {
+    return new Promise<WorkflowRunInfo>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('timed out')), 5000);
+      watcher.once('run_discovered', (info: WorkflowRunInfo) => {
+        clearTimeout(t);
+        resolve(info);
+      });
+      watcher.start();
+    });
+  }
+
+  it('derives workflowName/summary/phases from the live script file', async () => {
+    const info = await firstRun();
+    expect(info.workflowName).toBe('my-cool-workflow');
+    expect(info.summary).toBe('Audit and update the docs');
+    expect(info.phases.map((p) => p.title)).toEqual(['Plan', 'Do']);
+  });
+
+  it('parses per-agent tokens (last usage-bearing message) + tool-call counts from the transcript', async () => {
+    const info = await firstRun();
+    const aaa = info.agents.find((a) => a.agentId === 'aaa')!;
+    expect(aaa.tokens).toBe(2580); // last turn: 2000 in + 500 cache + 80 out
+    expect(aaa.toolCalls).toBe(2); // Bash + Edit
+    expect(aaa.model).toBe('claude-opus-4-8');
+    expect(aaa.promptPreview).toBe('Audit the docs');
+  });
+
+  it('maps state to done (→green) / progress (→yellow) from the journal', async () => {
+    const info = await firstRun();
+    expect(info.agents.find((a) => a.agentId === 'aaa')!.state).toBe('done');
+    expect(info.agents.find((a) => a.agentId === 'bbb')!.state).toBe('progress');
+  });
+
+  it('orders agents by journal launch order (NOT alphabetical) and sums run-level totals', async () => {
+    const info = await firstRun();
+    // bbb started first in the journal though it sorts after aaa — launch order wins.
+    expect(info.agents.map((a) => a.agentId)).toEqual(['bbb', 'aaa']);
+    expect(info.agents[0].label).toBe('agent 1'); // = bbb, the first-launched
+    expect(info.totalToolCalls).toBe(2);
+    expect(info.totalTokens).toBe(2580);
+  });
+});

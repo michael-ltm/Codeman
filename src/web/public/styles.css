@@ -8473,14 +8473,14 @@ kbd {
   flex-shrink: 0;
 }
 .ultracode-status.completed {
-  background: var(--success);
+  background: var(--green);
 }
 .ultracode-status.active {
-  background: var(--warning);
+  background: var(--yellow);
   color: black;
 }
 .ultracode-status.failed {
-  background: var(--error, #b3261e);
+  background: var(--red, #b3261e);
   color: white;
 }
 
@@ -8531,6 +8531,16 @@ kbd {
   border-radius: 6px;
   padding: 0.4rem 0.5rem;
   margin-bottom: 0.35rem;
+  border-left: 3px solid transparent;
+}
+/* At-a-glance agent state: yellow while working, green when done. */
+.ultracode-agent-card.uw-state-working {
+  border-left-color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 9%, var(--bg-input));
+}
+.ultracode-agent-card.uw-state-done {
+  border-left-color: var(--green);
+  background: color-mix(in srgb, var(--green) 9%, var(--bg-input));
 }
 .ultracode-agent-card--clickable {
   cursor: pointer;
@@ -8538,6 +8548,14 @@ kbd {
 }
 .ultracode-agent-card--clickable:hover {
   background: var(--bg-card);
+}
+/* Keep the state tint on hover (equal specificity to the hover rule, so it must
+   come after it) — a tad stronger so the hover still reads as interactive. */
+.ultracode-agent-card--clickable.uw-state-working:hover {
+  background: color-mix(in srgb, var(--yellow) 16%, var(--bg-card));
+}
+.ultracode-agent-card--clickable.uw-state-done:hover {
+  background: color-mix(in srgb, var(--green) 16%, var(--bg-card));
 }
 .ultracode-agent-top {
   display: flex;
@@ -8564,10 +8582,10 @@ kbd {
   color: white;
 }
 .ultracode-agent-state.completed {
-  background: var(--success);
+  background: var(--green);
 }
 .ultracode-agent-state.active {
-  background: var(--warning);
+  background: var(--yellow);
   color: black;
 }
 .ultracode-agent-state.idle {
@@ -8707,14 +8725,15 @@ kbd {
   margin-bottom: 0.4rem;
 }
 
-/* Ultracode connector line — distinct purple to set it apart from blue subagent lines. */
+/* Ultracode connector line — the session-tab accent blue (dashed to stay distinct
+   from the solid subagent lines, per the same-blue-as-the-tab request). */
 .connection-line.ultracode-connection {
-  stroke: #a855f7;
+  stroke: var(--accent);
   stroke-width: 3;
   stroke-dasharray: 6 3;
   filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8))
-          drop-shadow(0 0 5px rgba(168, 85, 247, 0.85))
-          drop-shadow(0 0 10px rgba(168, 85, 247, 0.5));
+          drop-shadow(0 0 5px rgba(var(--accent-rgb), 0.85))
+          drop-shadow(0 0 10px rgba(var(--accent-rgb), 0.5));
   animation: ultracode-conn-pulse 1.4s ease-in-out infinite;
 }
 .connection-line.ultracode-connection:hover {

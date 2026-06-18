@@ -96,6 +96,10 @@ Object.assign(CodemanApp.prototype, {
     this.activeWorkflowPhaseIndex = null; // reset phase filter on run change
     this._fetchWorkflowRunDetail(runId);
     this.renderUltracodeAgentsPanel();
+    // Clicking a run also pops its floating window (with connector line to the
+    // session tab), like the auto-popped one — an explicit open, so it ignores the
+    // floating-windows auto-pop toggle (ultracode-windows.js).
+    if (typeof this.openUltracodeWindowForRun === 'function') this.openUltracodeWindowForRun(runId);
   },
   selectWorkflowPhase(phaseIndex) {
     this._ensureWorkflowState();
@@ -105,6 +109,11 @@ Object.assign(CodemanApp.prototype, {
   },
 
   async _fetchWorkflowRunDetail(runId) {
+    // De-dupe concurrent fetches for the same run — selecting a run can trigger both
+    // a panel refresh and a floating-window open, which would otherwise double-fetch.
+    if (!this._wfDetailInFlight) this._wfDetailInFlight = new Set();
+    if (this._wfDetailInFlight.has(runId)) return;
+    this._wfDetailInFlight.add(runId);
     try {
       const res = await fetch(`/api/workflows/${encodeURIComponent(runId)}`);
       const env = await res.json();
@@ -117,6 +126,8 @@ Object.assign(CodemanApp.prototype, {
       }
     } catch {
       /* transient — next update retries */
+    } finally {
+      this._wfDetailInFlight.delete(runId);
     }
   },
 
@@ -274,10 +285,12 @@ Object.assign(CodemanApp.prototype, {
     // to the agent-<id>.jsonl stem already tracked by subagent-watcher). 'start' agents have
     // no agentId yet, so they stay non-clickable.
     const clickable = !!a.agentId;
+    // At-a-glance state tint on the whole card: green when done, yellow while working.
+    const cardStateCls = state === 'done' ? ' uw-state-done' : state === 'progress' ? ' uw-state-working' : '';
     const cardAttrs = clickable
-      ? ` class="ultracode-agent-card ultracode-agent-card--clickable" role="button" tabindex="0"` +
+      ? ` class="ultracode-agent-card ultracode-agent-card--clickable${cardStateCls}" role="button" tabindex="0"` +
         ` title="View transcript" onclick="app.openWorkflowAgentTranscript('${escapeHtml(a.agentId)}')"`
-      : ` class="ultracode-agent-card"`;
+      : ` class="ultracode-agent-card${cardStateCls}"`;
     return (
       `<div${cardAttrs}>` +
       `<div class="ultracode-agent-top">` +

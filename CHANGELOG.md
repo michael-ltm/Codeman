@@ -1,5 +1,19 @@
 # aicodeman
 
+## 1.1.11
+
+### Patch Changes
+
+- Ultracode (Workflow-tool) run visualization — much better live tracking.
+
+  While a run is in flight, the watcher previously showed empty agent slots ("agent N", 0 tokens, raw `wf_…` id as the title) because the detailed completion JSON only lands when the run finishes. The live path now enriches in-flight runs directly from the on-disk transcript tree:
+  - **Real per-agent stats mid-run** — tokens and tool-call counts are parsed from each `agent-<id>.jsonl` transcript (tool counts match the final accounting exactly; token totals land within ~1% of the completion value), with model and a prompt preview. All mtime-cached (transcripts, journal, and script meta) so idle polls do no extra reads.
+  - **Readable window/run title** — workflow name, summary, and phases are derived from the persisted `workflows/scripts/<name>-<runId>.js` instead of showing the raw run id.
+  - **Agent status colors** — done agents show green, working agents show yellow (this also fixes the run/agent status badges, which referenced undefined `--success`/`--warning` CSS variables and were rendering with no color).
+  - **Connector line** — the floating-window → session-tab line now uses the session-tab accent blue (was purple).
+  - **Click a run to open its floating window** — clicking a workflow in the dock panel opens (or focuses) its floating window with the connector line, in addition to the auto-popped windows.
+  - Agents are ordered by journal launch order; concurrent run-detail fetches are de-duplicated.
+
 ## 1.1.10
 
 ### Patch Changes

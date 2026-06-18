@@ -77,12 +77,14 @@ Object.assign(CodemanApp.prototype, {
   _syncUltracodeFloatingWindow(run, opts) {
     this._ensureUltracodeWindowState();
     if (!run || !run.runId) return;
-    if (!this._ultracodeFloatingEnabled()) return;
     const runId = run.runId;
+    const existing = this.ultracodeWindows.get(runId);
+    // Auto-pop is gated on the floating-windows toggle, but an ALREADY-open window
+    // (e.g. one opened by clicking the run in the dock) keeps refreshing regardless.
+    if (!existing && !this._ultracodeFloatingEnabled()) return;
     if (this.ultracodeWindowsClosed.has(runId)) return; // respect explicit dismissal
 
     const active = this._isWorkflowRunActive(run);
-    const existing = this.ultracodeWindows.get(runId);
 
     if (active) {
       // Run is alive — cancel any pending auto-close.
@@ -117,6 +119,31 @@ Object.assign(CodemanApp.prototype, {
         }, FLOAT_FINISH_GRACE_MS);
         this.ultracodeWindowCloseTimers.set(runId, timer);
       }
+    }
+  },
+
+  /**
+   * Explicitly open (or focus) the floating window for a run — the click-through
+   * from the dock panel's run list. Unlike auto-pop this ignores the floating-windows
+   * toggle and clears any prior dismissal (it's a direct user action), then draws the
+   * connector line from the run's session tab.
+   */
+  openUltracodeWindowForRun(runId) {
+    this._ensureUltracodeWindowState();
+    if (!runId) return;
+    const run = this.workflowRuns && this.workflowRuns.get(runId);
+    if (!run) return;
+    this.ultracodeWindowsClosed.delete(runId); // an explicit open overrides a past dismissal
+    const existing = this.ultracodeWindows.get(runId);
+    if (existing) {
+      // Already open — bring to front, expand if collapsed, refresh.
+      existing.element.style.zIndex = ++this.ultracodeWindowZIndex;
+      if (existing.collapsed) this.toggleUltracodeWindowCollapse(runId);
+      this.renderUltracodeWindowContent(runId);
+      this._fetchWorkflowRunDetail(runId);
+      this.updateConnectionLines();
+    } else {
+      this.createUltracodeWindow(run);
     }
   },
 
