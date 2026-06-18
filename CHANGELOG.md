@@ -1,5 +1,11 @@
 # aicodeman
 
+## 1.1.12
+
+### Patch Changes
+
+- Remove the `/compact` button from the mobile keyboard accessory bar. It had been reintroduced in 1.1.10; this removes the button from both the simple and full accessory-bar layouts (the underlying command handler is left in place as inert plumbing).
+
 ## 1.1.11
 
 ### Patch Changes
