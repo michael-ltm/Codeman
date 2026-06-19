@@ -273,7 +273,7 @@ class NotificationManager {
       const readClass = n.read ? '' : ' unread';
       const countLabel = n.count > 1 ? `<span class="notif-item-count">&times;${n.count}</span>` : '';
       const sessionChip = n.sessionName ? `<span class="notif-item-session">${escapeHtml(n.sessionName)}</span>` : '';
-      return `<div class="notif-item ${urgencyClass}${readClass}" data-notif-id="${n.id}" data-session-id="${n.sessionId || ''}" onclick="app.notificationManager.clickNotification('${escapeHtml(n.id)}')">
+      return `<div class="notif-item ${urgencyClass}${readClass}" data-notif-id="${n.id}" data-session-id="${n.sessionId || ''}" onclick="app.notificationManager.clickNotification(${escapeHtml(JSON.stringify(n.id))})">
         <div class="notif-item-header">
           <span class="notif-item-title">${escapeHtml(n.title)}${countLabel}</span>
           <span class="notif-item-time">${this.relativeTime(n.timestamp)}</span>

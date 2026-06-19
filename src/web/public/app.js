@@ -2782,7 +2782,7 @@ class CodemanApp {
       const tallTabsEnabled = this._tallTabsEnabled ?? false;
       const showFolder = tallTabsEnabled && session.name && folderName && folderName !== name;
 
-      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${loadState ? ' tab-loading' : ''}" data-id="${id}" data-color="${color}" ${loadState ? `data-load-phase="${escapeHtml(loadState.phase)}"` : ''} onclick="app.handleSessionTabClick(event, '${escapeHtml(id)}')" oncontextmenu="event.preventDefault(); app.startInlineRename('${escapeHtml(id)}')" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-busy="${loadState ? 'true' : 'false'}" aria-label="${escapeHtml(name)} session" ${session.workingDir ? `title="${escapeHtml(session.workingDir)}"` : ''}>
+      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${loadState ? ' tab-loading' : ''}" data-id="${id}" data-color="${color}" ${loadState ? `data-load-phase="${escapeHtml(loadState.phase)}"` : ''} onclick="app.handleSessionTabClick(event, ${escapeHtml(JSON.stringify(id))})" oncontextmenu="event.preventDefault(); app.startInlineRename(${escapeHtml(JSON.stringify(id))})" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-busy="${loadState ? 'true' : 'false'}" aria-label="${escapeHtml(name)} session" ${session.workingDir ? `title="${escapeHtml(session.workingDir)}"` : ''}>
           ${_tabIdx < 9 ? '<span class="tab-number">' + (_tabIdx + 1) + '</span>' : ''}
           ${loadState ? '<span class="tab-load-spinner" aria-hidden="true"></span>' : ''}
           <span class="tab-status ${status}" aria-hidden="true"></span>
@@ -2797,9 +2797,9 @@ class CodemanApp {
           ${hasRunningTasks ? `<span class="tab-badge" onclick="event.stopPropagation(); app.toggleTaskPanel()" aria-label="${taskStats.running} running tasks">${taskStats.running}</span>` : ''}
           ${subagentBadge}
           ${ultracodeBadge}
-          <span class="tab-gear" onclick="event.stopPropagation(); app.openSessionOptions('${escapeHtml(id)}')" title="Session options" aria-label="Session options" tabindex="0">&#x2699;</span>
-          <span class="tab-detach" onclick="event.stopPropagation(); app.detachSession('${escapeHtml(id)}')" title="Open in a new window" aria-label="Open session in a new window" tabindex="0">&#x29C9;</span>
-          <span class="tab-close" onclick="event.stopPropagation(); app.requestCloseSession('${escapeHtml(id)}')" title="Close session" aria-label="Close session" tabindex="0">&times;</span>
+          <span class="tab-gear" onclick="event.stopPropagation(); app.openSessionOptions(${escapeHtml(JSON.stringify(id))})" title="Session options" aria-label="Session options" tabindex="0">&#x2699;</span>
+          <span class="tab-detach" onclick="event.stopPropagation(); app.detachSession(${escapeHtml(JSON.stringify(id))})" title="Open in a new window" aria-label="Open session in a new window" tabindex="0">&#x29C9;</span>
+          <span class="tab-close" onclick="event.stopPropagation(); app.requestCloseSession(${escapeHtml(JSON.stringify(id))})" title="Close session" aria-label="Close session" tabindex="0">&times;</span>
         </div>`);
       _tabIdx++;
     }

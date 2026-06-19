@@ -33,10 +33,10 @@ Object.assign(CodemanApp.prototype, {
       const truncatedName = displayName.length > 25 ? displayName.substring(0, 25) + '…' : displayName;
       const statusClass = agent?.status || 'idle';
       agentItems.push(`
-        <div class="subagent-dropdown-item" onclick="event.stopPropagation(); app.restoreMinimizedSubagent('${escapeHtml(agentId)}', '${escapeHtml(sessionId)}')" title="Click to restore">
+        <div class="subagent-dropdown-item" onclick="event.stopPropagation(); app.restoreMinimizedSubagent(${escapeHtml(JSON.stringify(agentId))}, ${escapeHtml(JSON.stringify(sessionId))})" title="Click to restore">
           <span class="subagent-dropdown-status ${statusClass}"></span>
           <span class="subagent-dropdown-name">${escapeHtml(truncatedName)}</span>
-          <span class="subagent-dropdown-close" onclick="event.stopPropagation(); app.permanentlyCloseMinimizedSubagent('${escapeHtml(agentId)}', '${escapeHtml(sessionId)}')" title="Dismiss">&times;</span>
+          <span class="subagent-dropdown-close" onclick="event.stopPropagation(); app.permanentlyCloseMinimizedSubagent(${escapeHtml(JSON.stringify(agentId))}, ${escapeHtml(JSON.stringify(sessionId))})" title="Dismiss">&times;</span>
         </div>
       `);
     }
@@ -699,7 +699,7 @@ Object.assign(CodemanApp.prototype, {
       parentSessionId && parentSessionName
         ? `<div class="subagent-window-parent" data-parent-session="${parentSessionId}">
           <span class="parent-label">from</span>
-          <span class="parent-name" onclick="app.selectSession('${escapeHtml(parentSessionId)}')">${escapeHtml(parentSessionName)}</span>
+          <span class="parent-name" onclick="app.selectSession(${escapeHtml(JSON.stringify(parentSessionId))})">${escapeHtml(parentSessionName)}</span>
         </div>`
         : '';
 
@@ -720,7 +720,7 @@ Object.assign(CodemanApp.prototype, {
           <span class="status ${agent.status}">${agent.status}</span>
         </div>
         <div class="subagent-window-actions">
-          <button onclick="app.closeSubagentWindow('${escapeHtml(agentId)}')" title="Minimize to tab">─</button>
+          <button onclick="app.closeSubagentWindow(${escapeHtml(JSON.stringify(agentId))})" title="Minimize to tab">─</button>
         </div>
       </div>
       ${parentHeader}

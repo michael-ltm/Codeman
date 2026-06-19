@@ -1385,11 +1385,11 @@ Object.assign(CodemanApp.prototype, {
             <span class="case-manage-path">${escapeHtml(pathDisplay)}</span>
           </div>
           <div class="case-manage-actions">
-            <button class="case-manage-btn" onclick="app.moveCaseUp('${escapeHtml(c.name)}')"
+            <button class="case-manage-btn" onclick="app.moveCaseUp(${escapeHtml(JSON.stringify(c.name))})"
                     title="Move up" ${isFirst ? 'disabled' : ''}>&#x25B2;</button>
-            <button class="case-manage-btn" onclick="app.moveCaseDown('${escapeHtml(c.name)}')"
+            <button class="case-manage-btn" onclick="app.moveCaseDown(${escapeHtml(JSON.stringify(c.name))})"
                     title="Move down" ${isLast ? 'disabled' : ''}>&#x25BC;</button>
-            <button class="case-manage-btn case-manage-btn-delete" onclick="app.deleteCase('${escapeHtml(c.name)}')"
+            <button class="case-manage-btn case-manage-btn-delete" onclick="app.deleteCase(${escapeHtml(JSON.stringify(c.name))})"
                     title="Delete case">&#x2715;</button>
           </div>
         </div>
@@ -1484,14 +1484,14 @@ Object.assign(CodemanApp.prototype, {
       const isSelected = c.name === currentCase;
       html += `
         <button class="mobile-case-item ${isSelected ? 'selected' : ''}"
-                onclick="app.selectMobileCase('${escapeHtml(c.name)}')">
+                onclick="app.selectMobileCase(${escapeHtml(JSON.stringify(c.name))})">
           <span class="mobile-case-item-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
             </svg>
           </span>
           <span class="mobile-case-item-name">${escapeHtml(c.name)}</span>
-          <span class="mobile-case-item-delete" onclick="event.stopPropagation(); app.deleteCaseMobile('${escapeHtml(c.name)}')" title="Delete">
+          <span class="mobile-case-item-delete" onclick="event.stopPropagation(); app.deleteCaseMobile(${escapeHtml(JSON.stringify(c.name))})" title="Delete">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>

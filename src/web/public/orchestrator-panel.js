@@ -392,10 +392,10 @@ Object.assign(CodemanApp.prototype, {
     let actions = '';
     if (orchState === 'executing' || orchState === 'failed') {
       if (phase.status === 'pending') {
-        actions += `<button class="orch-phase-btn" onclick="app.orchestratorSkipPhase('${phase.id}')" title="Skip">skip</button>`;
+        actions += `<button class="orch-phase-btn" onclick="app.orchestratorSkipPhase(${escapeHtml(JSON.stringify(phase.id))})" title="Skip">skip</button>`;
       }
       if (phase.status === 'failed') {
-        actions += `<button class="orch-phase-btn" onclick="app.orchestratorRetryPhase('${phase.id}')" title="Retry">retry</button>`;
+        actions += `<button class="orch-phase-btn" onclick="app.orchestratorRetryPhase(${escapeHtml(JSON.stringify(phase.id))})" title="Retry">retry</button>`;
       }
     }
 
