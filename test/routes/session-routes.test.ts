@@ -355,6 +355,43 @@ describe('session-routes', () => {
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
+
+    it('applies a tagged (clientId, seq) input exactly once on redelivery', async () => {
+      const url = `/api/sessions/${harness.ctx._sessionId}/input`;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const session = harness.ctx.sessions.get(harness.ctx._sessionId) as any;
+      session.writeBuffer.length = 0;
+
+      const post = (payload: unknown) => harness.app.inject({ method: 'POST', url, payload });
+
+      // First delivery of seq 1 — applied (200, written once).
+      const first = await post({ input: 'prompt', seq: 1, clientId: 'cid-1' });
+      expect(first.statusCode).toBe(200);
+
+      // Redelivery of the SAME seq (client never saw the ACK) — still 200, but
+      // must NOT write again.
+      const dup = await post({ input: 'prompt', seq: 1, clientId: 'cid-1' });
+      expect(dup.statusCode).toBe(200);
+
+      // A genuinely new seq — applied.
+      const next = await post({ input: '\r', seq: 2, clientId: 'cid-1' });
+      expect(next.statusCode).toBe(200);
+
+      expect(session.writeBuffer).toEqual(['prompt', '\r']);
+    });
+
+    it('always applies untagged input (curl/legacy, no dedup)', async () => {
+      const url = `/api/sessions/${harness.ctx._sessionId}/input`;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const session = harness.ctx.sessions.get(harness.ctx._sessionId) as any;
+      session.writeBuffer.length = 0;
+
+      const post = () => harness.app.inject({ method: 'POST', url, payload: { input: 'x' } });
+      await post();
+      await post();
+      // No seq/clientId ⇒ no dedup ⇒ both writes land.
+      expect(session.writeBuffer).toEqual(['x', 'x']);
+    });
   });
 
   // ========== POST /api/sessions/:id/resize ==========

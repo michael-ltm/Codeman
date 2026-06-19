@@ -21,8 +21,11 @@
  *     {"t":"o","d":"..."} — terminal output
  *     {"t":"c"}           — clear terminal
  *     {"t":"r"}           — needs refresh (reload buffer)
+ *     {"t":"ia","seq":N}  — input ACK (echoes the seq of an applied/deduped input frame)
  *   Client -> Server:
- *     {"t":"i","d":"..."} — input (keystroke or paste)
+ *     {"t":"i","d":"...","seq":N,"cid":"..."} — input (keystroke or paste). seq+cid are
+ *                          optional reliable-delivery tags: the server applies each
+ *                          (cid,seq) at-most-once and ACKs with {"t":"ia","seq":N}.
  *     {"t":"z","c":N,"r":N,"f":bool} — resize terminal (f=true forces SIGWINCH even if dims unchanged)
  */
 
@@ -123,10 +126,22 @@ export function registerWsRoutes(app: FastifyInstance, ctx: SessionPort, getHost
         const msg = JSON.parse(String(raw));
         if (msg.t === 'i' && typeof msg.d === 'string') {
           if (msg.d.length > MAX_INPUT_LENGTH) return;
-          // Typed input from a claim-holding desktop keeps the claim "hot"
-          // and re-asserts the desktop layout after a mobile override.
-          if (holdsDesktopClaim) session.noteDesktopActivity();
-          session.write(msg.d);
+          // Reliable delivery: when the frame carries a clientId + seq, apply it
+          // exactly once (skip a duplicate redelivery) but ACK it regardless so
+          // the client can drop it from its durable queue. Frames without seq
+          // (legacy/other tools) are applied as-is — no behavior change.
+          const cid = typeof msg.cid === 'string' ? msg.cid : null;
+          const seq = Number.isInteger(msg.seq) ? (msg.seq as number) : null;
+          const apply = cid && seq !== null ? session.shouldApplyInput(cid, seq) : true;
+          if (apply) {
+            // Typed input from a claim-holding desktop keeps the claim "hot"
+            // and re-asserts the desktop layout after a mobile override.
+            if (holdsDesktopClaim) session.noteDesktopActivity();
+            session.write(msg.d);
+          }
+          if (seq !== null && socket.readyState === 1) {
+            socket.send(`{"t":"ia","seq":${seq}}`);
+          }
         } else if (
           msg.t === 'z' &&
           Number.isInteger(msg.c) &&

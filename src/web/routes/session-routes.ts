@@ -662,7 +662,7 @@ export function registerSessionRoutes(
 
   app.post('/api/sessions/:id/input', async (req) => {
     const { id } = req.params as { id: string };
-    const { input, useMux } = parseBody(SessionInputWithLimitSchema, req.body);
+    const { input, useMux, seq, clientId } = parseBody(SessionInputWithLimitSchema, req.body);
     const session = findSessionOrFail(ctx, id);
 
     const inputStr = String(input);
@@ -671,6 +671,13 @@ export function registerSessionRoutes(
         ApiErrorCode.INVALID_INPUT,
         `Input exceeds maximum length (${MAX_INPUT_LENGTH} bytes)`
       );
+    }
+
+    // Reliable delivery (POST fallback when the WebSocket is down): a 2xx IS the
+    // client's ACK, so a tagged duplicate redelivery must still return 200 but
+    // skip the write. Untagged requests (curl/legacy) always apply.
+    if (typeof clientId === 'string' && typeof seq === 'number' && !session.shouldApplyInput(clientId, seq)) {
+      return {};
     }
 
     // Write input to PTY. Direct write is synchronous; writeViaMux

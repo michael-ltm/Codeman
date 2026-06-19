@@ -2214,6 +2214,42 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * Per-client highest-applied input sequence, for exactly-once input delivery.
+   * Keyed by the web client's stable `clientId`. Bounded so many devices over a
+   * long-lived session can't grow it without limit (insertion order = MRU, so
+   * eviction drops the least-recently-active client).
+   */
+  private _appliedInputSeq = new Map<string, number>();
+  private static readonly MAX_INPUT_DEDUP_CLIENTS = 256;
+
+  /**
+   * Decide whether an input frame should be applied to the PTY or skipped as a
+   * duplicate redelivery. Returns true exactly once per (clientId, seq): the
+   * first time a seq strictly greater than the client's last-applied is seen.
+   * A redelivery of an already-applied seq (the client never got our ACK and
+   * resent) returns false. Callers should ACK regardless — a duplicate is, from
+   * the client's view, "delivered" — and only `write()` the PTY when this is
+   * true. Relies on the client delivering one client's frames in seq order over
+   * a single ordered stream, so `seq <= last` ⇒ already applied.
+   *
+   * Without this, the client's at-least-once redelivery (needed because a
+   * half-open socket silently drops frames with no error) would type a prompt
+   * twice whenever an ACK is lost after the write landed.
+   */
+  shouldApplyInput(clientId: string, seq: number): boolean {
+    const last = this._appliedInputSeq.get(clientId);
+    if (last !== undefined && seq <= last) return false;
+    // Re-insert to move this client to the MRU end for fair eviction.
+    if (last !== undefined) this._appliedInputSeq.delete(clientId);
+    this._appliedInputSeq.set(clientId, seq);
+    if (this._appliedInputSeq.size > Session.MAX_INPUT_DEDUP_CLIENTS) {
+      const oldest = this._appliedInputSeq.keys().next().value;
+      if (oldest !== undefined) this._appliedInputSeq.delete(oldest);
+    }
+    return true;
+  }
+
+  /**
    * Sends input via the terminal multiplexer's direct input mechanism.
    *
    * More reliable than direct PTY write for programmatic input, especially

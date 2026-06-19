@@ -2195,12 +2195,11 @@ Object.assign(CodemanApp.prototype, {
    * @returns {Promise<void>}
    */
   async sendInput(input) {
-    if (!this.activeSessionId) return;
-    await fetch(`/api/sessions/${this.activeSessionId}/input`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input, useMux: true }),
-    });
+    if (!this.activeSessionId || !input) return;
+    // Route through the durable, exactly-once delivery layer (useMux for the
+    // POST fallback) so voice / keyboard-accessory / paste input also survives a
+    // dropped link instead of being lost in a single best-effort fetch.
+    this._sendInputAsync(this.activeSessionId, input, { useMux: true });
   },
 
   // ═══════════════════════════════════════════════════════════════

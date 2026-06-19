@@ -39,6 +39,16 @@ export class MockSession extends EventEmitter {
     return true;
   }
 
+  /** Exactly-once input dedup — mirrors Session.shouldApplyInput so route tests
+   *  exercising the reliable-delivery path behave like production. */
+  private _appliedInputSeq = new Map<string, number>();
+  shouldApplyInput(clientId: string, seq: number): boolean {
+    const last = this._appliedInputSeq.get(clientId);
+    if (last !== undefined && seq <= last) return false;
+    this._appliedInputSeq.set(clientId, seq);
+    return true;
+  }
+
   /** Get the last written data */
   get lastWrite(): string | undefined {
     return this.writeBuffer[this.writeBuffer.length - 1];
