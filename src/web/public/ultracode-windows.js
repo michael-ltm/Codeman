@@ -351,11 +351,11 @@ Object.assign(CodemanApp.prototype, {
         const name = run ? run.workflowName || run.summary || runId : runId;
         const statusCls = this._workflowStatusClass(run ? String(run.status || '') : '');
         items.push(
-          `<div class="subagent-dropdown-item" onclick="event.stopPropagation(); app.restoreUltracodeRunFromTab('${escapeHtml(runId)}','${escapeHtml(sessionId)}')" title="Click to restore run">` +
+          `<div class="subagent-dropdown-item" onclick="event.stopPropagation(); app.restoreUltracodeRunFromTab(${escapeHtml(JSON.stringify(runId))},${escapeHtml(JSON.stringify(sessionId))})" title="Click to restore run">` +
             `<span class="subagent-dropdown-status ${statusCls}"></span>` +
             `<span class="ultracode-dd-icon">🧬</span>` +
             `<span class="subagent-dropdown-name">${escapeHtml(trunc(name))}</span>` +
-            `<span class="subagent-dropdown-close" onclick="event.stopPropagation(); app.dismissMinimizedUltracodeRun('${escapeHtml(runId)}','${escapeHtml(sessionId)}')" title="Dismiss">&times;</span>` +
+            `<span class="subagent-dropdown-close" onclick="event.stopPropagation(); app.dismissMinimizedUltracodeRun(${escapeHtml(JSON.stringify(runId))},${escapeHtml(JSON.stringify(sessionId))})" title="Dismiss">&times;</span>` +
             `</div>`
         );
       }
@@ -365,11 +365,11 @@ Object.assign(CodemanApp.prototype, {
       for (const [agentId, entry] of agentMap) {
         const name = (entry && entry.label) || agentId;
         items.push(
-          `<div class="subagent-dropdown-item" onclick="event.stopPropagation(); app.restoreUltracodeAgentFromTab('${escapeHtml(agentId)}','${escapeHtml(sessionId)}')" title="Click to restore transcript">` +
+          `<div class="subagent-dropdown-item" onclick="event.stopPropagation(); app.restoreUltracodeAgentFromTab(${escapeHtml(JSON.stringify(agentId))},${escapeHtml(JSON.stringify(sessionId))})" title="Click to restore transcript">` +
             `<span class="subagent-dropdown-status"></span>` +
             `<span class="ultracode-dd-icon">📄</span>` +
             `<span class="subagent-dropdown-name">${escapeHtml(trunc(name))}</span>` +
-            `<span class="subagent-dropdown-close" onclick="event.stopPropagation(); app.dismissMinimizedUltracodeAgent('${escapeHtml(agentId)}','${escapeHtml(sessionId)}')" title="Dismiss">&times;</span>` +
+            `<span class="subagent-dropdown-close" onclick="event.stopPropagation(); app.dismissMinimizedUltracodeAgent(${escapeHtml(JSON.stringify(agentId))},${escapeHtml(JSON.stringify(sessionId))})" title="Dismiss">&times;</span>` +
             `</div>`
         );
       }
