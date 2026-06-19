@@ -4449,6 +4449,7 @@ var GestureController = class {
 // packages/gesture-control/src/codeman/entry.ts
 var TAB_SELECTOR = ".session-tab";
 var PANEL_SELECTOR = ".cg-float";
+var WINDOW_SELECTOR = ".subagent-window, .ultracode-window";
 var DOCK_SELECTOR = ".session-tabs";
 var CLICK_SELECTOR = "#runBtn, .btn-shell";
 var Z2 = 2147483e3;
@@ -4476,6 +4477,8 @@ var GestureBridge = class {
     __publicField(this, "taps", /* @__PURE__ */ new Map());
     /** Live floating panels, keyed by session id (idempotent per id). */
     __publicField(this, "floats", /* @__PURE__ */ new Map());
+    /** rAF coalescing for connector-line redraws while dragging an agent window. */
+    __publicField(this, "connectorRedrawScheduled", false);
     injectStyles();
     this.surface = el("div", "cg-surface");
     this.canvas = el("canvas", "cg-canvas");
@@ -4530,7 +4533,7 @@ var GestureBridge = class {
       await this.gc.start();
       this.running = true;
       this.button.classList.add("on");
-      this.status.textContent = "on \u2014 pinch a tab or button";
+      this.status.textContent = "on \u2014 pinch a tab, window, or button";
     } catch (err) {
       const msg = describeError(err);
       this.status.textContent = `failed: ${msg}`;
@@ -4574,6 +4577,16 @@ var GestureBridge = class {
         this.status.textContent = "moving \u2014 drop over tabs to re-dock";
         return;
       }
+    }
+    const win = this.hitClosest(x2, y2, WINDOW_SELECTOR);
+    if (win) {
+      const rect = win.getBoundingClientRect();
+      win.style.bottom = "auto";
+      win.classList.add("cg-win-grabbed");
+      this.bringWindowToFront(win);
+      this.grabs.set(hand, { kind: "window", el: win, dx: x2 - rect.left, dy: y2 - rect.top });
+      this.status.textContent = "moving window";
+      return;
     }
     const tab = this.hitClosest(x2, y2, TAB_SELECTOR);
     const id = tab?.dataset.id;
@@ -4620,11 +4633,15 @@ var GestureBridge = class {
       }
       return;
     }
+    if (grab?.kind === "window") {
+      this.moveWindow(grab.el, x2 - grab.dx, y2 - grab.dy);
+      return;
+    }
     const tap = this.taps.get(hand);
     if (tap && Math.hypot(x2 - tap.ox, y2 - tap.oy) > TAP_CANCEL_PX) {
       tap.el.classList.remove("cg-tap-armed");
       this.taps.delete(hand);
-      this.status.textContent = "on \u2014 pinch a tab or button";
+      this.status.textContent = "on \u2014 pinch a tab, window, or button";
     }
   }
   onDrop(hand, x2, y2) {
@@ -4643,6 +4660,18 @@ var GestureBridge = class {
       grab.panel.el.classList.remove("cg-float-grabbed", "cg-redock");
       if (grab.overDock) this.redock(grab.id);
       else this.flash("placed");
+      return;
+    }
+    if (grab?.kind === "window") {
+      this.grabs.delete(hand);
+      grab.el.classList.remove("cg-win-grabbed");
+      this.connectorRedrawScheduled = false;
+      this.redrawWindowConnectors();
+      try {
+        window.app?.saveSubagentWindowStates?.();
+      } catch {
+      }
+      this.flash("placed window");
       return;
     }
     const tap = this.taps.get(hand);
@@ -4694,6 +4723,54 @@ var GestureBridge = class {
     float.el.style.left = `${l}px`;
     float.el.style.top = `${t2}px`;
   }
+  /** Move a dashboard-owned agent window by its top-left, clamped on-screen, then
+   *  redraw its connector line. The window self-positions via `style.left/top` and
+   *  app.js's connector redraw reads live rects, so this tracks without touching
+   *  app.js internals. Guards on `isConnected`: ultracode windows can be torn down
+   *  (SSE reconnect / auto-close) while still held. Clamps to `innerWidth/Height`,
+   *  which equals the *spanned* viewport in a multi-monitor window — so the window
+   *  can still travel across the physical monitor seam, just not off-screen. */
+  moveWindow(el2, left, top) {
+    if (!el2.isConnected) return;
+    const w2 = el2.offsetWidth || 380;
+    const h2 = el2.offsetHeight || 320;
+    const l = Math.min(Math.max(4, left), Math.max(4, window.innerWidth - w2 - 4));
+    const t2 = Math.min(Math.max(4, top), Math.max(4, window.innerHeight - h2 - 4));
+    el2.style.left = `${l}px`;
+    el2.style.top = `${t2}px`;
+    this.redrawWindowConnectors();
+  }
+  /** Ask app.js to redraw all connector lines (subagent + ultracode), coalesced to
+   *  one per frame so per-frame drags don't thrash. `updateConnectionLines()` is
+   *  itself debounced in app.js, but we rAF-gate too in case an older dashboard
+   *  build isn't, and to no-op cleanly when app.js isn't present (standalone). */
+  redrawWindowConnectors() {
+    if (this.connectorRedrawScheduled) return;
+    this.connectorRedrawScheduled = true;
+    requestAnimationFrame(() => {
+      this.connectorRedrawScheduled = false;
+      try {
+        window.app?.updateConnectionLines?.();
+      } catch {
+      }
+    });
+  }
+  /** Pop a grabbed window above its siblings using app.js's own z-counter, so a
+   *  picked-up window comes to the front like a real focus. Cosmetic + best-effort. */
+  bringWindowToFront(el2) {
+    const app = window.app;
+    if (!app) return;
+    try {
+      if (el2.classList.contains("ultracode-window")) {
+        app.ultracodeWindowZIndex = (app.ultracodeWindowZIndex ?? 1e3) + 1;
+        el2.style.zIndex = String(app.ultracodeWindowZIndex);
+      } else {
+        app.subagentWindowZIndex = (app.subagentWindowZIndex ?? 1e3) + 1;
+        el2.style.zIndex = String(app.subagentWindowZIndex);
+      }
+    } catch {
+    }
+  }
   positionGhost(ghost, x2, y2) {
     ghost.style.left = `${x2}px`;
     ghost.style.top = `${y2}px`;
@@ -4703,15 +4780,17 @@ var GestureBridge = class {
       if (grab.kind === "tab") {
         grab.ghost.remove();
         grab.tab.classList.remove("cg-grabbed");
-      } else {
+      } else if (grab.kind === "panel") {
         grab.panel.el.style.pointerEvents = "";
         grab.panel.el.classList.remove("cg-float-grabbed", "cg-redock");
+      } else {
+        grab.el.classList.remove("cg-win-grabbed");
       }
     }
     this.grabs.clear();
     for (const tap of this.taps.values()) tap.el.classList.remove("cg-tap-armed");
     this.taps.clear();
-    document.querySelectorAll(`${TAB_SELECTOR}.cg-grabbed, .cg-tap-armed`).forEach((t2) => t2.classList.remove("cg-grabbed", "cg-tap-armed"));
+    document.querySelectorAll(`${TAB_SELECTOR}.cg-grabbed, .cg-tap-armed, .cg-win-grabbed`).forEach((t2) => t2.classList.remove("cg-grabbed", "cg-tap-armed", "cg-win-grabbed"));
   }
   onStatus(fps, hands) {
     const { width, height } = this.canvas;
@@ -4797,6 +4876,10 @@ function injectStyles() {
   .cg-status { color: #9aa0a6; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .session-tab.cg-grabbed { opacity: .35; outline: 2px dashed #4ade80; outline-offset: -2px; }
   .cg-tap-armed { outline: 2px solid #4ade80 !important; outline-offset: 2px; box-shadow: 0 0 0 4px rgba(74,222,128,.25) !important; }
+  .subagent-window.cg-win-grabbed, .ultracode-window.cg-win-grabbed {
+    outline: 2px solid #4ade80 !important; outline-offset: -2px;
+    box-shadow: 0 12px 48px rgba(74,222,128,.5) !important;
+  }
   .cg-float {
     position: fixed; left: 0; top: 0; width: ${FLOAT_W}px; height: ${FLOAT_H}px;
     z-index: ${Z2}; display: flex; flex-direction: column; overflow: hidden;
