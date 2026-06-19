@@ -1,5 +1,20 @@
 # aicodeman
 
+## 1.1.15
+
+### Patch Changes
+
+- Security: harden all frontend inline `onclick`/`ondblclick` handlers against a stored-XSS double-context bug.
+
+  Many inline handlers interpolated values as `'${escapeHtml(value)}'` — a JavaScript string literal sitting inside an HTML attribute. The browser HTML-decodes the attribute value _before_ parsing the handler source, so `escapeHtml`'s `&#39;` reverts to a literal `'` and a quote-bearing id/name/path/URL breaks out of the JS string into executable code. `escapeHtml` alone is insufficient for this JS-string-within-HTML-attribute context.
+
+  All affected handlers now use `escapeHtml(JSON.stringify(value))`: `JSON.stringify` JS-encodes and quote-wraps the value, then `escapeHtml` handles the HTML-attribute layer, so the value round-trips as a single inert string argument.
+  - ultracode run/agent cards and minimized-tab badges (`ultracode-panel.js`, `ultracode-windows.js`) — PR #132.
+  - Session tabs (click/rename/gear/detach/close), notifications, subagent windows + dropdowns, the agents/tools/log-viewer/image-popup panels, mux-session monitor rows, and case-management buttons (`app.js`, `notification-manager.js`, `subagent-windows.js`, `panels-ui.js`, `session-ui.js`).
+  - Two non-`escapeHtml` variants of the same class: a pre-escaped mux-session id in `panels-ui.js` (`selectSession`/`killMuxSession`) and a fully raw, unescaped `phase.id` in `orchestrator-panel.js` (`orchestratorSkipPhase`/`orchestratorRetryPhase`).
+
+  The most realistic exploitation vector was file paths in the project-insights log-viewer link, since filenames can legally contain a single quote. Purely numeric interpolations and developer-literal handler strings were left unchanged.
+
 ## 1.1.14
 
 ### Patch Changes

@@ -56,7 +56,7 @@ When user says "COM":
 
 CI runs `npm run check:lockfile` on every push/PR, so lockfile drift fails the build even if the `version-packages` script is bypassed.
 
-**Version**: 1.1.14 (must match `package.json`)
+**Version**: 1.1.15 (must match `package.json`)
 
 ## Project Overview
 
@@ -218,11 +218,11 @@ Frontend JS modules have `@fileoverview` with `@dependency`/`@loadorder` tags. L
 
 ### SSE Event Registry
 
-~120 event types in `src/web/sse-events.ts` (backend) and `SSE_EVENTS` in `constants.js` (frontend). Both must be kept in sync.
+~127 event types in `src/web/sse-events.ts` (backend) and `SSE_EVENTS` in `constants.js` (frontend). Both must be kept in sync.
 
 ### API Routes
 
-~146 handlers across 16 route files in `src/web/routes/`: system (41, incl. self-update `check`/`status`/`POST /api/system/update`, `POST /api/system/span-displays` → spawns `scripts/span-codeman.sh`, and `GET /api/codex/status`), sessions (29), orchestrator (10), cases (9), ralph (9), plan (8), files (14, incl. attachment register + list/history + `:attachmentId/raw`/`preview`/`thumbnail` + workspace `file-preview`/`file-thumbnail`), respawn (7), mux (5), push (4), scheduled (4), teams (2), hooks (1), clipboard (1), status-telemetry (1, `POST /api/status-telemetry` ← statusLine exporter), ws (1 WebSocket). Each file has `@fileoverview` with endpoint details.
+~147 handlers across 16 route files in `src/web/routes/`: system (41, incl. self-update `check`/`status`/`POST /api/system/update`, `POST /api/system/span-displays` → spawns `scripts/span-codeman.sh`, and `GET /api/codex/status`), sessions (29), orchestrator (10), cases (9), ralph (9), plan (8), files (14, incl. attachment register + list/history + `:attachmentId/raw`/`preview`/`thumbnail` + workspace `file-preview`/`file-thumbnail`), respawn (7), mux (5), push (4), scheduled (4), teams (2), hooks (1), clipboard (1), status-telemetry (1, `POST /api/status-telemetry` ← statusLine exporter), ws (1 WebSocket). Each file has `@fileoverview` with endpoint details.
 
 **HTTP contract** (stable since 0.9.x, see `docs/versioning-policy.md`; full envelope/status/error-code/SSE spec in `docs/api-reference.md`): responses use the `ApiResponse<T>` envelope — `{ success: true, data? }` or `{ success: false, error, errorCode }` (`src/types/api.ts`). `/api/v1/*` is a versioned alias of `/api/*` (URL rewrite in `server.ts`).
 
