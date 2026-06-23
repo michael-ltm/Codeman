@@ -1,5 +1,17 @@
 # aicodeman
 
+## 1.1.16
+
+### Patch Changes
+
+- Mobile image uploads, reliable input delivery, and gesture window dragging.
+
+  **Mobile image uploads (camera-roll picker / drag-drop / paste).** The "🖼 Image" button now handles real photo batches: up to 20 images per batch uploaded with bounded concurrency and a live "Uploading N/M…" progress toast (with a summary of successes, failures, and whether the 20-cap trimmed the selection). The per-file limit is raised from 10MB to 50MB (`MAX_PASTE_IMAGE_BYTES`, env-overridable via `CODEMAN_MAX_PASTE_IMAGE_BYTES`) so full-resolution phone photos and large screenshots are accepted. Very large images are downscaled to ≤4096px on the longest edge before upload, fixing iOS Safari's ~16.7M-px `<canvas>` limit that previously made huge photos fail to re-encode. Also fixes a latent concurrency bug the batch path exposed where the first parallel uploads to a session raced on creating `.claude-images/` and failed with EEXIST.
+
+  **Reliable, exactly-once input delivery.** A "sent" prompt could be silently lost on a flaky connection (e.g. a train): a half-open WebSocket accepts `ws.send()` without error while discarding the frame, and nothing was queued or resent. Input is now recorded durably (localStorage) with a stable clientId + monotonic per-session sequence before delivery, and only dropped once the server ACKs it — delivered over the WebSocket (acked via `{t:'ia',seq}`) or, when the socket is down, over POST in order. A 2s sweep force-reconnects a half-open socket; pending input survives reconnects and page reloads. The server applies each `(clientId, seq)` at most once (`Session.shouldApplyInput`), so an at-least-once resend can never type the prompt twice. Untagged input (curl/legacy) is unchanged. See `docs/reliable-input-delivery.md`.
+
+  **Gesture beta: drag agent windows.** With the camera hand-tracking overlay, you can now pinch and move the floating subagent and ultracode run/transcript windows. They keep their glowing connector line to the session tab while moving and can travel across a multi-monitor seam.
+
 ## 1.1.15
 
 ### Patch Changes
