@@ -104,34 +104,78 @@ Object.assign(CodemanApp.prototype, {
     document.execCommand('paste');
   },
 
-  async _uploadAndInsertImages(files) {
+  // Max images accepted in one batch (paste / drop / mobile picker). Each is
+  // uploaded as its own request, so 20 stays under the server's 30 uploads/min
+  // rate limit while covering "select a bunch of photos at once".
+  _maxBatchImages: 20,
+  // How many uploads to run concurrently. Small enough that decoding several
+  // large images through <canvas> at once won't OOM a phone, large enough that
+  // 20 photos don't crawl through serially.
+  _uploadConcurrency: 3,
+
+  async _uploadAndInsertImages(fileList) {
     const sessionId = this.activeSessionId;
     if (!sessionId) return;
 
-    this.showToast('Uploading ' + files.length + ' image' + (files.length > 1 ? 's' : '') + '...', 'info');
+    let files = Array.from(fileList || []);
+    if (files.length === 0) return;
 
-    const paths = [];
-    for (const file of files) {
-      try {
-        // Re-encode to a standard JPEG/PNG before upload. Galleries on some
-        // phones (notably Android/MIUI) hand back a WebP/HEIF whose filename and
-        // MIME claim "image/jpeg", which passes the server's extension allowlist
-        // but fails its magic-byte check ("bytes do not match declared type").
-        // Decoding through the browser and re-encoding guarantees the bytes
-        // match the extension we send.
-        const normalized = await this._normalizeImageForUpload(file);
-        const path = await this._uploadPasteImage(sessionId, normalized);
-        paths.push(path);
-      } catch (err) {
-        this.showToast('Upload failed: ' + (err.message || 'unknown error'), 'error');
+    // Cap the batch and tell the user what got dropped (no silent truncation).
+    let capped = false;
+    if (files.length > this._maxBatchImages) {
+      files = files.slice(0, this._maxBatchImages);
+      capped = true;
+    }
+
+    const total = files.length;
+    let done = 0;
+    let failed = 0;
+    const results = new Array(total); // preserve selection order for insertion
+    const progress = () =>
+      this.showToast(`Uploading ${Math.min(done + 1, total)}/${total} image${total > 1 ? 's' : ''}…`, 'info');
+    progress();
+
+    // Bounded-concurrency worker pool over the file list.
+    let next = 0;
+    const worker = async () => {
+      for (;;) {
+        const i = next++;
+        if (i >= total) return;
+        try {
+          // Re-encode to a standard JPEG/PNG (and downscale very large images)
+          // before upload. Galleries on some phones (notably Android/MIUI) hand
+          // back a WebP/HEIF whose filename and MIME claim "image/jpeg", which
+          // passes the server's extension allowlist but fails its magic-byte
+          // check. Decoding through the browser and re-encoding guarantees the
+          // bytes match the extension we send — and shrinks huge photos so they
+          // fit the upload limit and iOS's <canvas> area cap.
+          const normalized = await this._normalizeImageForUpload(files[i]);
+          results[i] = await this._uploadPasteImage(sessionId, normalized);
+        } catch (err) {
+          failed++;
+          console.warn('Image upload failed:', err);
+          results[i] = null;
+        } finally {
+          done++;
+          if (done < total) progress();
+        }
       }
+    };
+    await Promise.all(Array.from({ length: Math.min(this._uploadConcurrency, total) }, () => worker()));
+
+    const paths = results.filter(Boolean);
+    if (paths.length > 0) {
+      // Insert all paths in one shot, space-separated, in selection order.
+      await this.sendInput(paths.join(' '));
     }
 
-    if (paths.length > 0) {
-      const pathStr = paths.join(' ');
-      await this.sendInput(pathStr);
-      this.showToast(paths.length + ' image' + (paths.length > 1 ? 's' : '') + ' ready', 'success');
-    }
+    // Final status: successes, plus any failures / cap so nothing is silent.
+    const parts = [];
+    if (paths.length > 0) parts.push(`${paths.length} image${paths.length > 1 ? 's' : ''} ready`);
+    if (failed > 0) parts.push(`${failed} failed`);
+    if (capped) parts.push(`max ${this._maxBatchImages} per batch`);
+    const tone = paths.length > 0 ? (failed > 0 || capped ? 'info' : 'success') : 'error';
+    this.showToast(parts.join(' · ') || 'No images uploaded', tone);
   },
 
   async _uploadPasteImage(sessionId, file) {
@@ -176,12 +220,24 @@ Object.assign(CodemanApp.prototype, {
       const height = img.naturalHeight;
       if (!width || !height) return file;
 
+      // Downscale very large images. Two reasons: (1) iOS Safari refuses to
+      // render a <canvas> larger than ~16.7M px (it returns a blank/null
+      // blob), so a 48MP photo would otherwise fail to re-encode and fall back
+      // to the original — which then trips the server's magic-byte check for
+      // HEIF mislabeled as JPEG. (2) It keeps multi-photo uploads fast and well
+      // under the size limit. Cap the longest edge so area stays safely below
+      // the canvas limit while still uploading a large, high-quality image.
+      const MAX_EDGE = 4096;
+      const scale = Math.min(1, MAX_EDGE / Math.max(width, height));
+      const w = Math.max(1, Math.round(width * scale));
+      const h = Math.max(1, Math.round(height * scale));
+
       const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext('2d');
       if (!ctx) return file;
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, w, h);
 
       const mime = toPng ? 'image/png' : 'image/jpeg';
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, mime, 0.92));

@@ -128,6 +128,7 @@ import {
 } from '../utils/index.js';
 import type { EventLoopMonitorHandle } from '../utils/index.js';
 import { MAX_CONCURRENT_SESSIONS, MAX_SSE_CLIENTS } from '../config/map-limits.js';
+import { MAX_PASTE_IMAGE_BYTES } from '../config/buffer-limits.js';
 import { SseEvent } from './sse-events.js';
 import { getLatestPlanUsage } from './plan-usage-latest.js';
 import type { ScheduledRun } from './ports/index.js';
@@ -679,8 +680,8 @@ export class WebServer extends EventEmitter {
     // last byte (hard-coded \r\n offsets), and there was no part-count cap.
     await this.app.register(fastifyMultipart, {
       limits: {
-        fileSize: 10 * 1024 * 1024, // 10MB per file
-        files: 1, // paste-image only ever sends one file
+        fileSize: MAX_PASTE_IMAGE_BYTES, // per file (default 50MB) — large phone photos / screenshots
+        files: 1, // paste-image sends one file per request (clients batch up to 20 requests)
         fields: 4, // small headroom for accompanying form fields
       },
     });

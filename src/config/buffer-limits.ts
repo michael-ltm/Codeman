@@ -96,3 +96,18 @@ export const TRIM_RESPAWN_BUFFER_TO = 512 * 1024; // 512KB
  * which is enough to extract metadata from the first few JSONL lines.
  */
 export const FILE_PEEK_BYTES = 8 * 1024 - 1; // 8KB (inclusive end offset)
+
+// ============================================================================
+// Paste-Image Upload Limits
+// ============================================================================
+
+/**
+ * Maximum size (bytes) of a single image uploaded via POST
+ * /api/sessions/:id/paste-image. The mobile picker / drag-drop / paste paths
+ * send one file per request (the client uploads up to MAX_PASTE_IMAGES of them
+ * per batch), so this caps each individual file, not the batch. Generous enough
+ * for full-resolution phone photos and large screenshots; the client downscales
+ * very large images before upload, so legitimate uploads land well under this.
+ * Override: CODEMAN_MAX_PASTE_IMAGE_BYTES (bytes)
+ */
+export const MAX_PASTE_IMAGE_BYTES = parseInt(process.env.CODEMAN_MAX_PASTE_IMAGE_BYTES || '') || 50 * 1024 * 1024; // 50MB

@@ -60,6 +60,7 @@ import { MAX_CONCURRENT_SESSIONS } from '../../config/map-limits.js';
 import { RunSummaryTracker } from '../../run-summary.js';
 
 import { MAX_INPUT_LENGTH, MAX_SESSION_NAME_LENGTH } from '../../config/terminal-limits.js';
+import { MAX_PASTE_IMAGE_BYTES } from '../../config/buffer-limits.js';
 import { dataPath } from '../../config/instance.js';
 
 // Path to linked-cases registry (same file used by case-routes resolveCasePath)
@@ -1710,7 +1711,7 @@ export function registerSessionRoutes(
   // ═══════════════════════════════════════════════════════════════
 
   const ALLOWED_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
-  // The 10MB size cap is enforced by @fastify/multipart (registered in server.ts).
+  // The per-file size cap (MAX_PASTE_IMAGE_BYTES) is enforced by @fastify/multipart (registered in server.ts).
 
   app.post('/api/sessions/:id/paste-image', async (req, reply) => {
     // CSRF defense: state-changing routes must come from same origin.
@@ -1747,7 +1748,7 @@ export function registerSessionRoutes(
     const { id } = req.params as { id: string };
 
     // Rate limit per (IP, sessionId): 30/min. Defends against disk-fill DoS
-    // — even an authenticated attacker can otherwise loop 10MB POSTs.
+    // — even an authenticated attacker can otherwise loop large image POSTs.
     if (!consumePasteToken(`${req.ip}:${id}`)) {
       reply.code(429);
       reply.header('Retry-After', '60');
@@ -1761,8 +1762,9 @@ export function registerSessionRoutes(
       return createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Expected multipart/form-data');
     }
 
-    // Read the single file part. @fastify/multipart enforces the 10MB size cap
-    // and the 1-file/4-field count limits (server.ts), replacing a hand-rolled
+    // Read the single file part. @fastify/multipart enforces the per-file size
+    // cap (MAX_PASTE_IMAGE_BYTES) and the 1-file/4-field count limits (server.ts),
+    // replacing a hand-rolled
     // boundary scanner with several bugs: literal boundary matches anywhere in
     // body, LF-only clients silently corrupted the last byte (hard-coded \r\n
     // offsets), no part-count cap.
@@ -1786,7 +1788,8 @@ export function registerSessionRoutes(
       imageBytes = await part.toBuffer();
     } catch (err: unknown) {
       reply.code(413);
-      return createErrorResponse(ApiErrorCode.INVALID_INPUT, getErrorMessage(err) || 'File too large (max 10MB)');
+      const maxMb = Math.round(MAX_PASTE_IMAGE_BYTES / (1024 * 1024));
+      return createErrorResponse(ApiErrorCode.INVALID_INPUT, getErrorMessage(err) || `File too large (max ${maxMb}MB)`);
     }
     if (imageBytes.length === 0) {
       reply.code(400);
@@ -1850,9 +1853,22 @@ export function registerSessionRoutes(
       }
     } catch (err: unknown) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-      // Non-recursive mkdir: errors on EEXIST and does not follow symlinks for
-      // the leaf. session.workingDir is guaranteed to exist (live session).
-      await fs.mkdir(imageDir);
+      // Non-recursive mkdir: does not follow symlinks for the leaf.
+      // session.workingDir is guaranteed to exist (live session).
+      try {
+        await fs.mkdir(imageDir);
+      } catch (mkErr: unknown) {
+        // Concurrent uploads (a batch of photos) race to create .claude-images —
+        // the losers get EEXIST. Treat an already-present REAL directory as
+        // success, but re-verify it isn't a symlink a racing actor planted
+        // (preserve the symlink-safety guarantee above).
+        if ((mkErr as NodeJS.ErrnoException).code !== 'EEXIST') throw mkErr;
+        const raceStat = await fs.lstat(imageDir);
+        if (raceStat.isSymbolicLink() || !raceStat.isDirectory()) {
+          reply.code(403);
+          return createErrorResponse(ApiErrorCode.INVALID_INPUT, '.claude-images is not a regular directory');
+        }
+      }
     }
     // Date.now() collides on same-ms uploads from two tabs (last-write wins
     // silently). Append 8 hex chars so concurrent pastes get distinct names.
