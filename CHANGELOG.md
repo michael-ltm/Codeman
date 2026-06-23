@@ -1,5 +1,11 @@
 # aicodeman
 
+## 1.1.17
+
+### Patch Changes
+
+- Fix the connection indicator flashing "Sending 1B…" on every keystroke. The reliable input-delivery layer (1.1.16) marks each keystroke as briefly pending until its ACK arrives a few milliseconds later, which made the indicator flash on every character while typing on a healthy connection. The indicator is now hidden whenever the connection is healthy and only appears for an actual problem (reconnecting/offline), where it still shows the queued byte count so you know buffered input will be sent.
+
 ## 1.1.16
 
 ### Patch Changes
