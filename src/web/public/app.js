@@ -2358,26 +2358,27 @@ class CodemanApp {
     const text = this.$('connectionText');
     if (!indicator || !dot || !text) return;
 
-    const { bytes: totalBytes, count } = this._pendingBytes();
     const status = this._connectionStatus;
-    const hasQueue = count > 0;
 
-    // Connected with empty queue — hide
-    if ((status === 'connected' || status === 'connecting') && !hasQueue) {
+    // While the connection is healthy, never surface the input queue. With the
+    // reliable-delivery layer every keystroke is briefly "pending" until its ACK
+    // lands a few ms later — showing that flashed "Sending 1B…" on every single
+    // character. The indicator is only meaningful for an actual connection
+    // problem (reconnecting / offline), where the queued byte count reassures
+    // the user their typing is safely buffered and will be sent.
+    if (status === 'connected' || status === 'connecting') {
       indicator.style.display = 'none';
       return;
     }
 
+    const { bytes: totalBytes, count } = this._pendingBytes();
+    const hasQueue = count > 0;
     indicator.style.display = 'flex';
     dot.className = 'connection-dot';
 
-    const formatBytes = (b) => b < 1024 ? `${b}B` : `${(b / 1024).toFixed(1)}KB`;
+    const formatBytes = (b) => (b < 1024 ? `${b}B` : `${(b / 1024).toFixed(1)}KB`);
 
-    if (status === 'connected' && hasQueue) {
-      // Draining
-      dot.classList.add('draining');
-      text.textContent = `Sending ${formatBytes(totalBytes)}...`;
-    } else if (status === 'reconnecting') {
+    if (status === 'reconnecting') {
       dot.classList.add('reconnecting');
       text.textContent = hasQueue ? `Reconnecting (${formatBytes(totalBytes)} queued)` : 'Reconnecting...';
     } else {
