@@ -30,6 +30,12 @@ import { workflowRunWatcher } from '../../workflow-run-watcher.js';
 import { applyStatusLineConfig } from '../../hooks-config.js';
 import { getLifecycleLog } from '../../session-lifecycle-log.js';
 import {
+  buildAwayDigest,
+  resolveAwayDigestRange,
+  type AwayDigestSession,
+  type AwayDigestSubagent,
+} from '../away-digest.js';
+import {
   findSessionOrFail,
   formatUptime,
   parseBody,
@@ -51,6 +57,12 @@ const SCREENSHOTS_DIR = dataPath('screenshots');
 
 /** Cached CPU count — doesn't change at runtime */
 const CPU_COUNT = cpus().length;
+
+function parseOptionalNumber(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
 
 /** Get system CPU and memory usage */
 function getSystemStats(): {
@@ -413,6 +425,56 @@ export function registerSystemRoutes(
       daily: ctx.store.getDailyStats(30),
       totals: ctx.store.getAggregateStats(activeSessionTokens),
     };
+  });
+
+  app.get('/api/away-digest', async (req, reply) => {
+    const query = req.query as {
+      range?: string;
+      since?: string;
+      until?: string;
+      lastViewed?: string;
+    };
+
+    let range;
+    try {
+      range = resolveAwayDigestRange({
+        range: query.range,
+        since: parseOptionalNumber(query.since),
+        until: parseOptionalNumber(query.until),
+        lastViewed: parseOptionalNumber(query.lastViewed),
+      });
+    } catch (err) {
+      reply.code(400);
+      return createErrorResponse(ApiErrorCode.INVALID_INPUT, getErrorMessage(err));
+    }
+
+    const lifecycleLog = getLifecycleLog();
+    const lifecycleEntries = await lifecycleLog.query({
+      since: range.since,
+      limit: 1000,
+    });
+
+    const sessions: AwayDigestSession[] = Array.from(ctx.sessions.values()).map((session) => ({
+      id: session.id,
+      name: session.name,
+      status: session.status,
+      inputTokens: session.inputTokens,
+      outputTokens: session.outputTokens,
+      totalCost: session.totalCost,
+    }));
+
+    const runSummaries = Array.from(ctx.runSummaryTrackers.values()).map((tracker) => tracker.getSummary());
+    const digest = buildAwayDigest({
+      range,
+      lifecycleEntries,
+      runSummaries,
+      sessions,
+      dailyTokenStats: ctx.store.getDailyStats(30),
+      subagents: subagentWatcher.getRecentSubagents(60) as AwayDigestSubagent[],
+      now: range.until,
+    });
+
+    return { success: true, digest };
   });
 
   // ═══════════════════════════════════════════════════════════════

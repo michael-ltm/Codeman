@@ -13,6 +13,15 @@
  * @loadorder 11 of 15 — loaded after settings-ui.js, before session-ui.js
  */
 
+const AWAY_DIGEST_LAST_VIEWED_KEY = 'codeman-away-digest-last-viewed';
+const AWAY_DIGEST_SECTIONS = [
+  ['needsAttention', 'Needs Attention'],
+  ['completed', 'Completed'],
+  ['stillRunning', 'Still Running'],
+  ['idle', 'Idle'],
+  ['informational', 'Informational'],
+];
+
 Object.assign(CodemanApp.prototype, {
   _addActivityEntry(agentId, entry, maxSize = 50) {
     const activity = this.subagentActivity.get(agentId) || [];
@@ -241,6 +250,271 @@ Object.assign(CodemanApp.prototype, {
     this.openImagePopup(data);
   },
 
+
+  // ═══════════════════════════════════════════════════════════════
+  // Away Digest Modal
+  // ═══════════════════════════════════════════════════════════════
+
+  async openAwayDigest(range = 'since-last-visit') {
+    this.awayDigestRange = range;
+    this._awayDigestLoadedSuccessfully = false;
+    this._awayDigestSinceLastVisitGeneratedAt = undefined;
+    const modal = document.getElementById('awayDigestModal');
+    if (modal) modal.classList.add('active');
+    this.updateAwayDigestRangeControls();
+    await this.loadAwayDigest();
+  },
+
+  closeAwayDigest() {
+    const modal = document.getElementById('awayDigestModal');
+    const generatedAt = this._awayDigestSinceLastVisitGeneratedAt;
+    if (Number.isFinite(generatedAt)) {
+      try {
+        localStorage.setItem(AWAY_DIGEST_LAST_VIEWED_KEY, String(generatedAt));
+      } catch (err) {
+        console.warn('Failed to save away digest last-viewed marker:', err);
+      }
+    }
+    if (modal) modal.classList.remove('active');
+  },
+
+  setAwayDigestRange(range) {
+    this.awayDigestRange = range;
+    this._awayDigestLoadedSuccessfully = false;
+    this.updateAwayDigestRangeControls();
+    this.loadAwayDigest();
+  },
+
+  updateAwayDigestRangeControls() {
+    const range = this.awayDigestRange || 'since-last-visit';
+    document.querySelectorAll('[data-away-range]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.awayRange === range);
+    });
+    const customRange = document.getElementById('awayDigestCustomRange');
+    if (customRange) customRange.classList.toggle('active', range === 'custom');
+    if (range === 'custom') this.ensureAwayDigestCustomDefaults();
+  },
+
+  ensureAwayDigestCustomDefaults() {
+    const sinceInput = document.getElementById('awayDigestCustomSince');
+    const untilInput = document.getElementById('awayDigestCustomUntil');
+    if (!sinceInput || !untilInput) return;
+
+    const now = new Date();
+    if (!untilInput.value) untilInput.value = this.formatAwayDigestDateTimeLocal(now);
+    if (!sinceInput.value) {
+      const since = new Date(now.getTime() - 60 * 60 * 1000);
+      sinceInput.value = this.formatAwayDigestDateTimeLocal(since);
+    }
+  },
+
+  formatAwayDigestDateTimeLocal(date) {
+    const pad = value => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  },
+
+  async loadAwayDigest() {
+    const summaryEl = document.getElementById('awayDigestSummary');
+    const freshnessEl = document.getElementById('awayDigestFreshness');
+    const sectionsEl = document.getElementById('awayDigestSections');
+    if (summaryEl) summaryEl.innerHTML = '<div class="away-digest-loading">Loading digest...</div>';
+    if (freshnessEl) freshnessEl.textContent = '';
+    if (sectionsEl) sectionsEl.innerHTML = '';
+
+    try {
+      const range = this.awayDigestRange || 'since-last-visit';
+      const params = new URLSearchParams({ range });
+
+      if (range === 'since-last-visit') {
+        const lastViewed = this.readAwayDigestLastViewed();
+        if (Number.isFinite(lastViewed)) params.set('lastViewed', String(lastViewed));
+      }
+
+      if (range === 'custom') {
+        this.ensureAwayDigestCustomDefaults();
+        const since = this.readAwayDigestDateTimeInput('awayDigestCustomSince');
+        const until = this.readAwayDigestDateTimeInput('awayDigestCustomUntil');
+        if (!Number.isFinite(since)) {
+          throw new Error('Choose a custom start time');
+        }
+        params.set('since', String(since));
+        if (Number.isFinite(until)) params.set('until', String(until));
+      }
+
+      const response = await fetch(`/api/away-digest?${params.toString()}`);
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to load away digest');
+      }
+
+      this._awayDigestLoadedSuccessfully = true;
+      this._awayDigestGeneratedAt = data.digest.generatedAt;
+      if (range === 'since-last-visit') {
+        this._awayDigestSinceLastVisitGeneratedAt = data.digest.generatedAt;
+      }
+      this.renderAwayDigest(data.digest);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load away digest';
+      console.error('Failed to fetch away digest:', err);
+      if (summaryEl) summaryEl.innerHTML = '<div class="away-digest-load-error">Failed to load away digest</div>';
+      if (sectionsEl) {
+        sectionsEl.innerHTML = `<div class="empty-message">${escapeHtml(message)}</div>`;
+      }
+      this.showToast(message, 'error');
+    }
+  },
+
+  readAwayDigestLastViewed() {
+    try {
+      const value = localStorage.getItem(AWAY_DIGEST_LAST_VIEWED_KEY);
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  },
+
+  readAwayDigestDateTimeInput(id) {
+    const input = document.getElementById(id);
+    if (!input || !input.value) return undefined;
+    const parsed = Date.parse(input.value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  },
+
+  renderAwayDigest(digest) {
+    const summaryEl = document.getElementById('awayDigestSummary');
+    const freshnessEl = document.getElementById('awayDigestFreshness');
+    const sectionsEl = document.getElementById('awayDigestSections');
+    if (!summaryEl || !freshnessEl || !sectionsEl) return;
+
+    const inputTokens = digest.totals.inputTokens || 0;
+    const outputTokens = digest.totals.outputTokens || 0;
+    const estimatedCost = digest.totals.estimatedCost || 0;
+    summaryEl.innerHTML = `
+      <div class="away-digest-card">
+        <span class="away-digest-card-label">Needs Attention</span>
+        <span class="away-digest-card-value">${digest.totals.needsAttention}</span>
+      </div>
+      <div class="away-digest-card">
+        <span class="away-digest-card-label">Completed</span>
+        <span class="away-digest-card-value">${digest.totals.completed}</span>
+      </div>
+      <div class="away-digest-card">
+        <span class="away-digest-card-label">Active Sessions</span>
+        <span class="away-digest-card-value">${digest.totals.activeSessions}</span>
+      </div>
+      <div class="away-digest-card">
+        <span class="away-digest-card-label">Tokens</span>
+        <span class="away-digest-card-value">${this.formatTokens(inputTokens + outputTokens)}</span>
+        <span class="away-digest-card-cost">~$${estimatedCost.toFixed(2)}</span>
+      </div>
+    `;
+
+    const freshnessNotes = [];
+    if (digest.dataFreshness.runSummariesLiveOnly || digest.dataFreshness.subagentsLiveOnly) {
+      freshnessNotes.push('Run summaries and subagent completions use recent live state; lifecycle and token stats are persisted.');
+    }
+    if (digest.totals.tokenWindowPrecision === 'day') {
+      freshnessNotes.push('Token totals are aggregated at day precision.');
+    }
+    freshnessEl.textContent = freshnessNotes.join(' ');
+
+    sectionsEl.innerHTML = AWAY_DIGEST_SECTIONS
+      .map(([key, title]) => this.renderAwayDigestSection(title, digest.sections[key] || []))
+      .join('');
+    this.attachAwayDigestActions();
+  },
+
+  renderAwayDigestSection(title, items) {
+    const count = items.length;
+    const body = count
+      ? items.map(item => this.renderAwayDigestItem(item)).join('')
+      : '<div class="away-digest-empty">No items</div>';
+    return `
+      <section class="away-digest-section">
+        <div class="away-digest-section-title">
+          <h4>${escapeHtml(title)}</h4>
+          <span>${count}</span>
+        </div>
+        ${body}
+      </section>
+    `;
+  },
+
+  renderAwayDigestItem(item) {
+    const sourceLabel = this.formatAwayDigestSource(item.source);
+    const sessionLabel = item.sessionName || item.sessionId || '';
+    const detail = item.detail ? `<div class="away-digest-item-detail">${escapeHtml(item.detail)}</div>` : '';
+    const action = item.link ? `
+      <button class="away-digest-action"
+              data-away-link-type="${escapeHtml(item.link.type)}"
+              data-away-session-id="${escapeHtml(item.link.sessionId || '')}">
+        Open
+      </button>
+    ` : '';
+    return `
+      <article class="away-digest-item away-digest-${escapeHtml(item.severity)}">
+        <div class="away-digest-item-main">
+          <div class="away-digest-item-meta">
+            <span>${escapeHtml(this.formatAwayDigestTimestamp(item.timestamp))}</span>
+            <span>${escapeHtml(sourceLabel)}</span>
+            ${sessionLabel ? `<span>${escapeHtml(sessionLabel)}</span>` : ''}
+          </div>
+          <div class="away-digest-item-title">${escapeHtml(item.title)}</div>
+          ${detail}
+        </div>
+        ${action}
+      </article>
+    `;
+  },
+
+  attachAwayDigestActions() {
+    const sectionsEl = document.getElementById('awayDigestSections');
+    if (!sectionsEl) return;
+    sectionsEl.querySelectorAll('[data-away-link-type]').forEach(button => {
+      button.addEventListener('click', () => {
+        this.openAwayDigestItem(button.dataset.awayLinkType, button.dataset.awaySessionId || undefined);
+      });
+    });
+  },
+
+  async openAwayDigestItem(type, sessionId) {
+    if (type === 'session' && sessionId) {
+      await this.selectSession(sessionId);
+      this.closeAwayDigest();
+      return;
+    }
+    if (type === 'run_summary' && sessionId) {
+      await this.openRunSummary(sessionId);
+      this.closeAwayDigest();
+      return;
+    }
+    if (type === 'lifecycle') {
+      this.openLifecycleLog();
+      this.closeAwayDigest();
+    }
+  },
+
+  formatAwayDigestTimestamp(timestamp) {
+    if (!Number.isFinite(timestamp)) return '';
+    return new Date(timestamp).toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  },
+
+  formatAwayDigestSource(source) {
+    const labels = {
+      lifecycle: 'Lifecycle',
+      run_summary: 'Run Summary',
+      status: 'Status',
+      token_stats: 'Token Stats',
+      subagent: 'Subagent',
+    };
+    return labels[source] || source;
+  },
 
   // ═══════════════════════════════════════════════════════════════
   // Token Statistics Modal

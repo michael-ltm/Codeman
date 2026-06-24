@@ -434,11 +434,14 @@ html.mobile-init .file-browser-panel {
     height: 12px;
   }
 
-  /* Hide header settings gear and lifecycle log on mobile - settings moved to toolbar.
+  /* Hide header settings gear, lifecycle log, and away digest on mobile - settings
+     moved to toolbar; away digest is a secondary informational control that doesn't
+     belong on the cramped phone header.
      (The attachments button is opt-in / default-hidden everywhere via its own
      --hidden marker, so it needs no mobile-specific rule here.) */
   .btn-icon-header.btn-settings,
-  .btn-icon-header.btn-lifecycle-log {
+  .btn-icon-header.btn-lifecycle-log,
+  .btn-icon-header.btn-away-digest {
     display: none !important;
   }
 
@@ -1161,6 +1164,44 @@ html.mobile-init .file-browser-panel {
     min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .away-digest-modal {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .away-digest-ranges {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+  }
+
+  .away-digest-ranges .filter-btn {
+    min-height: 38px;
+    padding: 0.4rem 0.5rem;
+  }
+
+  .away-digest-custom-range,
+  .away-digest-custom-range.active {
+    grid-template-columns: 1fr;
+  }
+
+  .away-digest-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .away-digest-item {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .away-digest-action {
+    width: 100%;
+    min-height: 38px;
   }
 
   .modal-footer,
