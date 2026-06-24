@@ -17,4 +17,5 @@ export { registerRalphRoutes } from './ralph-routes.js';
 export { registerPlanRoutes } from './plan-routes.js';
 export { registerOrchestratorRoutes } from './orchestrator-routes.js';
 export { registerClipboardRoutes } from './clipboard-routes.js';
+export { registerSearchRoutes } from './search-routes.js';
 export { registerWsRoutes } from './ws-routes.js';

@@ -312,7 +312,46 @@
             <div class="welcome-qr-url" id="welcomeQrUrl"></div>
           </div>
           <div class="history-sessions" id="historySessions" style="display:none">
-            <h3 class="history-title">Resume Conversation</h3>
+            <div class="search-panel" id="searchPanel">
+              <div class="search-input-row">
+                <input
+                  type="search"
+                  id="searchInput"
+                  class="search-input"
+                  placeholder="Search sessions, events, files…"
+                  autocomplete="off"
+                  spellcheck="false"
+                  maxlength="200"
+                  aria-label="Search across sessions"
+                />
+                <button type="button" id="searchClearBtn" class="search-clear-btn" aria-label="Clear search" hidden>×</button>
+              </div>
+              <div class="search-filters" id="searchFilters">
+                <div class="search-filter-group" role="group" aria-label="Source type filter">
+                  <button type="button" class="search-filter-chip active" data-type-filter="session">Sessions</button>
+                  <button type="button" class="search-filter-chip active" data-type-filter="event">Events</button>
+                  <button type="button" class="search-filter-chip active" data-type-filter="file">Files</button>
+                </div>
+                <div class="search-filter-group search-filter-secondary">
+                  <select id="searchCaseFilter" class="search-select" aria-label="Filter by case">
+                    <option value="">All cases</option>
+                  </select>
+                  <select id="searchStatusFilter" class="search-select" aria-label="Filter by session status">
+                    <option value="">Any status</option>
+                    <option value="active">Active</option>
+                    <option value="history">History</option>
+                  </select>
+                  <select id="searchDateFilter" class="search-select" aria-label="Filter by date range">
+                    <option value="">Any time</option>
+                    <option value="1">Past 24h</option>
+                    <option value="7">Past 7 days</option>
+                    <option value="30">Past 30 days</option>
+                  </select>
+                </div>
+              </div>
+              <div class="search-results" id="searchResults" hidden></div>
+            </div>
+            <h3 class="history-title" id="historyTitle">Resume Conversation</h3>
             <div class="history-list" id="historyList"></div>
           </div>
           <p class="welcome-hint">Or press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to start</p>

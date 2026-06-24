@@ -983,6 +983,7 @@ Object.assign(CodemanApp.prototype, {
       overlay.classList.add('visible');
       this.loadTunnelStatus();
       this.loadHistorySessions();
+      this.initSearchPanel();
     }
     // Home screen has no input target — hide the CJK textarea (activeSessionId
     // is null by the time we get here). Guarded: defined on the app object.
@@ -2250,6 +2251,341 @@ Object.assign(CodemanApp.prototype, {
           } catch {}
         }
       }
+    }
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════
+// COD-9 — Cross-session search (folded into the welcome history panel)
+// Consumes GET /api/search; renders grouped result cards with jump-to actions.
+// ═══════════════════════════════════════════════════════════════
+
+(function (global) {
+  const SEARCH_DEBOUNCE_MS = 250;
+  const SEARCH_LIMIT = 60;
+  const SOURCE_LABELS = { session: 'Sessions', event: 'Events', file: 'Files' };
+
+  /** Human-friendly relative-ish timestamp matching the history panel's style. */
+  function formatSearchTime(ts) {
+    if (!Number.isFinite(ts)) return '';
+    const d = new Date(ts);
+    return (
+      d.toLocaleDateString('en', { month: 'short', day: 'numeric' }) +
+      ' ' +
+      d.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false })
+    );
+  }
+
+  global.CodemanSearch = { SEARCH_DEBOUNCE_MS, SEARCH_LIMIT, SOURCE_LABELS, formatSearchTime };
+})(window);
+
+Object.assign(CodemanApp.prototype, {
+  /**
+   * Wire up the search box, filter chips, and selects inside the welcome
+   * history panel. Idempotent — safe to call every time the overlay opens.
+   */
+  initSearchPanel() {
+    const input = document.getElementById('searchInput');
+    if (!input || this._searchPanelWired) {
+      // Even when already wired, refresh the case dropdown (cases may have loaded since).
+      if (this._searchPanelWired) this._populateSearchCaseFilter();
+      return;
+    }
+    this._searchPanelWired = true;
+
+    // Active source-type filter set (mirrors the chip .active state → types= param).
+    this._searchTypes = new Set(['session', 'event', 'file']);
+    this._searchSecondary = { caseLabel: '', status: '', days: '' };
+    this._searchDebounceTimer = null;
+    this._searchSeq = 0;
+    this._searchLastData = null;
+
+    const clearBtn = document.getElementById('searchClearBtn');
+    const results = document.getElementById('searchResults');
+
+    input.addEventListener('input', () => {
+      if (clearBtn) clearBtn.hidden = input.value.length === 0;
+      this._scheduleSearch();
+    });
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && input.value) {
+        ev.stopPropagation();
+        this._clearSearch();
+      }
+    });
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => this._clearSearch());
+    }
+
+    document.querySelectorAll('#searchFilters .search-filter-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const t = chip.dataset.typeFilter;
+        // Keep at least one type selected.
+        if (this._searchTypes.has(t) && this._searchTypes.size === 1) return;
+        if (this._searchTypes.has(t)) {
+          this._searchTypes.delete(t);
+          chip.classList.remove('active');
+        } else {
+          this._searchTypes.add(t);
+          chip.classList.add('active');
+        }
+        this._runSearch();
+      });
+    });
+
+    const caseSel = document.getElementById('searchCaseFilter');
+    const statusSel = document.getElementById('searchStatusFilter');
+    const dateSel = document.getElementById('searchDateFilter');
+    if (caseSel) {
+      caseSel.addEventListener('change', () => {
+        this._searchSecondary.caseLabel = caseSel.value;
+        this._renderSearch(this._searchLastData);
+      });
+    }
+    if (statusSel) {
+      statusSel.addEventListener('change', () => {
+        this._searchSecondary.status = statusSel.value;
+        this._renderSearch(this._searchLastData);
+      });
+    }
+    if (dateSel) {
+      dateSel.addEventListener('change', () => {
+        this._searchSecondary.days = dateSel.value;
+        this._renderSearch(this._searchLastData);
+      });
+    }
+
+    this._populateSearchCaseFilter();
+    if (results) results.hidden = true;
+  },
+
+  /** Fill the case <select> from loaded cases (#caseName values). */
+  _populateSearchCaseFilter() {
+    const sel = document.getElementById('searchCaseFilter');
+    if (!sel) return;
+    const cases = Array.isArray(this.cases) ? this.cases : [];
+    const names = Array.from(new Set(cases.map((c) => c && c.name).filter(Boolean))).sort();
+    const current = sel.value;
+    // Rebuild options (keep the "All cases" placeholder).
+    sel.innerHTML = '';
+    const all = document.createElement('option');
+    all.value = '';
+    all.textContent = 'All cases';
+    sel.appendChild(all);
+    for (const name of names) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = '#' + name;
+      sel.appendChild(opt);
+    }
+    if (current && names.includes(current)) sel.value = current;
+  },
+
+  /** Debounced trigger from the input event. */
+  _scheduleSearch() {
+    clearTimeout(this._searchDebounceTimer);
+    this._searchDebounceTimer = setTimeout(() => this._runSearch(), window.CodemanSearch.SEARCH_DEBOUNCE_MS);
+  },
+
+  _clearSearch() {
+    const input = document.getElementById('searchInput');
+    const clearBtn = document.getElementById('searchClearBtn');
+    if (input) input.value = '';
+    if (clearBtn) clearBtn.hidden = true;
+    this._searchLastData = null;
+    this._renderSearch(null);
+  },
+
+  /** Execute the federated search request and render the result. */
+  async _runSearch() {
+    const input = document.getElementById('searchInput');
+    if (!input) return;
+    const q = input.value.trim();
+    if (q.length === 0) {
+      this._searchLastData = null;
+      this._renderSearch(null);
+      return;
+    }
+
+    const types = Array.from(this._searchTypes);
+    const params = new URLSearchParams();
+    params.set('q', q.slice(0, 200));
+    if (types.length > 0 && types.length < 3) params.set('types', types.join(','));
+    params.set('limit', String(window.CodemanSearch.SEARCH_LIMIT));
+
+    const seq = ++this._searchSeq;
+    const data = await this._apiJson('/api/search?' + params.toString());
+    // Drop stale responses (a newer query already fired).
+    if (seq !== this._searchSeq) return;
+
+    if (!data) {
+      // null = request error or 400 (bad input). Show an empty/error state.
+      this._searchLastData = { query: q, groups: [], totalResults: 0, truncated: false, _error: true };
+    } else {
+      this._searchLastData = data;
+    }
+    this._renderSearch(this._searchLastData);
+  },
+
+  /**
+   * Apply client-side secondary filters (case / status / date) to a group's
+   * results. Type filtering already happened server-side via types=.
+   */
+  _applySecondaryFilters(results) {
+    const { caseLabel, status, days } = this._searchSecondary;
+    let out = results;
+    if (caseLabel) {
+      const want = '#' + caseLabel;
+      out = out.filter((r) => (r.sessionName || '').includes(want) || r.sessionName === caseLabel);
+    }
+    if (status) {
+      const activeIds = new Set((this.sessionOrder || []).concat(Object.keys(this.sessions || {})));
+      out = out.filter((r) => {
+        const isActive = activeIds.has(r.sessionId);
+        return status === 'active' ? isActive : !isActive;
+      });
+    }
+    if (days) {
+      const cutoff = Date.now() - Number(days) * 24 * 60 * 60 * 1000;
+      out = out.filter((r) => Number.isFinite(r.timestamp) && r.timestamp >= cutoff);
+    }
+    return out;
+  },
+
+  /** Render the grouped result cards (or empty/loading states). */
+  _renderSearch(data) {
+    const results = document.getElementById('searchResults');
+    const historyTitle = document.getElementById('historyTitle');
+    const historyList = document.getElementById('historyList');
+    if (!results) return;
+
+    const searching = !!data;
+    // Hide the plain "Resume Conversation" history list while a search is active.
+    if (historyTitle) historyTitle.style.display = searching ? 'none' : '';
+    if (historyList) historyList.style.display = searching ? 'none' : '';
+
+    results.innerHTML = '';
+    if (!data) {
+      results.hidden = true;
+      return;
+    }
+    results.hidden = false;
+
+    if (data._error) {
+      const empty = document.createElement('div');
+      empty.className = 'search-empty';
+      empty.textContent = 'Search unavailable — check the query and try again.';
+      results.appendChild(empty);
+      return;
+    }
+
+    // Apply secondary (client-side) filters and recompute shown total.
+    const groups = (data.groups || [])
+      .map((g) => ({ type: g.type, results: this._applySecondaryFilters(g.results || []) }))
+      .filter((g) => g.results.length > 0);
+
+    const shownTotal = groups.reduce((n, g) => n + g.results.length, 0);
+
+    if (shownTotal === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'search-empty';
+      empty.textContent = 'No results for "' + (data.query || '') + '"';
+      results.appendChild(empty);
+      return;
+    }
+
+    for (const group of groups) {
+      const header = document.createElement('div');
+      header.className = 'search-group-header';
+      const label = document.createElement('span');
+      label.className = 'search-group-label';
+      label.textContent = window.CodemanSearch.SOURCE_LABELS[group.type] || group.type;
+      const count = document.createElement('span');
+      count.className = 'search-group-count';
+      count.textContent = String(group.results.length);
+      header.append(label, count);
+      results.appendChild(header);
+
+      for (const r of group.results) {
+        results.appendChild(this._buildSearchResultCard(r));
+      }
+    }
+
+    if (data.truncated) {
+      const trunc = document.createElement('div');
+      trunc.className = 'search-truncated';
+      trunc.textContent = 'Showing the top matches — refine your search to narrow results.';
+      results.appendChild(trunc);
+    }
+  },
+
+  /** Build a single result card DOM node wired to its jump-to action. */
+  _buildSearchResultCard(r) {
+    const card = document.createElement('div');
+    card.className = 'search-result-card';
+    card.dataset.type = r.type;
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+
+    const topRow = document.createElement('div');
+    topRow.className = 'search-result-top';
+
+    const badge = document.createElement('span');
+    badge.className = 'search-result-badge search-badge-' + r.type;
+    badge.textContent = (window.CodemanSearch.SOURCE_LABELS[r.type] || r.type).replace(/s$/, '');
+
+    const name = document.createElement('span');
+    name.className = 'search-result-name';
+    name.textContent = r.sessionName || r.sessionId || '(session)';
+
+    const time = document.createElement('span');
+    time.className = 'search-result-time';
+    time.textContent = window.CodemanSearch.formatSearchTime(r.timestamp);
+
+    topRow.append(badge, name, time);
+
+    const snippet = document.createElement('div');
+    snippet.className = 'search-result-snippet';
+    snippet.textContent = r.snippet || '';
+
+    card.append(topRow, snippet);
+
+    const jump = () => this._jumpToSearchResult(r);
+    card.addEventListener('click', jump);
+    card.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        jump();
+      }
+    });
+
+    return card;
+  },
+
+  /**
+   * Navigate to a search result by jumpTo.kind, reusing the existing app methods:
+   *   session     → selectSession(sessionId)        (open/switch to the session)
+   *   run-summary → openRunSummary(sessionId)        (session options → summary tab)
+   *   file-preview→ openFilePreview(path, sessionId, attachmentId)
+   */
+  _jumpToSearchResult(r) {
+    const jt = r && r.jumpTo;
+    if (!jt) return;
+    // Leaving the welcome overlay so the target surface is visible.
+    if (typeof this.hideWelcome === 'function') this.hideWelcome();
+
+    try {
+      if (jt.kind === 'run-summary') {
+        this.openRunSummary(jt.sessionId);
+      } else if (jt.kind === 'file-preview') {
+        this.openFilePreview(jt.relativePath || '', jt.sessionId, jt.targetId || null);
+      } else {
+        // 'session' (default)
+        this.selectSession(jt.sessionId);
+      }
+    } catch (err) {
+      console.error('[search] jump failed', err);
     }
   },
 });
