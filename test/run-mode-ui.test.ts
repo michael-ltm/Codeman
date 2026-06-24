@@ -143,3 +143,56 @@ describe('Codex quick start settings', () => {
     expect(selected).toEqual(['sess-1']);
   });
 });
+
+describe('Gemini quick start', () => {
+  // Regression guard for the ApiResponse-envelope unwrap in runGemini(): the
+  // status check must read `.data.available` and the quick-start response must
+  // read `.data.sessionId`. Reading the raw shape (pre-fix) silently bails on
+  // the status check and never selects the new tab — exactly the two blockers
+  // caught in PR #134 review.
+  it('drives runGemini() through the {success,data} envelope and selects the new session', async () => {
+    const elements: Record<string, any> = {
+      quickStartCase: { value: 'gemini-case' },
+    };
+    const requests: Array<{ url: string; body?: any }> = [];
+    const CodemanApp = function CodemanApp(this: any) {};
+
+    const context = vm.createContext({
+      CodemanApp,
+      localStorage: { getItem: () => null, setItem: () => {} },
+      document: { getElementById: (id: string) => elements[id] ?? null },
+      // Mock responses use the real wire shape: the server.ts preSerialization
+      // hook wraps raw route payloads into the { success, data } envelope.
+      fetch: async (url: string, init?: { body?: string }) => {
+        requests.push({ url, body: init?.body ? JSON.parse(init.body) : undefined });
+        if (url === '/api/gemini/status') return { json: async () => ({ success: true, data: { available: true } }) };
+        if (url === '/api/quick-start')
+          return { json: async () => ({ success: true, data: { sessionId: 'sess-gm' } }) };
+        throw new Error(`unexpected fetch: ${url}`);
+      },
+      console,
+    });
+
+    const sessionUi = readFileSync(resolve(import.meta.dirname, '../src/web/public/session-ui.js'), 'utf8');
+    vm.runInContext(sessionUi, context, { filename: 'session-ui.js' });
+
+    const app = new (CodemanApp as any)();
+    app.terminal = { clear: () => {}, writeln: () => {}, focus: () => {} };
+    app.loadAppSettingsFromStorage = () => ({});
+    app.getCaseSettings = () => ({});
+    app.buildEnvOverrides = () => ({});
+    const selected: string[] = [];
+    app.selectSession = async (id: string) => {
+      selected.push(id);
+    };
+
+    await app.runGemini();
+
+    expect(requests.find((req) => req.url === '/api/quick-start')?.body).toMatchObject({
+      caseName: 'gemini-case',
+      mode: 'gemini',
+      geminiConfig: { approvalMode: 'yolo' },
+    });
+    expect(selected).toEqual(['sess-gm']);
+  });
+});

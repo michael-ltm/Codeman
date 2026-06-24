@@ -1178,6 +1178,11 @@ body.solo-mode .btn-lifecycle-log {
   color: #a855f7;
 }
 
+.session-tab .tab-mode.gemini {
+  background: rgba(138, 180, 248, 0.2);
+  color: #8ab4f8;
+}
+
 /* Timer Banner - Compact */
 .timer-banner {
   display: flex;

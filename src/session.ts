@@ -157,14 +157,15 @@ function getModeLabel(mode: SessionMode): string {
  * that we strip so the browser keeps everything in the main buffer with scrollback
  * reachable (the strip runs on both the live stream and the buffer replay).
  *
- * Codex and Claude Code are known, controlled TUIs that repaint via cursor
- * positioning, so dropping the alt-screen switch is safe — content stays in the
- * normal buffer. Excluded: `shell` (arbitrary programs like vim/less/htop
- * legitimately need the alt screen) and `opencode` (renders its own TUI that
- * may rely on it). Keep parity with the replay-side strip in session-routes.ts.
+ * Codex, Claude Code, and Gemini are known, controlled (Ink/React) TUIs that
+ * repaint via cursor positioning, so dropping the alt-screen switch is safe —
+ * content stays in the normal buffer. Excluded: `shell` (arbitrary programs like
+ * vim/less/htop legitimately need the alt screen) and `opencode` (renders its own
+ * TUI that may rely on it). Keep parity with the replay-side strip in
+ * session-routes.ts.
  */
 export function isAltScreenStripMode(mode: SessionMode): boolean {
-  return mode === 'codex' || mode === 'claude';
+  return mode === 'codex' || mode === 'claude' || mode === 'gemini';
 }
 
 // Note: Claude CLI PATH resolution moved to session-cli-builder.ts (buildClaudeEnv)

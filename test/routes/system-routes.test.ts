@@ -177,7 +177,7 @@ describe('system-routes', () => {
       });
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.message ?? body.error).toBeTruthy();
+      expect(body.success).toBe(false);
     });
   });
 
@@ -432,7 +432,7 @@ describe('system-routes', () => {
       });
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.message ?? body.error).toBeTruthy();
+      expect(body.success).toBe(false);
     });
 
     it('saves lastUsedCase as partial update without overwriting other settings', async () => {
@@ -530,7 +530,7 @@ describe('system-routes', () => {
       });
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.message ?? body.error).toBeTruthy();
+      expect(body.success).toBe(false);
     });
   });
 
@@ -587,7 +587,7 @@ describe('system-routes', () => {
       });
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.message ?? body.error).toBeTruthy();
+      expect(body.success).toBe(false);
     });
   });
 

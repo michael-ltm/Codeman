@@ -720,7 +720,7 @@ function setCodexEnvVars(tmuxCmd: string, muxName: string): void {
  * Gemini Pro/Ultra users usually authenticate via cached Google login; these
  * variables cover API-key and Vertex AI paths without putting secrets in ps.
  */
-function setGeminiEnvVars(muxName: string): void {
+function setGeminiEnvVars(tmuxCmd: string, muxName: string): void {
   const sensitiveVars = [
     'GEMINI_API_KEY',
     'GEMINI_MODEL',
@@ -735,7 +735,7 @@ function setGeminiEnvVars(muxName: string): void {
     if (val) {
       const escaped = val.replace(/'/g, "'\\''");
       try {
-        execSync(`tmux setenv -t '${muxName}' ${key} '${escaped}'`, {
+        execSync(`${tmuxCmd} setenv -t '${muxName}' ${key} '${escaped}'`, {
           encoding: 'utf8',
           timeout: EXEC_TIMEOUT_MS,
           stdio: ['pipe', 'pipe', 'pipe'],
@@ -929,8 +929,8 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
     const exports = [
       'export LANG=en_US.UTF-8',
       'export LC_ALL=en_US.UTF-8',
-      mode === 'codex' ? 'export COLORTERM=truecolor' : 'unset COLORTERM',
-      ...(mode === 'codex' ? ['unset NO_COLOR'] : []),
+      mode === 'codex' || mode === 'gemini' ? 'export COLORTERM=truecolor' : 'unset COLORTERM',
+      ...(mode === 'codex' || mode === 'gemini' ? ['unset NO_COLOR'] : []),
       'export CODEMAN_MUX=1',
       `export CODEMAN_SESSION_ID=${sessionId}`,
       `export CODEMAN_MUX_NAME=${muxName}`,
@@ -1034,7 +1034,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
    * Configure Gemini-specific environment on a tmux session.
    */
   private _configureGemini(muxName: string): void {
-    setGeminiEnvVars(muxName);
+    setGeminiEnvVars(this.tmux(), muxName);
   }
 
   /**

@@ -91,6 +91,14 @@ export const DEPENDENCY_REGISTRY: ToolDependency[] = [
     resolvers: [{ match: ALL, resolver: { kind: 'path', bins: ['codex'], versionArg: '--version' } }],
   },
   {
+    id: 'gemini',
+    label: 'Gemini CLI',
+    category: 'core',
+    required: false,
+    usedBy: ['Gemini sessions'],
+    resolvers: [{ match: ALL, resolver: { kind: 'path', bins: ['gemini'], versionArg: '--version' } }],
+  },
+  {
     id: 'libreoffice',
     label: 'LibreOffice',
     category: 'office',

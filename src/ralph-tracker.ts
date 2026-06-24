@@ -1059,6 +1059,10 @@ export class RalphTracker extends EventEmitter {
       planVersion: this.planTracker.planVersion,
       planHistoryLength: this.planTracker.getPlanHistory().length,
       completionConfidence: this._lastCompletionConfidence,
+      // Surface the live todo-config so it persists (toState) and reads back into
+      // the Session Options modal (broadcast) — mirrors maxIterations round-trip.
+      maxTodos: this._maxTodos,
+      todoExpirationMinutes: this.todoExpirationMinutes,
     };
   }
 
@@ -2345,6 +2349,12 @@ export class RalphTracker extends EventEmitter {
       ...loopState,
       enabled: loopState.enabled ?? false,
     };
+    // Restore the per-session todo-config into the live fields used by the hot
+    // paths (eviction cap + expiry). Setters ignore non-positive values.
+    if (typeof loopState.maxTodos === 'number') this.setMaxTodos(loopState.maxTodos);
+    if (typeof loopState.todoExpirationMinutes === 'number') {
+      this.setTodoExpirationMinutes(loopState.todoExpirationMinutes);
+    }
     this._todos.clear();
     for (const todo of todos) {
       this._todos.set(todo.id, {

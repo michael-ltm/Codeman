@@ -653,7 +653,7 @@ Object.assign(CodemanApp.prototype, {
 
     try {
       const statusRes = await fetch('/api/gemini/status');
-      const status = await statusRes.json();
+      const status = (await statusRes.json()).data;
       if (!status.available) {
         this.terminal.writeln('\x1b[1;31m Gemini CLI not found.\x1b[0m');
         this.terminal.writeln('\x1b[90m Install with: npm install -g @google/gemini-cli\x1b[0m');
@@ -674,8 +674,8 @@ Object.assign(CodemanApp.prototype, {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Failed to start Gemini');
 
-      if (data.sessionId) {
-        await this.selectSession(data.sessionId);
+      if (data.data.sessionId) {
+        await this.selectSession(data.data.sessionId);
       }
 
       this.terminal.focus();
@@ -796,6 +796,8 @@ Object.assign(CodemanApp.prototype, {
         enabled: ralphState?.loop?.enabled ?? session.ralphLoop?.enabled ?? false,
         completionPhrase: ralphState?.loop?.completionPhrase || session.ralphLoop?.completionPhrase || '',
         maxIterations: ralphState?.loop?.maxIterations || session.ralphLoop?.maxIterations || 0,
+        maxTodos: ralphState?.loop?.maxTodos || session.ralphLoop?.maxTodos,
+        todoExpirationMinutes: ralphState?.loop?.todoExpirationMinutes || session.ralphLoop?.todoExpirationMinutes,
       });
     }
 

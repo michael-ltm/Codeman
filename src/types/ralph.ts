@@ -90,6 +90,10 @@ export interface RalphTrackerState {
   cycleCount: number;
   /** Maximum iterations if detected */
   maxIterations: number | null;
+  /** Max todos retained for this session before FIFO eviction (persisted; default = global cap) */
+  maxTodos?: number;
+  /** Todo auto-expiry in minutes (persisted; default = global TODO_EXPIRY_MS) */
+  todoExpirationMinutes?: number;
   /** Timestamp of last activity */
   lastActivity: number;
   /** Elapsed hours if detected */
