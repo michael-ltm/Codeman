@@ -48,6 +48,7 @@ import {
   type OpenCodeConfig,
   type CodexConfig,
   type EffortLevel,
+  type GeminiConfig,
 } from './types.js';
 import type { TerminalMultiplexer, MuxSession } from './mux-interface.js';
 import { TaskTracker, type BackgroundTask } from './task-tracker.js';
@@ -133,7 +134,22 @@ const NEWLINE_SPLIT_PATTERN = /\r?\n/;
 
 /** True for external-CLI run modes (non-Claude) that use their own TUI and output format. */
 export function isExternalCliMode(mode: SessionMode): boolean {
-  return mode === 'opencode' || mode === 'codex';
+  return mode === 'opencode' || mode === 'codex' || mode === 'gemini';
+}
+
+function getModeLabel(mode: SessionMode): string {
+  switch (mode) {
+    case 'opencode':
+      return 'OpenCode';
+    case 'codex':
+      return 'Codex';
+    case 'gemini':
+      return 'Gemini';
+    case 'shell':
+      return 'Shell';
+    case 'claude':
+      return 'Claude';
+  }
 }
 
 /**
@@ -351,6 +367,8 @@ export class Session extends EventEmitter {
   private _openCodeConfig: OpenCodeConfig | undefined;
   // Codex configuration (only for mode === 'codex')
   private _codexConfig: CodexConfig | undefined;
+  // Gemini configuration (only for mode === 'gemini')
+  private _geminiConfig: GeminiConfig | undefined;
   private _resumeSessionId: string | undefined;
 
   // Ephemeral env overrides (e.g., CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS). Exported by tmux
@@ -421,6 +439,8 @@ export class Session extends EventEmitter {
       openCodeConfig?: OpenCodeConfig;
       /** Codex configuration (only for mode === 'codex') */
       codexConfig?: CodexConfig;
+      /** Gemini configuration (only for mode === 'gemini') */
+      geminiConfig?: GeminiConfig;
       /** Resume a previous Claude conversation (used after server reboot) */
       resumeSessionId?: string;
       /** Extra env vars exported to the CLI at spawn time (no disk persistence) */
@@ -479,6 +499,11 @@ export class Session extends EventEmitter {
     // Apply Codex configuration
     if (config.codexConfig) {
       this._codexConfig = config.codexConfig;
+    }
+
+    // Apply Gemini configuration
+    if (config.geminiConfig) {
+      this._geminiConfig = config.geminiConfig;
     }
 
     // Apply env overrides (exported at spawn, not persisted to disk).
@@ -985,6 +1010,7 @@ export class Session extends EventEmitter {
       cliLatestVersion: this._cliLatestVersion || undefined,
       openCodeConfig: this._openCodeConfig,
       codexConfig: this._codexConfig,
+      geminiConfig: this._geminiConfig,
       resumeSessionId: this._resumeSessionId,
       effort: this._effort,
       attachmentHistory: this.attachmentHistory.length > 0 ? this.attachmentHistory : undefined,
@@ -1224,7 +1250,7 @@ export class Session extends EventEmitter {
 
     this._resetBuffers();
 
-    const modeLabel = this.mode === 'opencode' ? 'OpenCode' : this.mode === 'codex' ? 'Codex' : 'Claude';
+    const modeLabel = getModeLabel(this.mode);
     console.log(
       `[Session] Starting interactive ${modeLabel} session` + (this._useMux ? ` (with ${this._mux!.backend})` : '')
     );
@@ -1243,6 +1269,7 @@ export class Session extends EventEmitter {
             allowedTools: this._allowedTools,
             openCodeConfig: this._openCodeConfig,
             codexConfig: this._codexConfig,
+            geminiConfig: this._geminiConfig,
             resumeSessionId: this._resumeSessionId,
             envOverrides: this._envOverrides,
             effort: this._effort,
@@ -1258,6 +1285,7 @@ export class Session extends EventEmitter {
             allowedTools: this._allowedTools,
             openCodeConfig: this._openCodeConfig,
             codexConfig: this._codexConfig,
+            geminiConfig: this._geminiConfig,
             resumeSessionId: this._resumeSessionId,
             envOverrides: this._envOverrides,
             effort: this._effort,
@@ -1330,6 +1358,10 @@ export class Session extends EventEmitter {
       // Codex sessions require tmux for OPENAI_API_KEY injection via setenv
       if (this.mode === 'codex') {
         throw new Error('Codex sessions require tmux. Direct PTY fallback is not supported.');
+      }
+      // Gemini sessions require tmux for Gemini/Google auth env injection via setenv
+      if (this.mode === 'gemini') {
+        throw new Error('Gemini sessions require tmux. Direct PTY fallback is not supported.');
       }
       try {
         // Pass --session-id to use the SAME ID as the Codeman session

@@ -2126,6 +2126,9 @@ export class WebServer extends EventEmitter {
               muxSession: muxSession, // Pass the existing session so startInteractive() can attach to it
               claudeMode: recoveryClaudeMode.claudeMode,
               allowedTools: recoveryClaudeMode.allowedTools,
+              openCodeConfig: muxSession.mode === 'opencode' ? savedState?.openCodeConfig : undefined,
+              codexConfig: muxSession.mode === 'codex' ? savedState?.codexConfig : undefined,
+              geminiConfig: muxSession.mode === 'gemini' ? savedState?.geminiConfig : undefined,
               envOverrides: savedEnvOverrides,
               effort: savedState?.effort,
               attachmentHistory: savedAttachmentHistory,

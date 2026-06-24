@@ -41,9 +41,17 @@ import {
   type OpenCodeConfig,
   type CodexConfig,
   type EffortLevel,
+  type GeminiConfig,
 } from './types.js';
 import { buildEffortCliArgs } from './session-cli-builder.js';
-import { wrapWithNice, SAFE_PATH_PATTERN, findClaudeDir, resolveOpenCodeDir, resolveCodexDir } from './utils/index.js';
+import {
+  wrapWithNice,
+  SAFE_PATH_PATTERN,
+  findClaudeDir,
+  resolveOpenCodeDir,
+  resolveCodexDir,
+  resolveGeminiDir,
+} from './utils/index.js';
 import type {
   TerminalMultiplexer,
   MuxSession,
@@ -572,6 +580,35 @@ export function buildCodexCommand(config?: CodexConfig): string {
 }
 
 /**
+ * Build the Gemini CLI command with appropriate flags.
+ *
+ * `--skip-trust` avoids a first-run workspace trust prompt inside Codeman.
+ * Approval mode defaults to `yolo` for parity with Codeman's Claude default
+ * of `--dangerously-skip-permissions`; users can override it later through
+ * Gemini config once Codeman exposes richer Gemini settings.
+ */
+function buildGeminiCommand(config?: GeminiConfig): string {
+  const parts = ['gemini', '--skip-trust'];
+
+  const approvalMode = config?.approvalMode || 'yolo';
+  if (['default', 'auto_edit', 'yolo', 'plan'].includes(approvalMode)) {
+    parts.push('--approval-mode', approvalMode);
+  }
+
+  if (config?.model) {
+    const safeModel = /^[a-zA-Z0-9._\-/]+$/.test(config.model) ? config.model : undefined;
+    if (safeModel) parts.push('--model', safeModel);
+  }
+
+  if (config?.resumeSession) {
+    const safeId = /^[a-zA-Z0-9._-]+$/.test(config.resumeSession) ? config.resumeSession : undefined;
+    if (safeId) parts.push('--resume', safeId);
+  }
+
+  return parts.join(' ');
+}
+
+/**
  * Build the spawn command for any session mode.
  * Shared by createSession() and respawnPane() to avoid duplication.
  */
@@ -597,6 +634,7 @@ function buildSpawnCommand(options: {
   allowedTools?: string;
   openCodeConfig?: OpenCodeConfig;
   codexConfig?: CodexConfig;
+  geminiConfig?: GeminiConfig;
   resumeSessionId?: string;
   effort?: EffortLevel;
 }): string {
@@ -623,6 +661,9 @@ function buildSpawnCommand(options: {
   }
   if (options.mode === 'codex') {
     return buildCodexCommand(options.codexConfig);
+  }
+  if (options.mode === 'gemini') {
+    return buildGeminiCommand(options.geminiConfig);
   }
   return '$SHELL';
 }
@@ -663,6 +704,38 @@ function setCodexEnvVars(tmuxCmd: string, muxName: string): void {
       const escaped = val.replace(/'/g, "'\\''");
       try {
         execSync(`${tmuxCmd} setenv -t '${muxName}' ${key} '${escaped}'`, {
+          encoding: 'utf8',
+          timeout: EXEC_TIMEOUT_MS,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } catch {
+        /* Non-critical — key may not be needed */
+      }
+    }
+  }
+}
+
+/**
+ * Set sensitive environment variables for Gemini on a tmux session via setenv.
+ * Gemini Pro/Ultra users usually authenticate via cached Google login; these
+ * variables cover API-key and Vertex AI paths without putting secrets in ps.
+ */
+function setGeminiEnvVars(muxName: string): void {
+  const sensitiveVars = [
+    'GEMINI_API_KEY',
+    'GEMINI_MODEL',
+    'GOOGLE_API_KEY',
+    'GOOGLE_CLOUD_PROJECT',
+    'GOOGLE_CLOUD_LOCATION',
+    'GOOGLE_APPLICATION_CREDENTIALS',
+    'GOOGLE_GENAI_USE_VERTEXAI',
+  ];
+  for (const key of sensitiveVars) {
+    const val = process.env[key];
+    if (val) {
+      const escaped = val.replace(/'/g, "'\\''");
+      try {
+        execSync(`tmux setenv -t '${muxName}' ${key} '${escaped}'`, {
           encoding: 'utf8',
           timeout: EXEC_TIMEOUT_MS,
           stdio: ['pipe', 'pipe', 'pipe'],
@@ -930,6 +1003,10 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       const dir = resolveCodexDir();
       return { pathExport: dir ? `export PATH="${dir}:$PATH" && ` : '', dir };
     }
+    if (mode === 'gemini') {
+      const dir = resolveGeminiDir();
+      return { pathExport: dir ? `export PATH="${dir}:$PATH" && ` : '', dir };
+    }
     return { pathExport: '', dir: null };
   }
 
@@ -954,6 +1031,13 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
   }
 
   /**
+   * Configure Gemini-specific environment on a tmux session.
+   */
+  private _configureGemini(muxName: string): void {
+    setGeminiEnvVars(muxName);
+  }
+
+  /**
    * Creates a new tmux session wrapping Claude CLI or a shell.
    * In test mode: creates an in-memory session only (no real tmux session).
    */
@@ -969,6 +1053,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       allowedTools,
       openCodeConfig,
       codexConfig,
+      geminiConfig,
       resumeSessionId,
       envOverrides,
       effort,
@@ -1007,6 +1092,12 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
     if (mode === 'opencode' && !cliDir) {
       throw new Error('OpenCode CLI not found. Install with: curl -fsSL https://opencode.ai/install | bash');
     }
+    if (mode === 'codex' && !cliDir) {
+      throw new Error('Codex CLI not found. Install with: npm install -g @openai/codex');
+    }
+    if (mode === 'gemini' && !cliDir) {
+      throw new Error('Gemini CLI not found. Install with: npm install -g @google/gemini-cli');
+    }
 
     const envExportsStr = this.buildEnvExports(sessionId, muxName, mode).join(' && ');
 
@@ -1018,6 +1109,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       allowedTools,
       openCodeConfig,
       codexConfig,
+      geminiConfig,
       resumeSessionId,
       effort,
     });
@@ -1066,6 +1158,10 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
         this._configureOpenCode(muxName, openCodeConfig);
       } else if (mode === 'codex') {
         this._configureCodex(muxName);
+      }
+      // For Gemini: set Gemini/Google auth env vars via tmux setenv
+      if (mode === 'gemini') {
+        this._configureGemini(muxName);
       }
 
       // Apply user-supplied env overrides (e.g., CLAUDE_CODE_EFFORT_LEVEL) via tmux setenv
@@ -1224,6 +1320,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       allowedTools,
       openCodeConfig,
       codexConfig,
+      geminiConfig,
       resumeSessionId,
       envOverrides,
       effort,
@@ -1247,6 +1344,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       allowedTools,
       openCodeConfig,
       codexConfig,
+      geminiConfig,
       resumeSessionId,
       effort,
     });
@@ -1260,6 +1358,10 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
         this._configureOpenCode(muxName, openCodeConfig);
       } else if (mode === 'codex') {
         this._configureCodex(muxName);
+      }
+      // For Gemini: set Gemini/Google auth env vars via tmux setenv before respawn
+      if (mode === 'gemini') {
+        this._configureGemini(muxName);
       }
 
       // Re-apply user env overrides before respawn so the new shell inherits them.

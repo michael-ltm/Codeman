@@ -46,7 +46,7 @@ const safePathSchema = z.string().max(1000).refine(isValidWorkingDir, {
 // ========== Env Var Allowlist ==========
 
 /** Allowlisted env var key prefixes */
-const ALLOWED_ENV_PREFIXES = ['CLAUDE_CODE_', 'OPENCODE_', 'CODEX_'];
+const ALLOWED_ENV_PREFIXES = ['CLAUDE_CODE_', 'OPENCODE_', 'CODEX_', 'GEMINI_', 'GOOGLE_'];
 
 /** Env var keys that are always blocked (security-sensitive) */
 const BLOCKED_ENV_KEYS = new Set([
@@ -76,7 +76,7 @@ const safeEnvOverridesSchema = z
     },
     {
       message:
-        'envOverrides contains blocked or disallowed env var keys. Only CLAUDE_CODE_*, OPENCODE_*, and CODEX_* keys are allowed.',
+        'envOverrides contains blocked or disallowed env var keys. Only CLAUDE_CODE_*, OPENCODE_*, CODEX_*, GEMINI_*, and GOOGLE_* keys are allowed.',
     }
   );
 
@@ -149,9 +149,26 @@ const CodexConfigSchema = z
   })
   .optional();
 
+/** Schema for Gemini CLI-specific configuration */
+const GeminiConfigSchema = z
+  .object({
+    model: z
+      .string()
+      .max(100)
+      .regex(/^[a-zA-Z0-9._\-/]+$/)
+      .optional(),
+    approvalMode: z.enum(['default', 'auto_edit', 'yolo', 'plan']).optional(),
+    resumeSession: z
+      .string()
+      .max(100)
+      .regex(/^[a-zA-Z0-9._-]+$/)
+      .optional(),
+  })
+  .optional();
+
 export const CreateSessionSchema = z.object({
   workingDir: safePathSchema.optional(),
-  mode: z.enum(['claude', 'shell', 'opencode', 'codex']).optional(),
+  mode: z.enum(['claude', 'shell', 'opencode', 'codex', 'gemini']).optional(),
   name: z.string().max(100).optional(),
   envOverrides: safeEnvOverridesSchema,
   /** Claude CLI effort level (soft default via --settings, switchable in-session via /effort) */
@@ -162,6 +179,7 @@ export const CreateSessionSchema = z.object({
   statusLineTelemetry: z.boolean().optional(),
   openCodeConfig: OpenCodeConfigSchema,
   codexConfig: CodexConfigSchema,
+  geminiConfig: GeminiConfigSchema,
   /** Resume a previous Claude conversation by its session ID (used for reboot recovery) */
   resumeSessionId: z
     .string()
@@ -258,9 +276,10 @@ export const QuickStartSchema = z.object({
     .string()
     .regex(/^[a-zA-Z0-9_-]+$/, 'Invalid case name format. Use only letters, numbers, hyphens, underscores.')
     .optional(),
-  mode: z.enum(['claude', 'shell', 'opencode', 'codex']).optional(),
+  mode: z.enum(['claude', 'shell', 'opencode', 'codex', 'gemini']).optional(),
   openCodeConfig: OpenCodeConfigSchema,
   codexConfig: CodexConfigSchema,
+  geminiConfig: GeminiConfigSchema,
   envOverrides: safeEnvOverridesSchema,
   /** Claude CLI effort level (soft default via --settings, switchable in-session via /effort) */
   effort: effortLevelSchema,

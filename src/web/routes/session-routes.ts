@@ -287,12 +287,14 @@ export function registerSessionRoutes(
     //
     // For keys the caller is actively setting, strip any stale disk entry a prior
     // Codeman version may have written. Scope limited to:
-    //   - Claude mode (OpenCode doesn't read .claude/settings.local.json)
+    //   - Claude mode (OpenCode/Codex/Gemini don't read .claude/settings.local.json)
     //   - workingDir inside CASES_DIR (Codeman's managed territory — we never mutate
     //     .claude/settings.local.json in arbitrary user repos that POST /api/sessions
     //     can target, because those may have hand-authored values).
     const canStripDisk =
       body.mode !== 'opencode' &&
+      body.mode !== 'codex' &&
+      body.mode !== 'gemini' &&
       body.envOverrides &&
       Object.keys(body.envOverrides).length > 0 &&
       workingDir.startsWith(CASES_DIR + '/');
@@ -349,6 +351,17 @@ export function registerSessionRoutes(
       }
     }
 
+    // Check Gemini availability if requested
+    if (body.mode === 'gemini') {
+      const { isGeminiAvailable } = await import('../../utils/gemini-cli-resolver.js');
+      if (!isGeminiAvailable()) {
+        return createErrorResponse(
+          ApiErrorCode.OPERATION_FAILED,
+          'Gemini CLI not found. Install with: npm install -g @google/gemini-cli'
+        );
+      }
+    }
+
     // Pre-validate resumeSessionId: check that the conversation file actually exists
     // in Claude's projects directory. If not, skip resume to avoid confusing
     // "No conversation found" errors from Claude CLI.
@@ -387,9 +400,11 @@ export function registerSessionRoutes(
         ? body.openCodeConfig?.model
         : mode === 'codex'
           ? body.codexConfig?.model
-          : mode !== 'shell'
-            ? modelConfig?.defaultModel || undefined
-            : undefined;
+          : mode === 'gemini'
+            ? body.geminiConfig?.model
+            : mode !== 'shell'
+              ? modelConfig?.defaultModel || undefined
+              : undefined;
     const claudeModeConfig = await ctx.getClaudeModeConfig();
     const session = new Session({
       workingDir,
@@ -403,6 +418,7 @@ export function registerSessionRoutes(
       allowedTools: claudeModeConfig.allowedTools,
       openCodeConfig: mode === 'opencode' ? body.openCodeConfig : undefined,
       codexConfig: mode === 'codex' ? body.codexConfig : undefined,
+      geminiConfig: mode === 'gemini' ? body.geminiConfig : undefined,
       resumeSessionId: validatedResumeId,
       envOverrides: body.envOverrides,
       effort: body.effort,
@@ -601,9 +617,11 @@ export function registerSessionRoutes(
 
     try {
       // Auto-detect completion phrase from CLAUDE.md BEFORE starting (only if globally enabled and not explicitly disabled by user)
-      // Ralph tracker is not supported for opencode sessions
+      // Ralph tracker is not supported for opencode / codex / gemini sessions
       if (
         session.mode !== 'opencode' &&
+        session.mode !== 'codex' &&
+        session.mode !== 'gemini' &&
         ctx.store.getConfig().ralphEnabled &&
         !session.ralphTracker.autoEnableDisabled
       ) {
@@ -1235,6 +1253,7 @@ export function registerSessionRoutes(
       mode = 'claude',
       openCodeConfig,
       codexConfig,
+      geminiConfig,
       envOverrides,
       effort,
     } = parseBody(QuickStartSchema, req.body);
@@ -1257,6 +1276,17 @@ export function registerSessionRoutes(
         return createErrorResponse(
           ApiErrorCode.OPERATION_FAILED,
           'Codex CLI not found. Install with: npm install -g @openai/codex'
+        );
+      }
+    }
+
+    // Check Gemini availability if requested
+    if (mode === 'gemini') {
+      const { isGeminiAvailable } = await import('../../utils/gemini-cli-resolver.js');
+      if (!isGeminiAvailable()) {
+        return createErrorResponse(
+          ApiErrorCode.OPERATION_FAILED,
+          'Gemini CLI not found. Install with: npm install -g @google/gemini-cli'
         );
       }
     }
@@ -1289,8 +1319,8 @@ export function registerSessionRoutes(
         writeFileSync(join(casePath, 'CLAUDE.md'), claudeMd);
 
         // Write .claude/settings.local.json with hooks for desktop notifications
-        // (Claude-specific — OpenCode uses its own plugin system)
-        if (mode !== 'opencode') {
+        // (Claude-specific — OpenCode, Codex, and Gemini use their own systems)
+        if (mode !== 'opencode' && mode !== 'codex' && mode !== 'gemini') {
           await writeHooksConfig(casePath);
         }
 
@@ -1307,7 +1337,13 @@ export function registerSessionRoutes(
 
     // Strip stale disk entries for keys this request is actively setting (Claude only —
     // see POST /api/sessions for full rationale).
-    if (mode !== 'opencode' && envOverrides && Object.keys(envOverrides).length > 0) {
+    if (
+      mode !== 'opencode' &&
+      mode !== 'codex' &&
+      mode !== 'gemini' &&
+      envOverrides &&
+      Object.keys(envOverrides).length > 0
+    ) {
       await stripCaseEnvKeys(casePath, Object.keys(envOverrides));
     }
 
@@ -1320,9 +1356,11 @@ export function registerSessionRoutes(
         ? openCodeConfig?.model
         : mode === 'codex'
           ? codexConfig?.model
-          : mode !== 'shell'
-            ? qsModelConfig?.defaultModel || undefined
-            : undefined;
+          : mode === 'gemini'
+            ? geminiConfig?.model
+            : mode !== 'shell'
+              ? qsModelConfig?.defaultModel || undefined
+              : undefined;
     const qsClaudeModeConfig = await ctx.getClaudeModeConfig();
     const session = new Session({
       workingDir: casePath,
@@ -1335,6 +1373,7 @@ export function registerSessionRoutes(
       allowedTools: qsClaudeModeConfig.allowedTools,
       openCodeConfig: mode === 'opencode' ? openCodeConfig : undefined,
       codexConfig: mode === 'codex' ? codexConfig : undefined,
+      geminiConfig: mode === 'gemini' ? geminiConfig : undefined,
       envOverrides,
       effort,
     });
@@ -1373,7 +1412,7 @@ export function registerSessionRoutes(
         });
         ctx.broadcast(SseEvent.SessionInteractive, { id: session.id, mode: 'shell' });
       } else {
-        // Both 'claude' and 'opencode' modes use startInteractive()
+        // 'claude', 'opencode', 'codex', and 'gemini' modes use startInteractive()
         await session.startInteractive();
         getLifecycleLog().log({
           event: 'started',
