@@ -1,5 +1,25 @@
 # aicodeman
 
+## 1.2.0
+
+### Minor Changes
+
+- Merge four feature PRs and harden them for release.
+
+  **Gemini run mode (PR #134, COD-36)** — a third external-CLI backend alongside Codex and OpenCode (`SessionMode` adds `'gemini'`). New `gemini-cli-resolver.ts`, `buildGeminiCommand()` (`--skip-trust`, `--approval-mode {default|auto_edit|yolo|plan}` defaulting to `yolo`, `--model`, `--resume`), `setGeminiEnvVars()` (socket-scoped `tmux setenv` of `GEMINI_*`/`GOOGLE_*` auth incl. Vertex AI), `GET /api/gemini/status` with an install hint (`npm install -g @google/gemini-cli`), run-mode dropdown + welcome "Run Gemini" button + "Run GM" label, `GeminiConfigSchema`, and `GEMINI_*`/`GOOGLE_*` added to the env-override allowlist. Requires tmux (no PTY fallback), like Codex.
+
+  **Cross-session search (PR #133, COD-113)** — `GET /api/search?q=&types=&limit=` federates an in-memory search across session metadata, run-summary events, and attachment-history file entries (substring match, hard caps, no FS reads); history-panel search box in the frontend.
+
+  **Away digest (PR #136, COD-41)** — `GET /api/away-digest` aggregates "what happened while you were away" (lifecycle log, run summaries, live sessions, daily token stats, recent subagents) into categorized sections behind a header-button modal (hidden on phones).
+
+  **Ralph todo-config (PR #135, COD-79)** — per-session `maxTodos` and `todoExpirationMinutes` via `POST /api/sessions/:id/ralph-config`; now persisted in `RalphTrackerState` and read back into the Session Options modal (mirrors `maxIterations` round-trip).
+
+  **Review fixes applied on merge:**
+  - Gemini: fixed two `{success,data}` envelope bugs in `runGemini()` (status check and new-session selection) that made the Run-Gemini button non-functional; fixed `setGeminiEnvVars()` to use the socket-scoped tmux command so Google-auth env injection actually reaches the session.
+  - Gemini parity: tab-mode badge, kill-dialog label, `codeman doctor` registry entry, `isGeminiAvailable` barrel export, `COLORTERM=truecolor`, and alt-screen/scrollback stripping (Ink TUI, like Codex/Claude).
+  - Restored four envelope-shape test assertions weakened during the Gemini PR; added a `runGemini()` regression test covering the envelope path.
+  - Ralph todo-config values now persist across restart and read back correctly instead of always reverting to defaults.
+
 ## 1.1.17
 
 ### Patch Changes
