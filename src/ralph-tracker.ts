@@ -467,6 +467,12 @@ export class RalphTracker extends EventEmitter {
   /** Timestamp of last cleanup check for throttling */
   private _lastCleanupTime: number = 0;
 
+  /** Maximum number of todos retained for this session (defaults to global cap) */
+  private _maxTodos: number = MAX_TODOS_PER_SESSION;
+
+  /** Todo auto-expiry duration in milliseconds (defaults to global constant) */
+  private _todoExpiryMs: number = TODO_EXPIRY_MS;
+
   /** Debouncer for todoUpdate events */
   private _todoDeb = new Debouncer(EVENT_DEBOUNCE_MS);
 
@@ -1840,7 +1846,7 @@ export class RalphTracker extends EventEmitter {
         return;
       }
 
-      while (this._todos.size >= MAX_TODOS_PER_SESSION) {
+      while (this._todos.size >= this._maxTodos) {
         const oldest = this.findOldestTodo();
         if (oldest) {
           this._todos.delete(oldest.id);
@@ -2164,14 +2170,14 @@ export class RalphTracker extends EventEmitter {
   }
 
   /**
-   * Remove todo items older than TODO_EXPIRY_MS.
+   * Remove todo items older than the configured expiry duration.
    */
   private cleanupExpiredTodos(): void {
     const now = Date.now();
     const toDelete: string[] = [];
 
     for (const [id, todo] of this._todos) {
-      if (now - todo.detectedAt > TODO_EXPIRY_MS) {
+      if (now - todo.detectedAt > this._todoExpiryMs) {
         toDelete.push(id);
       }
     }
@@ -2209,6 +2215,34 @@ export class RalphTracker extends EventEmitter {
     this._loopState.maxIterations = maxIterations;
     this._loopState.lastActivity = Date.now();
     this.emit('loopUpdate', this.loopState);
+  }
+
+  /** Maximum number of todos retained for this session. */
+  get maxTodos(): number {
+    return this._maxTodos;
+  }
+
+  /** Todo auto-expiry duration in minutes for this session. */
+  get todoExpirationMinutes(): number {
+    return Math.round(this._todoExpiryMs / 60000);
+  }
+
+  /**
+   * Update the maximum number of retained todos (external API).
+   * Ignores non-positive values.
+   */
+  setMaxTodos(maxTodos: number): void {
+    if (!Number.isFinite(maxTodos) || maxTodos <= 0) return;
+    this._maxTodos = Math.floor(maxTodos);
+  }
+
+  /**
+   * Update the todo auto-expiry duration (external API), specified in minutes.
+   * Converts to milliseconds internally. Ignores non-positive values.
+   */
+  setTodoExpirationMinutes(minutes: number): void {
+    if (!Number.isFinite(minutes) || minutes <= 0) return;
+    this._todoExpiryMs = Math.floor(minutes) * 60000;
   }
 
   /**

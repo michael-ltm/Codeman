@@ -32,17 +32,16 @@ export function registerRalphRoutes(
   // Configure Ralph tracker for a session
   app.post('/api/sessions/:id/ralph-config', async (req) => {
     const { id } = req.params as { id: string };
-    const { enabled, completionPhrase, maxIterations, reset, disableAutoEnable } = parseBody(
-      RalphConfigSchema,
-      req.body,
-      'Invalid request body'
-    ) as {
-      enabled?: boolean;
-      completionPhrase?: string;
-      maxIterations?: number;
-      reset?: boolean | 'full';
-      disableAutoEnable?: boolean;
-    };
+    const { enabled, completionPhrase, maxIterations, maxTodos, todoExpirationMinutes, reset, disableAutoEnable } =
+      parseBody(RalphConfigSchema, req.body, 'Invalid request body') as {
+        enabled?: boolean;
+        completionPhrase?: string;
+        maxIterations?: number;
+        maxTodos?: number;
+        todoExpirationMinutes?: number;
+        reset?: boolean | 'full';
+        disableAutoEnable?: boolean;
+      };
     const session = findSessionOrFail(ctx, id);
 
     // Ralph tracker is not supported for external-CLI sessions (opencode/codex)
@@ -96,6 +95,14 @@ export function registerRalphRoutes(
 
     if (maxIterations !== undefined) {
       session.ralphTracker.setMaxIterations(maxIterations || null);
+    }
+
+    if (maxTodos !== undefined) {
+      session.ralphTracker.setMaxTodos(maxTodos);
+    }
+
+    if (todoExpirationMinutes !== undefined) {
+      session.ralphTracker.setTodoExpirationMinutes(todoExpirationMinutes);
     }
 
     // Persist and broadcast the update
