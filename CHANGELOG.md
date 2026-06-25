@@ -1,5 +1,11 @@
 # aicodeman
 
+## 1.2.1
+
+### Patch Changes
+
+- Fix local echo on iOS Safari when switching into a tab whose session already has output. The on-screen-keyboard "heal" (refit + scroll-to-bottom + overlay re-render + one-shot resize) only ran on a keyboard visibility transition, so switching into a tab while the keyboard was already up never triggered it — leaving the local-echo overlay rendering against stale, off-bottom terminal state. Typed characters were invisible (or mispositioned at the cursor row, far below the actual `❯` prompt) until the user manually hid and re-showed the keyboard. `selectSession` now replicates that heal when the keyboard is already visible, so local echo paints correctly on the first keystroke after a keyboard-up tab switch.
+
 ## 1.2.0
 
 ### Minor Changes

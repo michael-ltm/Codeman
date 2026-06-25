@@ -3870,6 +3870,17 @@ class CodemanApp {
       _crashDiag.log('FOCUS');
       if (shouldFocusTerminal && this.terminal) this.terminal.focus();
       this.scrollToLastNonEmptyLine();
+      // If we switched INTO this tab while the soft keyboard is already up, no
+      // viewport-resize transition fires (handleViewportResize only runs
+      // onKeyboardShow on a hidden→visible change), so the newly-active
+      // session never gets that heal: fit() + scrollToBottom() + local-echo
+      // overlay rerender() + one-shot SIGWINCH. Without it the overlay renders
+      // against stale, off-bottom state and typed input stays INVISIBLE until
+      // the user manually toggles the keyboard. Replicate the heal here so
+      // local echo paints on the first keystroke after a keyboard-up tab switch.
+      if (typeof KeyboardHandler !== 'undefined' && KeyboardHandler.keyboardVisible) {
+        KeyboardHandler.onKeyboardShow();
+      }
       this._clearTerminalLoadState(sessionId, selectGen);
       _crashDiag.log(`SELECT_DONE: ${(performance.now() - _selStart).toFixed(0)}ms`);
       console.log(`[CRASH-DIAG] selectSession DONE: ${sessionId.slice(0,8)} in ${(performance.now() - _selStart).toFixed(0)}ms`);
