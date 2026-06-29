@@ -70,6 +70,7 @@ import {
   MAX_MESSAGES,
   MAX_LINE_BUFFER_SIZE,
 } from './config/buffer-limits.js';
+import { DEFAULT_TMUX_HISTORY_LIMIT } from './config/terminal-history.js';
 import { EXEC_TIMEOUT_MS } from './config/exec-timeout.js';
 import {
   buildInteractiveArgs,
@@ -381,6 +382,9 @@ export class Session extends EventEmitter {
   // the CLAUDE_CODE_EFFORT_LEVEL env var, which would hard-lock the session.
   private _effort: EffortLevel | undefined;
 
+  // tmux history-limit (scrollback lines) applied to this session's pane.
+  private readonly _tmuxHistoryLimit: number;
+
   // Session color for visual differentiation
   private _color: import('./types.js').SessionColor = 'default';
 
@@ -448,6 +452,8 @@ export class Session extends EventEmitter {
       envOverrides?: Record<string, string>;
       /** Claude CLI effort level (soft default via --settings, switchable in-session via /effort) */
       effort?: EffortLevel;
+      /** tmux history-limit (scrollback lines) for this session's pane. */
+      tmuxHistoryLimit?: number;
       /** Restored per-session attachment history. May include server-private external paths. */
       attachmentHistory?: SessionAttachmentHistoryItem[];
     }
@@ -521,6 +527,7 @@ export class Session extends EventEmitter {
     if (config.effort && isEffortLevel(config.effort)) {
       this._effort = config.effort;
     }
+    this._tmuxHistoryLimit = config.tmuxHistoryLimit ?? DEFAULT_TMUX_HISTORY_LIMIT;
     if (config.attachmentHistory && config.attachmentHistory.length > 0) {
       this.restoreAttachmentHistory(config.attachmentHistory);
     }
@@ -1274,6 +1281,7 @@ export class Session extends EventEmitter {
             resumeSessionId: this._resumeSessionId,
             envOverrides: this._envOverrides,
             effort: this._effort,
+            historyLimit: this._tmuxHistoryLimit,
           },
           createSessionOptions: {
             sessionId: this.id,
@@ -1290,6 +1298,7 @@ export class Session extends EventEmitter {
             resumeSessionId: this._resumeSessionId,
             envOverrides: this._envOverrides,
             effort: this._effort,
+            historyLimit: this._tmuxHistoryLimit,
           },
           spawnErrLabel: 'mux attachment',
         });
@@ -1627,6 +1636,7 @@ export class Session extends EventEmitter {
             mode: 'shell',
             niceConfig: this._niceConfig,
             envOverrides: this._envOverrides,
+            historyLimit: this._tmuxHistoryLimit,
           },
           createSessionOptions: {
             sessionId: this.id,
@@ -1635,6 +1645,7 @@ export class Session extends EventEmitter {
             name: this._name,
             niceConfig: this._niceConfig,
             envOverrides: this._envOverrides,
+            historyLimit: this._tmuxHistoryLimit,
           },
           spawnErrLabel: 'shell mux attachment',
         });

@@ -49,6 +49,7 @@ import type { SessionPort, EventPort, ConfigPort, InfraPort, AuthPort } from '..
 import { AUTH_COOKIE_NAME } from '../middleware/auth.js';
 import { QR_AUTH_FAILURE_MAX } from '../../config/tunnel-config.js';
 import { AUTH_SESSION_TTL_MS } from '../../config/auth-config.js';
+import { resolveTerminalHistoryConfig } from '../../config/terminal-history.js';
 
 // Maximum screenshot upload size (10MB)
 const MAX_SCREENSHOT_SIZE = 10 * 1024 * 1024;
@@ -623,6 +624,11 @@ export function registerSystemRoutes(
       const { statusLineTelemetry, acknowledgeUnauthTunnel, ...settingsToStore } = settings;
       const merged = { ...existing, ...settingsToStore };
       await fs.writeFile(SETTINGS_PATH, JSON.stringify(merged, null, 2));
+
+      // Apply a changed tmux history-limit to all live sessions immediately.
+      if (settings.tmuxHistoryLimit !== undefined) {
+        await ctx.mux.setHistoryLimit(resolveTerminalHistoryConfig(merged).tmuxHistoryLimit);
+      }
 
       // Handle subagent tracking toggle dynamically
       toggleService((settings.subagentTrackingEnabled as boolean) ?? true, subagentWatcher, 'Subagent watcher');

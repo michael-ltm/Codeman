@@ -129,6 +129,7 @@ import {
 import type { EventLoopMonitorHandle } from '../utils/index.js';
 import { MAX_CONCURRENT_SESSIONS, MAX_SSE_CLIENTS } from '../config/map-limits.js';
 import { MAX_PASTE_IMAGE_BYTES } from '../config/buffer-limits.js';
+import { resolveTerminalHistoryConfig } from '../config/terminal-history.js';
 import { SseEvent } from './sse-events.js';
 import { getLatestPlanUsage } from './plan-usage-latest.js';
 import type { ScheduledRun } from './ports/index.js';
@@ -587,6 +588,7 @@ export class WebServer extends EventEmitter {
       getGlobalNiceConfig: this.getGlobalNiceConfig.bind(this),
       getModelConfig: this.getModelConfig.bind(this),
       getClaudeModeConfig: this.getClaudeModeConfig.bind(this),
+      getTerminalHistoryConfig: this.getTerminalHistoryConfig.bind(this),
       getDefaultClaudeMdPath: this.getDefaultClaudeMdPath.bind(this),
       getLightState: this.getLightState.bind(this),
       getLightSessionsState: this.getLightSessionsState.bind(this),
@@ -1461,6 +1463,12 @@ export class WebServer extends EventEmitter {
       return { claudeMode, allowedTools };
     }
     return {};
+  }
+
+  // Resolve the bounds-clamped terminal-history config from settings.json.
+  private async getTerminalHistoryConfig() {
+    const settings = await this.readSettings();
+    return resolveTerminalHistoryConfig(settings);
   }
 
   // Helper to get model configuration from settings

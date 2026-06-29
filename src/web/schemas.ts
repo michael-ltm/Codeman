@@ -9,6 +9,12 @@
 
 import { z } from 'zod';
 import { SAFE_PATH_PATTERN, isSafePushEndpoint } from '../utils/index.js';
+import {
+  MAX_TERMINAL_BUFFER_BYTES,
+  MAX_TERMINAL_SCROLLBACK_LINES,
+  MIN_TERMINAL_BUFFER_BYTES,
+  MIN_TERMINAL_SCROLLBACK_LINES,
+} from '../config/terminal-history.js';
 
 // ========== Path Validation ==========
 
@@ -412,6 +418,16 @@ export const SettingsUpdateSchema = z
     allowedTools: z.string().max(2000).optional(),
     // Codex CLI settings
     codexDangerouslyBypassApprovals: z.boolean().optional(),
+    // Terminal history and retention
+    terminalScrollbackLines: z
+      .number()
+      .int()
+      .min(MIN_TERMINAL_SCROLLBACK_LINES)
+      .max(MAX_TERMINAL_SCROLLBACK_LINES)
+      .optional(),
+    tmuxHistoryLimit: z.number().int().min(MIN_TERMINAL_SCROLLBACK_LINES).max(MAX_TERMINAL_SCROLLBACK_LINES).optional(),
+    terminalBufferMaxBytes: z.number().int().min(MIN_TERMINAL_BUFFER_BYTES).max(MAX_TERMINAL_BUFFER_BYTES).optional(),
+    terminalBufferTrimBytes: z.number().int().min(MIN_TERMINAL_BUFFER_BYTES).max(MAX_TERMINAL_BUFFER_BYTES).optional(),
     // CPU priority
     nice: z
       .object({
@@ -480,7 +496,20 @@ export const SettingsUpdateSchema = z
       .max(20)
       .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((settings, ctx) => {
+    if (
+      settings.terminalBufferMaxBytes !== undefined &&
+      settings.terminalBufferTrimBytes !== undefined &&
+      settings.terminalBufferTrimBytes > settings.terminalBufferMaxBytes
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['terminalBufferTrimBytes'],
+        message: 'terminalBufferTrimBytes must be less than or equal to terminalBufferMaxBytes',
+      });
+    }
+  });
 
 /**
  * Schema for POST /api/sessions/:id/input with length limit

@@ -5,6 +5,7 @@
 
 import type { ClaudeMode, NiceConfig } from '../../types.js';
 import type { StateStore } from '../../state-store.js';
+import type { TerminalHistoryConfig } from '../../config/terminal-history.js';
 
 export interface ConfigPort {
   readonly store: StateStore;
@@ -15,6 +16,7 @@ export interface ConfigPort {
   getGlobalNiceConfig(): Promise<NiceConfig | undefined>;
   getModelConfig(): Promise<{ defaultModel?: string; agentTypeOverrides?: Record<string, string> } | null>;
   getClaudeModeConfig(): Promise<{ claudeMode?: ClaudeMode; allowedTools?: string }>;
+  getTerminalHistoryConfig(): Promise<TerminalHistoryConfig>;
   getDefaultClaudeMdPath(): Promise<string | undefined>;
   getLightState(): unknown;
   getLightSessionsState(): unknown[];
