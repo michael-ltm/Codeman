@@ -1,5 +1,20 @@
 # aicodeman
 
+## 1.2.2
+
+### Patch Changes
+
+- Centralize terminal history/scrollback/buffer retention limits into config (PR #137, COD-80).
+
+  New `src/config/terminal-history.ts` is now the single source of truth for the terminal scrollback lines, tmux `history-limit`, and server PTY buffer byte caps that were previously scattered as hardcoded literals across `buffer-limits.ts`, `tmux-manager.ts`, and `session.ts`. Each value is overridable (env var or the settings object) and bounds-clamped via a pure `resolveTerminalHistoryConfig()`.
+
+  This change is behavior-neutral: the defaults intentionally match the prior hardcoded values (tmux history-limit 50,000; terminal scrollback 50,000; PTY buffer max 2 MB; trim 1.5 MB) and the existing `CODEMAN_MAX_TERMINAL_BUFFER` / `CODEMAN_TRIM_TERMINAL_TO` env overrides are preserved, so runtime behavior is unchanged on its own. It is the mechanism half of a stacked change; a follow-up raises the defaults.
+  - `buffer-limits.ts` sources `MAX_TERMINAL_BUFFER_SIZE` / `TRIM_TERMINAL_TO` from the resolver.
+  - `tmux-manager.ts` uses `DEFAULT_TMUX_HISTORY_LIMIT` in place of the hardcoded `history-limit 50000`, gains `setHistoryLimit()` (mux-interface + impl) so a settings change applies to live sessions, and re-applies the limit on `respawnPane` so it survives a respawn.
+  - `session.ts` threads a per-session `tmuxHistoryLimit` into the tmux spawn calls; `server.ts` exposes `getTerminalHistoryConfig()` on the route ctx and `system-routes.ts` applies a changed `tmuxHistoryLimit` to live sessions immediately.
+  - `schemas.ts` adds four optional, bounds-clamped settings keys (`terminalScrollbackLines`, `tmuxHistoryLimit`, `terminalBufferMaxBytes`, `terminalBufferTrimBytes`) with a `trim <= max` cross-field check.
+  - New tests: `test/terminal-history.test.ts` (resolver defaults / clamping / trim<=max / non-number fallback) and `test/terminal-history-schema.test.ts` (settings-schema validation).
+
 ## 1.2.1
 
 ### Patch Changes
