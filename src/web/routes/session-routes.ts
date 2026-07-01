@@ -406,6 +406,7 @@ export function registerSessionRoutes(
               ? modelConfig?.defaultModel || undefined
               : undefined;
     const claudeModeConfig = await ctx.getClaudeModeConfig();
+    const terminalHistoryConfig = await ctx.getTerminalHistoryConfig();
     const session = new Session({
       workingDir,
       mode,
@@ -422,6 +423,7 @@ export function registerSessionRoutes(
       resumeSessionId: validatedResumeId,
       envOverrides: body.envOverrides,
       effort: body.effort,
+      tmuxHistoryLimit: terminalHistoryConfig.tmuxHistoryLimit,
     });
 
     ctx.addSession(session);
@@ -1362,6 +1364,7 @@ export function registerSessionRoutes(
               ? qsModelConfig?.defaultModel || undefined
               : undefined;
     const qsClaudeModeConfig = await ctx.getClaudeModeConfig();
+    const qsTerminalHistoryConfig = await ctx.getTerminalHistoryConfig();
     const session = new Session({
       workingDir: casePath,
       mux: ctx.mux,
@@ -1376,6 +1379,7 @@ export function registerSessionRoutes(
       geminiConfig: mode === 'gemini' ? geminiConfig : undefined,
       envOverrides,
       effort,
+      tmuxHistoryLimit: qsTerminalHistoryConfig.tmuxHistoryLimit,
     });
 
     // Auto-detect completion phrase from CLAUDE.md BEFORE broadcasting

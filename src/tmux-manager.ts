@@ -65,6 +65,7 @@ import type {
 // ============================================================================
 
 import { EXEC_TIMEOUT_MS } from './config/exec-timeout.js';
+import { DEFAULT_TMUX_HISTORY_LIMIT } from './config/terminal-history.js';
 
 /** Delay after tmux session creation — enough for detached tmux to be queryable */
 const TMUX_CREATION_WAIT_MS = 100;
@@ -1057,6 +1058,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       resumeSessionId,
       envOverrides,
       effort,
+      historyLimit = DEFAULT_TMUX_HISTORY_LIMIT,
     } = options;
     const muxName = `codeman-${sessionId.slice(0, 8)}`;
 
@@ -1201,7 +1203,9 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
           }),
         // Raise tmux scrollback from its 2000-line default so re-attach preserves
         // more context. Matches the xterm-side default in constants.js.
-        execAsync(`${this.tmux()} set-option -t "${muxName}" history-limit 50000`, { timeout: EXEC_TIMEOUT_MS })
+        execAsync(`${this.tmux()} set-option -t "${muxName}" history-limit ${historyLimit}`, {
+          timeout: EXEC_TIMEOUT_MS,
+        })
           .then(() => {})
           .catch(() => {
             /* Non-critical — falls back to tmux default */
@@ -1324,12 +1328,23 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       resumeSessionId,
       envOverrides,
       effort,
+      historyLimit = DEFAULT_TMUX_HISTORY_LIMIT,
     } = options;
     const session = this.sessions.get(sessionId);
     if (!session) return null;
     const muxName = session.muxName;
 
     if (!isValidMuxName(muxName) || !isValidPath(workingDir)) return null;
+
+    // Re-apply the configured tmux history-limit after respawn (kept in sync
+    // with the live setting via setHistoryLimit()).
+    if (!IS_TEST_MODE) {
+      await execAsync(`${this.tmux()} set-option -t ${shellescape(muxName)} history-limit ${historyLimit}`, {
+        timeout: EXEC_TIMEOUT_MS,
+      }).catch(() => {
+        /* Non-critical — keeps existing tmux history-limit */
+      });
+    }
 
     // Resolve CLI binary directory based on mode
     const { pathExport } = this.buildPathExport(mode);
@@ -1933,6 +1948,26 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       session.ralphEnabled = enabled;
       this.saveSessions();
     }
+  }
+
+  /**
+   * Apply a tmux history-limit to all tracked sessions (e.g. when the user
+   * changes the terminal-history setting). Invalid limits fall back to the
+   * default. Best-effort per session.
+   */
+  async setHistoryLimit(limit: number): Promise<void> {
+    const safeLimit = Number.isSafeInteger(limit) && limit > 0 ? Math.trunc(limit) : DEFAULT_TMUX_HISTORY_LIMIT;
+
+    if (IS_TEST_MODE) {
+      return;
+    }
+
+    const updates = Array.from(this.sessions.values()).map((session) =>
+      execAsync(`${this.tmux()} set-option -t ${shellescape(session.muxName)} history-limit ${safeLimit}`, {
+        timeout: EXEC_TIMEOUT_MS,
+      })
+    );
+    await Promise.allSettled(updates);
   }
 
   /**

@@ -72,6 +72,8 @@ export interface CreateSessionOptions {
   envOverrides?: Record<string, string>;
   /** Claude CLI effort level, injected as a `--settings` soft default (overridable via /effort in-session) */
   effort?: EffortLevel;
+  /** tmux history-limit (scrollback lines) to set for this session. */
+  historyLimit?: number;
 }
 
 /** Options for respawning a dead pane. */
@@ -92,6 +94,8 @@ export interface RespawnPaneOptions {
   envOverrides?: Record<string, string>;
   /** Claude CLI effort level (preserved across respawns, injected via `--settings`) */
   effort?: EffortLevel;
+  /** tmux history-limit (scrollback lines) to set for this session after respawn. */
+  historyLimit?: number;
 }
 
 /**
@@ -169,6 +173,9 @@ export interface TerminalMultiplexer extends EventEmitter {
 
   /** Update Ralph enabled state for a session */
   updateRalphEnabled(sessionId: string, enabled: boolean): void;
+
+  /** Apply a tmux history-limit to all tracked sessions. */
+  setHistoryLimit(limit: number): Promise<void>;
 
   // ========== Discovery ==========
 

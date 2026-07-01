@@ -9,10 +9,12 @@
  * - Terminal buffer: 2MB max × 20 = 40MB worst case
  * - Text output: 1MB max × 20 = 20MB worst case
  * - Messages: ~1KB each × 1000 × 20 = 20MB worst case
- * - Total buffer overhead: ~80MB (acceptable for long-running server)
+ * - Total buffer overhead: ~80MB (acceptable for a long-running server)
  *
  * @module config/buffer-limits
  */
+
+import { DEFAULT_TERMINAL_BUFFER_MAX_BYTES, DEFAULT_TERMINAL_BUFFER_TRIM_BYTES } from './terminal-history.js';
 
 // ============================================================================
 // Terminal Buffer Limits
@@ -21,17 +23,17 @@
 /**
  * Maximum terminal buffer size in characters.
  * Contains raw terminal output with ANSI escape sequences.
- * Reduced from 5MB to 2MB for better render performance.
+ * Sourced from terminal-history config (env/settings overridable).
  * Override: CODEMAN_MAX_TERMINAL_BUFFER (bytes)
  */
-export const MAX_TERMINAL_BUFFER_SIZE = parseInt(process.env.CODEMAN_MAX_TERMINAL_BUFFER || '') || 2 * 1024 * 1024;
+export const MAX_TERMINAL_BUFFER_SIZE = DEFAULT_TERMINAL_BUFFER_MAX_BYTES;
 
 /**
  * Size to trim terminal buffer to when max is exceeded.
  * Keeps the most recent portion to preserve context.
  * Override: CODEMAN_TRIM_TERMINAL_TO (bytes)
  */
-export const TRIM_TERMINAL_TO = parseInt(process.env.CODEMAN_TRIM_TERMINAL_TO || '') || 1.5 * 1024 * 1024;
+export const TRIM_TERMINAL_TO = DEFAULT_TERMINAL_BUFFER_TRIM_BYTES;
 
 // ============================================================================
 // Text Output Buffer Limits
