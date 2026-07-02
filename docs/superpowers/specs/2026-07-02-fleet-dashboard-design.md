@@ -144,25 +144,36 @@ const title = `${deviceName} / ${sessionLabel}`;
 ```
 同名会话保持独立 Tab(key 是稳定身份)。
 
-## 6. 前端(MVP 含分屏网格)
+## 6. 前端(Rev 3 融入式重写 — 2026-07-02 用户否决平行界面后修订)
 
-### 6.1 布局
-- **全局 Tab 条**:所有设备的活动会话,标签 `设备名 / 原标签`,状态点 + 模式标记;关 Tab 只影响本地可见性,停会话需显式操作。
-- **设备栏**(左列或顶带):状态灯、平台、hostname、活动会话数;点击更新页内选中态,**绝不跳转**。
-- **终端区**:布局三档 `1 / 2 / 2×2`,Tab 可"钉到格子"。
-- **配对抽屉**:码 + 过期时间 + 可复制 join 命令;空态"No devices joined"+ 配对按钮。
-- 会话列表默认显示活动会话(`idle|busy|error`),`stopped` 藏在"显示历史"开关后。
+> 历史:Rev 2 实现为独立 `#fleet-dashboard` 平行界面(隐藏原 `.app`),用户验收否决:"太丑、原仓库 UI 基本没了,要在原 UI 基础上实现,并兼容移动端"。Rev 3 原则:**远程会话是原 UI 的一等公民,不存在第二个界面。**
 
-### 6.2 分屏网格(MVP,任务 9b)
-- 每格 = 独立 xterm 实例 + 独立 WS,绑定 `FleetSessionTab.key`,输入按格路由,结构上不可能串设备。
-- 每格按自身 fit 尺寸发 `{t:'z',c,r,v:'desktop'}`,同会话多视图冲突由现有 `claimDesktopSizing`(session.ts:2365,90s 空闲仲裁)处理,不新增机制。
-- 护栏:同屏 ≤4 格;格内 xterm 用 canvas 渲染(webgl 留给单终端聚焦视图);中央限制单浏览器 fleet 终端 WS 并发 ≤6。
-- 重连:仅当设备仍在线时自动重连;掉线格显示明确的 offline 提示。
+### 6.1 融入原则
+- **没有独立 dashboard 页面**。原 Codeman UI 是唯一界面;删除平行界面(`fleet-dashboard.js` 的 UI 层重写,`fleet-api.js` 保留为纯 API 层)。
+- **远程会话进现有 session tab 条**:与本地 tab 混排,内部 key = `${deviceId}:${sessionId}`,可见标签 `设备名 / 原标签` + 在线状态点 + 模式徽标;本地会话的 tab 行为分毫不动。关远程 tab 只影响本地可见性;停远程会话是显式操作。
+- **远程终端复用现有终端组件**:点远程 tab 后由现有 terminal-ui 渲染;仅将 WS URL、缓冲 URL、HTTP 输入回退 URL 按 tab 类型参数化切换到 fleet 端点(`/ws/fleet/devices/:d/sessions/:s/terminal`、`GET/POST /api/fleet/devices/:d/sessions/:s/terminal|input`)。xterm 管线、防闪烁、local echo、移动端键盘 accessory、CJK 输入全部自然继承。
+- **主题**:一切新增元素只用现有 CSS 变量,自动跟随 `data-skin` 主题;不引入自有配色。
 
-### 6.3 与现有 UI 的关系
-- 现有本地会话视图保持可用;fleet dashboard 在 `GET /api/fleet` 有已加入设备或 `CODEMAN_FLEET_DASHBOARD=1` 时成为首屏。
-- 状态更新走现有 SSE 连接,新增 `fleet:*` 事件处理器。
-- CSS:操作密集型、卡片圆角 ≤8px、无 hero、移动端文本不溢出、避免单调紫/深蓝配色。
+### 6.2 设备面板(panels-ui 风格)
+- 侧面板,与 subagents 等现有面板同一交互习惯:设备列表(状态灯/平台/hostname/活动会话数/`⚠ 无 tmux` 能力标)、生成配对码(码+过期倒计时+可复制 join 命令)、远程新建会话(设备选择默认当前、offline 禁选;workingDir 必填;mode 分段控件)。
+- 头部入口按钮 + 在线设备数 badge;移动端**保留**该按钮(核心功能,不同于 away-digest 的桌面-only 策略)。
+- 点设备只更新面板内选中态,绝不跳转。
+
+### 6.3 分屏网格(桌面/平板;手机不做)
+- 布局 `1 / 2 / 2×2`,tab 可钉入格子;每格独立 xterm + 独立 WS 绑定 tab key,输入按格路由。
+- 样式完全使用现有设计变量与主题;尺寸仲裁沿用 `claimDesktopSizing`;护栏:同屏 ≤4 格、单浏览器 fleet 终端 WS ≤6、格内 canvas 渲染。
+- **手机(mobile.css 手机断点)不提供网格**:单终端 + tab 切换;平板/桌面可用。
+- 掉线/非用户关闭 → 格内明确遮罩;设备回线自动重连(沿用 Rev 2 已实现的语义)。
+
+### 6.4 移动端
+- 远程 tab 与设备面板按 mobile.css 既有断点适配;文本不溢出。
+- 远程终端在移动端的行为 = 本地终端(同一组件),包括键盘 accessory 与手势。
+
+### 6.5 状态更新
+- 走现有 SSE 连接(`fleet:device-online/offline`、`fleet:sessions-updated`)驱动 tab 条与设备面板刷新;首屏无需 `CODEMAN_FLEET_DASHBOARD` 开关(远程 tab 有则显示,无则界面与原版无异)。
+
+### 6.6 补充后端件
+- `POST /api/fleet/devices/:deviceId/sessions/:sessionId/input`(body 同本地 input 端点:`{input, seq, clientId}`),供远程 tab 的可靠输入 HTTP 回退;转发为 `terminal:input` 帧,继承节点端 `shouldApplyInput` 幂等。
 
 ## 7. 错误处理
 

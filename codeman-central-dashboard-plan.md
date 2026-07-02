@@ -1415,3 +1415,50 @@ Task 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10(此时命令行可
 
 
 
+
+---
+
+# Rev 3 追加:UI 融入式重做(2026-07-02 用户验收反馈)
+
+> 背景:Rev 2 的独立 `#fleet-dashboard` 平行界面被用户否决("太丑、原 UI 基本没了、要基于原 UI 实现、要兼容移动端")。本节任务以 spec §6(Rev 3 版)为准,替换原 Task 13/14 的 UI 形态;后端(协议/控制器/WS/REST)全部保留不动。
+
+### Task 17: HTTP 输入回退端点
+
+**Files:** Modify `src/web/routes/fleet-routes.ts`;Test `test/routes/fleet-routes.test.ts`(追加)
+
+**Produces:** `POST /api/fleet/devices/:deviceId/sessions/:sessionId/input`,body 兼容本地端点子集 `{ input: string, seq?: number, clientId?: string }`(zod 校验,长度沿用 MAX_INPUT_LENGTH);行为:设备离线 → 409 'Device is offline';未知会话 → 404;成功 → `handle.writeInput(sessionId, input, seq, clientId)` 转发为 `terminal:input` 帧(节点端 `shouldApplyInput` 幂等),返回 `{}`。
+
+- [ ] TDD:追加测试(离线 409 / 未知会话 404 / 转发四参 / 超长 400 / zod 校验失败 400)→ RED → 实现 → GREEN。
+- [ ] `npm run typecheck && npm test -- test/routes/fleet-routes.test.ts`;commit `feat: add fleet session input fallback endpoint`。
+
+### Task 18: 前端融入核心(远程 Tab 进原生 Tab 条 + 终端组件复用)
+
+**Files:** Modify `src/web/public/app.js`、`src/web/public/terminal-ui.js`、`src/web/public/fleet-api.js`;Delete UI 层 `src/web/public/fleet-dashboard.js`(重写为薄状态模块 `fleet-tabs.js` 或直接并入 app.js 增量,执行者按 app.js 现有模块约定定);Modify `index.html`(script 标签与容器清理)、`styles.css`(删除 Rev 2 的 .fleet-dashboard 平行界面样式块,新增仅限 tab 徽标/状态点的小样式,全部用现有 CSS 变量)。
+
+**行为规格(spec §6.1/§6.5):**
+1. `refreshFleetState()`(SSE `fleet:*` 驱动 + 初始加载)维护 `_fleetTabs`(来自 `GET /api/fleet` 的 sessionTabs,剔除 `deviceId==='local'` 的——本地会话已在原生列表)。
+2. 原生 tab 条渲染处混排远程 tab:标签 `设备名 / 原标签` + 状态点 + 模式徽标;顺序:本地在前远程在后(或按现有排序习惯,执行者读 app.js 的 tab 渲染函数后定,报告里说明)。
+3. 选中远程 tab → 走现有 `selectSession` 等价路径但数据源切换:终端 WS URL → `/ws/fleet/devices/:d/sessions/:s/terminal`;缓冲 → `GET /api/fleet/.../terminal`;可靠输入 HTTP 回退 → Task 17 端点;本地会话路径零改动(回归红线:现有本地 tab 行为逐像素不变)。
+4. 远程 tab 的会话操作面板(respawn/ralph 等 Claude 专属功能)首版禁用/隐藏,仅保留:查看终端、输入、停止会话、关 tab。
+5. 主题:新增元素只用现有 CSS 变量;移动端断点下 tab 标签截断不溢出。
+
+**执行方式:** 先读 `app.js` 的 tab 渲染/selectSession/_connectWs/_reliableSend 与 `terminal-ui.js` 的 URL 构造点,把发现写进报告;改动走"参数化注入"而非复制管线。验收:`npm run check:frontend-syntax && npm run check:public-assets && npm run format:check` + `test/render-index-html.test.ts` 等既有前端门禁 + 手动 curl 级验证;本地 tab 回归由 Task 21 浏览器实测把关。commit `feat: integrate fleet tabs into native session UI`。
+
+### Task 19: 设备面板(panels-ui 风格)+ 头部入口
+
+**Files:** Modify `src/web/public/panels-ui.js`(或按其约定新增面板注册)、`index.html`、`styles.css`、`app.js`(头部按钮)。
+
+**行为规格(spec §6.2):** 侧面板遵循现有面板交互;内容:设备列表(状态灯/平台/hostname/活动会话数/`⚠ 无 tmux` 标)、生成配对码(码+倒计时+可复制 join 命令)、远程新建会话表单(设备默认当前、offline 禁选;workingDir 必填;mode 分段控件)。头部按钮 + 在线设备数 badge;**移动端保留**(区别于 away-digest 的桌面-only)。SSE `fleet:*` 刷新面板。全部用现有 CSS 变量。验收同 Task 18 门禁;commit `feat: add fleet device panel`。
+
+### Task 20: 分屏网格原生化(桌面/平板;手机禁用)
+
+**Files:** Modify Task 18 产出的 fleet 前端模块、`styles.css`。
+
+**行为规格(spec §6.3):** 保留 Rev 2 的网格语义(1/2/2×2、钉格、每格独立 WS/xterm、≤4 格、≤6 实例、掉线遮罩、回线自动重连、非用户关闭可见可恢复——含 Rev 2 修复的驱逐/双开/覆盖层语义),但:样式全部换现有设计变量并跟随 skin;网格控件在手机断点(MobileDetection / mobile.css 约定)隐藏且逻辑禁用;平板/桌面可用。commit `feat: restyle fleet grid into native design`。
+
+### Task 21: 浏览器实测 + 部署更新
+
+- [ ] 本机起烟测拓扑(fleetc central :3100 + fleetn 节点,`CODEMAN_INSTANCE` 隔离),用浏览器工具实测(CLAUDE.md 守则:`domcontentloaded` + 等 3-4s):桌面视口——本地/远程 tab 混排、远程终端输入输出、设备面板、配对码、网格钉两格互不串扰、skin 切换跟随;**移动视口(375×812)**——tab 不溢出、设备面板可用、无网格控件、远程终端可输入。截图留档。
+- [ ] 回归红线:本地会话 tab 行为与原版一致(开/关/切/终端)。
+- [ ] 全量门禁:`npm run typecheck && npm run lint && npm run test:ci`(基线 flaky 除外)。
+- [ ] 部署:push → mini `git pull + build + kickstart` → macbook `git pull + build + launchctl kickstart gui/$(id -u)/com.codeman.node` → 真机验收 dashboard。
