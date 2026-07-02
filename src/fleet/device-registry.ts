@@ -23,7 +23,18 @@ export class DeviceRegistry {
   private file: StoredFile = { devices: {}, pairingCodes: {} };
   private online = new Set<string>();
   constructor(private filePath: string = dataPath('fleet-devices.json')) {
-    if (existsSync(filePath)) this.file = JSON.parse(readFileSync(filePath, 'utf8'));
+    if (existsSync(filePath)) {
+      try {
+        const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as Partial<StoredFile>;
+        // Guard against missing required keys; merge with defaults
+        this.file = {
+          devices: parsed.devices ?? {},
+          pairingCodes: parsed.pairingCodes ?? {},
+        };
+      } catch (err) {
+        console.warn(`[DeviceRegistry] Failed to load fleet-devices.json; falling back to empty state:`, err);
+      }
+    }
   }
   createPairingCode(now = Date.now()) {
     const bytes = randomBytes(PAIRING_CODE_LENGTH);

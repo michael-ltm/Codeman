@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DeviceRegistry } from '../../src/fleet/device-registry.js';
@@ -61,5 +61,13 @@ describe('DeviceRegistry', () => {
     const reloaded = new DeviceRegistry(file);
     expect(reloaded.listDevices().map((x) => x.id)).toEqual([deviceId]);
     expect(reloaded.getDevice(deviceId)?.status).toBe('offline'); // 重启后一律 offline
+  });
+
+  it('tolerates corrupted fleet-devices.json; falls back to empty state', () => {
+    // Write garbage to the registry file
+    writeFileSync(file, '{oops');
+    // Should not throw; should initialize with empty state
+    const reg2 = new DeviceRegistry(file);
+    expect(reg2.listDevices()).toEqual([]);
   });
 });
