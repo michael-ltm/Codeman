@@ -143,6 +143,12 @@ Object.assign(CodemanApp.prototype, {
       // distinguish them. We use tmux send-keys -H to send a line feed byte (0x0a)
       // which the inner application recognizes as "insert newline" vs carriage return.
       if (ev.key === 'Enter' && (ev.shiftKey || ev.ctrlKey) && ev.type === 'keydown') {
+        // Remote fleet tabs have no /send-key endpoint (v1 remote input is
+        // single-line). Swallow multi-line Enter so it neither 404s nor falls
+        // through to an accidental submit. Local tabs are unaffected.
+        if (this.activeSessionId && this.isFleetKey?.(this.activeSessionId)) {
+          return false;
+        }
         if (this.activeSessionId) {
           if (this._localEchoEnabled) {
             const text = this._localEchoOverlay?.pendingText || '';
@@ -574,7 +580,8 @@ Object.assign(CodemanApp.prototype, {
                 // Fall through to HTTP POST
               }
             }
-            if (!sentViaWs) {
+            if (!sentViaWs && !this.isFleetKey?.(this.activeSessionId)) {
+              // Fleet tabs resize over their WS only (no HTTP resize endpoint).
               fetch(`/api/sessions/${this.activeSessionId}/resize`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2180,6 +2187,10 @@ Object.assign(CodemanApp.prototype, {
         // Fall through to HTTP POST
       }
     }
+    // Remote fleet tabs have no HTTP resize endpoint — resize rides the fleet WS
+    // only (the WS-first path above). Skip the local POST so a fleet key never
+    // hits `/api/sessions/:id/resize` (which would 404). Local tabs unchanged.
+    if (this.isFleetKey?.(sessionId)) return changed;
     const body = { ...dims, viewportType };
     if (options.force) body.force = true;
     await fetch(`/api/sessions/${sessionId}/resize`, {

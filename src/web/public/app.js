@@ -638,10 +638,10 @@ class CodemanApp {
       this.initTerminal();
       this.loadFontSize();
       this.connectSSE();
-      // Fleet dashboard: bootstrap after SSE is wired so device/session churn
+      // Fleet tabs: bootstrap after SSE is wired so device/session churn
       // (fleet:* events → refreshFleetState) is already routed. Self-contained
       // (its own try/catch); a fleet fetch failure never blocks the local UI.
-      this.initFleetDashboard();
+      this.initFleetTabs();
       // Only fetch state if SSE init event hasn't arrived within 3s (avoids duplicate handleInit)
       this._initFallbackTimer = setTimeout(() => {
         if (this._initGeneration === 0) this.loadState();
@@ -1704,8 +1704,7 @@ class CodemanApp {
     // Skip if buffer load already in progress — avoids competing clear+rewrite cycles
     if (this._isLoadingBuffer) return;
     try {
-      const res = await fetch(`/api/sessions/${this.activeSessionId}/terminal?tail=${TERMINAL_TAIL_SIZE}`);
-      const data = (await res.json())?.data ?? {};
+      const data = await this._loadTerminalBuffer(this.activeSessionId, TERMINAL_TAIL_SIZE);
       if (data.terminalBuffer) {
         this.terminal.clear();
         this.terminal.reset();
@@ -1734,8 +1733,7 @@ class CodemanApp {
 
       // Fetch buffer, clear terminal, write buffer, resize (no Ctrl+L needed)
       try {
-        const res = await fetch(`/api/sessions/${data.id}/terminal`);
-        const termData = (await res.json())?.data ?? {};
+        const termData = await this._loadTerminalBuffer(data.id);
 
         this.terminal.clear();
         this.terminal.reset();
@@ -1975,7 +1973,13 @@ class CodemanApp {
     this._disconnectWs();
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${location.host}/ws/sessions/${sessionId}/terminal`;
+    // Parameterize the terminal WS path by tab type: remote fleet tabs use the
+    // fleet proxy (same frame protocol); local tabs are unchanged.
+    const _fleet = this._fleetTarget?.(sessionId);
+    const _wsPath = _fleet
+      ? `/ws/fleet/devices/${encodeURIComponent(_fleet.deviceId)}/sessions/${encodeURIComponent(_fleet.sessionId)}/terminal`
+      : `/ws/sessions/${sessionId}/terminal`;
+    const url = `${proto}//${location.host}${_wsPath}`;
     const ws = new WebSocket(url);
     this._ws = ws;
     this._wsSessionId = sessionId;
@@ -2172,7 +2176,13 @@ class CodemanApp {
           try {
             const body = { input: rec.data, seq: rec.seq, clientId: this._clientId };
             if (rec.useMux) body.useMux = true;
-            resp = await fetch(`/api/sessions/${sessionId}/input`, {
+            // Remote fleet tabs POST to the fleet input fallback (Task 17); the
+            // node dedups by (clientId, seq) exactly like the local endpoint.
+            const _fleet = this._fleetTarget?.(sessionId);
+            const _inputUrl = _fleet
+              ? `/api/fleet/devices/${encodeURIComponent(_fleet.deviceId)}/sessions/${encodeURIComponent(_fleet.sessionId)}/input`
+              : `/api/sessions/${sessionId}/input`;
+            resp = await fetch(_inputUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(body),
@@ -2783,7 +2793,10 @@ class CodemanApp {
     const container = this.$('sessionTabs');
     const existingTabs = container.querySelectorAll('.session-tab[data-id]');
     const existingIds = new Set([...existingTabs].map(t => t.dataset.id));
-    const currentIds = new Set(this.sessions.keys());
+    // Include remote fleet keys so incremental detection stays valid when remote
+    // tabs are in the DOM (they live in this.fleetTabs, not this.sessions). Empty
+    // when no devices are joined, so local-only rendering is byte-identical.
+    const currentIds = new Set([...this.sessions.keys(), ...(this.fleetTabs?.keys() ?? [])]);
 
     // Check if we can do incremental update (same session IDs)
     const canIncremental = existingIds.size === currentIds.size &&
@@ -3029,6 +3042,14 @@ class CodemanApp {
       _tabIdx++;
     }
 
+    // Remote fleet tabs render AFTER local tabs (local-first ordering). They are
+    // not part of sessionOrder, so Alt+N / drag-reorder stay local-only.
+    if (this.fleetTabs && this.fleetTabs.size > 0) {
+      for (const [key, tab] of this.fleetTabs) {
+        parts.push(this._fleetTabHtml(key, tab));
+      }
+    }
+
     container.innerHTML = parts.join('');
 
     // Set up drag-and-drop handlers for tab reordering
@@ -3154,6 +3175,9 @@ class CodemanApp {
     const tabs = container.querySelectorAll('.session-tab[data-id]');
 
     tabs.forEach(tab => {
+      // Remote fleet tabs are not part of sessionOrder — leave them un-draggable
+      // so they can't be picked up (the reorder would no-op on indexOf === -1).
+      if (tab.dataset.fleet) return;
       tab.setAttribute('draggable', 'true');
 
       tab.addEventListener('dragstart', (e) => {
@@ -3714,12 +3738,13 @@ class CodemanApp {
 
       this._setTerminalLoadState(sessionId, selectGen, 'fetching');
       _crashDiag.log('FETCH_START');
-      const res = await fetch(`/api/sessions/${sessionId}/terminal?tail=${TERMINAL_TAIL_SIZE}`);
+      // Parameterized by tab type: local `/api/sessions/:id/terminal?tail=N` or
+      // remote `/api/fleet/.../terminal`, normalized to { terminalBuffer, truncated }.
+      const data = await this._loadTerminalBuffer(sessionId, TERMINAL_TAIL_SIZE);
       if (this._isStaleSelect(selectGen)) {
         this._clearTerminalLoadState(sessionId, selectGen);
         return;
       }
-      const data = (await res.json())?.data ?? {};
       _crashDiag.log(`FETCH_DONE: ${data.terminalBuffer ? (data.terminalBuffer.length/1024).toFixed(0) + 'KB' : 'empty'} truncated=${data.truncated}`);
 
       if (data.terminalBuffer) {
@@ -3991,6 +4016,11 @@ class CodemanApp {
 
   // Request confirmation before closing a session
   requestCloseSession(sessionId) {
+    // Remote fleet tab: close = hide locally (no confirm, session keeps running).
+    if (this.isFleetKey(sessionId)) {
+      this.closeFleetTab(sessionId);
+      return;
+    }
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
