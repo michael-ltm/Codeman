@@ -302,9 +302,16 @@ export class FleetCentralController extends EventEmitter {
     this.emit('broadcast', 'fleet:device-online', handle.summary());
   }
 
-  disconnectNode(deviceId: string): void {
+  /**
+   * Tears down a remote device's connection. When `socket` is provided and it no longer
+   * matches the handle's current socket, this is a no-op: it's a stale/asynchronous `close`
+   * event from a socket that `connectNode` already replaced, and must not clobber the fresh
+   * connection. Omit `socket` to force disconnection unconditionally (existing behavior).
+   */
+  disconnectNode(deviceId: string, socket?: NodeSocketLike): void {
     const handle = this.remoteHandles.get(deviceId);
     if (!handle) return;
+    if (socket && handle.socket !== socket) return; // stale close from a replaced socket
     this.remoteHandles.delete(deviceId);
     handle.rejectAllPending(new Error('Device disconnected'));
     handle.clearSinksSilently();

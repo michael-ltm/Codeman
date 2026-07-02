@@ -301,4 +301,40 @@ describe('FleetCentralController', () => {
     expect(ids.indexOf(onlineDeviceId)).toBeLessThan(ids.indexOf(offlineDeviceId));
     expect(state.devices.find((d) => d.id === offlineDeviceId)?.status).toBe('offline');
   });
+
+  it('9. disconnectNode(id, socket) is a no-op when socket is a stale/replaced connection; the current socket still disconnects normally', async () => {
+    const reg = makeRegistry();
+    const deviceId = pairDevice(reg);
+    const controller = new FleetCentralController(reg);
+    const onBroadcast = vi.fn();
+    const onDeviceOffline = vi.fn();
+    controller.on('broadcast', onBroadcast);
+    controller.on('device-offline', onDeviceOffline);
+
+    const sock1 = makeSocket();
+    controller.connectNode(deviceId, sock1, helloFrame(deviceId));
+
+    // Reconnect: connectNode closes sock1 (4000, 'replaced') and installs sock2 as the live handle.
+    const sock2 = makeSocket();
+    controller.connectNode(deviceId, sock2, helloFrame(deviceId));
+    expect(sock1.close).toHaveBeenCalledWith(4000, 'replaced');
+
+    onBroadcast.mockClear();
+    onDeviceOffline.mockClear();
+
+    // sock1's 'close' event fires asynchronously after replacement; the WS route calls
+    // disconnectNode(id, sock1) — this must be a no-op since sock1 is no longer current.
+    controller.disconnectNode(deviceId, sock1);
+
+    expect(controller.isOnline(deviceId)).toBe(true);
+    expect(controller.getHandle(deviceId)).not.toBeNull();
+    expect(onBroadcast).not.toHaveBeenCalledWith('fleet:device-offline', expect.anything());
+    expect(onDeviceOffline).not.toHaveBeenCalled();
+
+    // A real close of the current socket still disconnects as normal.
+    controller.disconnectNode(deviceId, sock2);
+    expect(controller.isOnline(deviceId)).toBe(false);
+    expect(onBroadcast).toHaveBeenCalledWith('fleet:device-offline', { deviceId });
+    expect(onDeviceOffline).toHaveBeenCalledWith(deviceId);
+  });
 });
