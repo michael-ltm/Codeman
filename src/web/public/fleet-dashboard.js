@@ -380,8 +380,10 @@ Object.assign(CodemanApp.prototype, {
       // stale-dead-rec reuse path: an offline tile the reconnect sweep hasn't
       // reached yet, or one whose device dropped). Tear the dead rec down and
       // fall through to build a fresh terminal + WS. CONNECTING (0)/OPEN (1) are
-      // healthy and re-attach normally.
-      const wsState = existing.ws ? existing.ws.readyState : 3;
+      // healthy and re-attach normally. null means the ws is in-flight (buffer
+      // fetch not yet assigned) — treat as healthy (0) to re-attach instead of
+      // tearing down.
+      const wsState = existing.ws ? existing.ws.readyState : 0;
       if (wsState !== 0 && wsState !== 1) {
         this.closeFleetTerminal(key);
       } else {
@@ -644,7 +646,11 @@ Object.assign(CodemanApp.prototype, {
     // once this terminal is handed its own container back.
     const node = rec.term && rec.term.element;
     if (!rec.el || !node || node.parentElement !== rec.el) return;
-    if (rec.el.querySelector('.tile-offline')) return;
+    const existing = rec.el.querySelector('.tile-offline');
+    if (existing) {
+      existing.textContent = overlayText;
+      return;
+    }
     const overlay = document.createElement('div');
     overlay.className = 'tile-offline';
     overlay.textContent = overlayText;
