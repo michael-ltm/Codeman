@@ -18,7 +18,7 @@ import {
   type ApiResponse,
   type SessionColor,
 } from '../../types.js';
-import { Session, isAltScreenStripMode } from '../../session.js';
+import { Session } from '../../session.js';
 import { SseEvent } from '../sse-events.js';
 import {
   CreateSessionSchema,
@@ -38,6 +38,9 @@ import {
 import {
   autoConfigureRalph,
   CASES_DIR,
+  computeSessionTerminalBuffer,
+  createSessionCore,
+  deleteSessionCore,
   findSessionOrFail,
   parseBody,
   persistAndBroadcastSession,
@@ -66,96 +69,10 @@ import { dataPath } from '../../config/instance.js';
 // Path to linked-cases registry (same file used by case-routes resolveCasePath)
 const LINKED_CASES_FILE = dataPath('linked-cases.json');
 
-// Pre-compiled regex for terminal buffer cleaning (avoids per-request compilation)
-// eslint-disable-next-line no-control-regex
-const CLAUDE_BANNER_PATTERN = /\x1b\[1mClaud/;
-// eslint-disable-next-line no-control-regex
-const CTRL_L_PATTERN = /\x0c/g;
-const LEADING_WHITESPACE_PATTERN = /^[\s\r\n]+/;
-
-/**
- * Match xterm alternate-screen mode toggles + the standalone scrollback-erase.
- *
- * - DECSET/DECRST 47, 1047, 1049 = enter/exit alternate screen buffer
- *   (1049 also saves cursor and clears the alt buffer).
- * - CSI 3 J = erase saved lines (scrollback).
- *
- * Codex AND Claude Code emit `\x1b[?1049h` and clear-scrollback sequences (the
- * latter intermittently, e.g. full-screen pickers/dialogs). xterm.js obeys them
- * by switching to the alt buffer (no native scrollback) and wiping saved lines,
- * so the user's conversation history disappears on every tab switch / pane
- * refresh (and scroll-up breaks live). Stripping these from the replayed byte
- * stream keeps everything in the main buffer with scrollback intact. Mirrors the
- * live-stream strip in Session._handleTerminalOutput (isAltScreenStripMode).
- */
-// eslint-disable-next-line no-control-regex
-const ALT_SCREEN_TOGGLE_PATTERN = /\x1b\[\?(?:47|1047|1049)[hl]/g;
-// eslint-disable-next-line no-control-regex
-const ERASE_SCROLLBACK_PATTERN = /\x1b\[3J/g;
-// Mouse-tracking enables (X10/button/any-event/UTF-8/SGR/alt-scroll) — once on,
-// xterm.js forwards wheel events to the app instead of scrolling the viewport.
-// Live streams are stripped at the source, but buffers persisted BEFORE that
-// strip existed can still carry them; strip on replay for parity.
-// eslint-disable-next-line no-control-regex
-const MOUSE_TRACKING_PATTERN = /\x1b\[\?(?:1000|1001|1002|1003|1005|1006|1007)[hl]/g;
-
-/**
- * Strip redundant Ink spinner/status-bar redraw frames from the terminal buffer.
- * Ink (Claude Code's TUI) uses absolute cursor positioning (CSI n d = VPA) to animate
- * the spinner and update the status bar. During long thinking phases, these frames
- * accumulate to 500KB+ of repeated overwrites to the same rows.
- *
- * Strategy: detect "redraw clusters" — dense runs of VPA escapes where each is within
- * FRAME_GAP bytes of the previous (i.e. continuous rerendering of the same UI region).
- * Collapse each big cluster down to just the bytes from its last VPA onwards (the final
- * frame). Content *between* clusters (Claude's streamed response text) is preserved.
- *
- * Without clustering, a single first-VPA-finds-all approach would discard the entire
- * conversation after Claude's first render — losing 100KB+ of legitimate scrollback.
- */
-export function stripInkRedrawBloat(buffer: string): string {
-  // eslint-disable-next-line no-control-regex
-  const vpaRe = /\x1b\[\d+d/g;
-  const positions: number[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = vpaRe.exec(buffer)) !== null) {
-    positions.push(m.index);
-  }
-  if (positions.length < 10) return buffer; // Too few VPAs to be bloat
-
-  // Group consecutive VPAs into clusters separated by gaps > FRAME_GAP.
-  // Within a cluster, VPAs are close together (continuous rerenders).
-  // Between clusters, real terminal output (response text) lives.
-  const FRAME_GAP = 8 * 1024; // 8KB — one Ink frame is typically 1-4KB
-  const MIN_BLOAT_SIZE = 32 * 1024; // Only collapse clusters spanning >= 32KB
-
-  const clusters: { start: number; end: number }[] = [];
-  let cs = positions[0];
-  let ce = positions[0];
-  for (let i = 1; i < positions.length; i++) {
-    if (positions[i] - ce <= FRAME_GAP) {
-      ce = positions[i];
-    } else {
-      clusters.push({ start: cs, end: ce });
-      cs = positions[i];
-      ce = positions[i];
-    }
-  }
-  clusters.push({ start: cs, end: ce });
-
-  // For each big cluster, replace [start..end] with the bytes from `end` onwards
-  // (which contains the last frame's content up to where the next cluster, or
-  // post-cluster content, begins).
-  const parts: string[] = [];
-  let cursor = 0;
-  for (const cl of clusters) {
-    if (cl.end - cl.start < MIN_BLOAT_SIZE) continue;
-    parts.push(buffer.slice(cursor, cl.start));
-    cursor = cl.end;
-  }
-  parts.push(buffer.slice(cursor));
-  return parts.join('');
-}
+// Moved to route-helpers.ts (needed there by readSessionTerminalBuffer /
+// computeSessionTerminalBuffer, shared with fleet). Re-exported here so
+// existing imports (test/strip-ink-redraw-bloat.test.ts) keep working.
+export { stripInkRedrawBloat } from '../route-helpers.js';
 
 /**
  * Validate image bytes against a declared extension. Sniffs the first ~12 bytes
@@ -260,7 +177,10 @@ export function registerSessionRoutes(
   // ========== Session Creation ==========
 
   app.post('/api/sessions', async (req) => {
-    // Prevent unbounded session creation
+    // Prevent unbounded session creation. Checked here (before the disk
+    // side-effects below) so a request that's going to be rejected never
+    // performs them; createSessionCore re-checks this for callers (fleet)
+    // that don't have a handler validating first.
     if (ctx.sessions.size >= MAX_CONCURRENT_SESSIONS) {
       return createErrorResponse(
         ApiErrorCode.OPERATION_FAILED,
@@ -271,7 +191,9 @@ export function registerSessionRoutes(
     const body = parseBody(CreateSessionSchema, req.body);
     const workingDir = body.workingDir || process.cwd();
 
-    // Validate workingDir exists and is a directory
+    // Validate workingDir exists and is a directory. Same reasoning as the
+    // cap check above: validated here first so the disk side-effects below
+    // don't run against a bogus path; createSessionCore re-validates too.
     if (body.workingDir) {
       try {
         const stat = statSync(workingDir);
@@ -329,39 +251,6 @@ export function registerSessionRoutes(
       await refreshStaleHookSecret(workingDir).catch(() => {});
     }
 
-    // Check OpenCode availability if requested
-    if (body.mode === 'opencode') {
-      const { isOpenCodeAvailable } = await import('../../utils/opencode-cli-resolver.js');
-      if (!isOpenCodeAvailable()) {
-        return createErrorResponse(
-          ApiErrorCode.OPERATION_FAILED,
-          'OpenCode CLI not found. Install with: curl -fsSL https://opencode.ai/install | bash'
-        );
-      }
-    }
-
-    // Check Codex availability if requested
-    if (body.mode === 'codex') {
-      const { isCodexAvailable } = await import('../../utils/codex-cli-resolver.js');
-      if (!isCodexAvailable()) {
-        return createErrorResponse(
-          ApiErrorCode.OPERATION_FAILED,
-          'Codex CLI not found. Install with: npm install -g @openai/codex'
-        );
-      }
-    }
-
-    // Check Gemini availability if requested
-    if (body.mode === 'gemini') {
-      const { isGeminiAvailable } = await import('../../utils/gemini-cli-resolver.js');
-      if (!isGeminiAvailable()) {
-        return createErrorResponse(
-          ApiErrorCode.OPERATION_FAILED,
-          'Gemini CLI not found. Install with: npm install -g @google/gemini-cli'
-        );
-      }
-    }
-
     // Pre-validate resumeSessionId: check that the conversation file actually exists
     // in Claude's projects directory. If not, skip resume to avoid confusing
     // "No conversation found" errors from Claude CLI.
@@ -392,51 +281,26 @@ export function registerSessionRoutes(
       }
     }
 
-    const globalNice = await ctx.getGlobalNiceConfig();
-    const modelConfig = await ctx.getModelConfig();
-    const mode = body.mode || 'claude';
-    const model =
-      mode === 'opencode'
-        ? body.openCodeConfig?.model
-        : mode === 'codex'
-          ? body.codexConfig?.model
-          : mode === 'gemini'
-            ? body.geminiConfig?.model
-            : mode !== 'shell'
-              ? modelConfig?.defaultModel || undefined
-              : undefined;
-    const claudeModeConfig = await ctx.getClaudeModeConfig();
-    const terminalHistoryConfig = await ctx.getTerminalHistoryConfig();
-    const session = new Session({
+    // Session mechanics (cap/workingDir re-check, mode-specific CLI-availability
+    // check, Session construction, wiring, persistence, broadcast) live in
+    // createSessionCore — shared with fleet's device adapter. REST never passes
+    // opts.start: sessions are started later via the separate /interactive or
+    // /shell endpoints below, unchanged.
+    const session = await createSessionCore(ctx, {
       workingDir,
-      mode,
-      name: body.name || '',
-      mux: ctx.mux,
-      useMux: true,
-      niceConfig: globalNice,
-      model,
-      claudeMode: claudeModeConfig.claudeMode,
-      allowedTools: claudeModeConfig.allowedTools,
-      openCodeConfig: mode === 'opencode' ? body.openCodeConfig : undefined,
-      codexConfig: mode === 'codex' ? body.codexConfig : undefined,
-      geminiConfig: mode === 'gemini' ? body.geminiConfig : undefined,
+      mode: body.mode,
+      name: body.name,
+      openCodeConfig: body.openCodeConfig,
+      codexConfig: body.codexConfig,
+      geminiConfig: body.geminiConfig,
       resumeSessionId: validatedResumeId,
       envOverrides: body.envOverrides,
       effort: body.effort,
-      tmuxHistoryLimit: terminalHistoryConfig.tmuxHistoryLimit,
     });
 
-    ctx.addSession(session);
-    ctx.store.incrementSessionsCreated();
-    ctx.persistSessionState(session);
-    await ctx.setupSessionListeners(session);
-    getLifecycleLog().log({ event: 'created', sessionId: session.id, name: session.name });
-
-    // Use light state for broadcast + response — buffers are fetched on-demand via /terminal.
+    // Use light state for the response — buffers are fetched on-demand via /terminal.
     // Avoids serializing 2-3MB of terminal+text buffers per session creation.
-    const lightState = ctx.getSessionStateWithRespawn(session);
-    ctx.broadcast(SseEvent.SessionCreated, lightState);
-    return { session: lightState };
+    return { session: ctx.getSessionStateWithRespawn(session) };
   });
 
   // ========== Rename Session ==========
@@ -478,11 +342,7 @@ export function registerSessionRoutes(
     const query = req.query as { killMux?: string };
     const killMux = query.killMux !== 'false'; // Default to true
 
-    if (!ctx.sessions.has(id)) {
-      return createErrorResponse(ApiErrorCode.NOT_FOUND, 'Session not found');
-    }
-
-    await ctx.cleanupSession(id, killMux, 'user_delete');
+    await deleteSessionCore(ctx, id, killMux);
     return {};
   });
 
@@ -984,79 +844,14 @@ export function registerSessionRoutes(
     const { id } = req.params as { id: string };
     const query = req.query as { tail?: string };
     const session = findSessionOrFail(ctx, id);
-
-    // Prepend the live tmux pane buffer so tab-switch replay shows the current
-    // on-screen frame, not just the accumulated byte history. This matters for
-    // TUI modes (codex/opencode) that repaint only their latest frame: the
-    // accumulated buffer alone replays as the idle banner. We clear the viewport
-    // (`\x1b[H\x1b[2J`) between the history and the live pane so they don't
-    // overlap. `captureActivePaneBuffer` is a no-op ('') under test mode and
-    // returns null when unavailable, in which case we fall back to history.
-    const muxName = session.muxName;
-    const liveMuxBuffer =
-      muxName && typeof ctx.mux.captureActivePaneBuffer === 'function'
-        ? ctx.mux.captureActivePaneBuffer(muxName)
-        : null;
-    const rawBuffer =
-      liveMuxBuffer !== null && liveMuxBuffer.length > 0
-        ? session.terminalBufferLength > 0
-          ? `${session.terminalBuffer}\x1b[H\x1b[2J${liveMuxBuffer}`
-          : liveMuxBuffer
-        : session.terminalBuffer;
     const tailBytes = query.tail ? parseInt(query.tail, 10) : 0;
-    const fullSize = rawBuffer.length;
-    let truncated = false;
-    let cleanBuffer: string;
 
-    // Strip redundant Ink spinner/status redraws BEFORE tailing.
-    // During long thinking phases, Ink rewrites the same rows thousands of times
-    // (500KB+). Without stripping, tail mode returns only spinner frames and
-    // the terminal appears empty when switching tabs.
-    let strippedBuffer = stripInkRedrawBloat(rawBuffer);
-
-    // Strip alt-screen toggles and scrollback-erase from Codex/Claude byte
-    // streams. xterm.js obeys them by switching to its scrollback-less alt
-    // buffer and wiping saved lines, so conversation history disappears on tab
-    // switch. Same gate as the live-stream strip in session.ts.
-    if (isAltScreenStripMode(session.mode)) {
-      strippedBuffer = strippedBuffer
-        .replace(ALT_SCREEN_TOGGLE_PATTERN, '')
-        .replace(ERASE_SCROLLBACK_PATTERN, '')
-        .replace(MOUSE_TRACKING_PATTERN, '');
-    }
-
-    if (tailBytes > 0 && strippedBuffer.length > tailBytes) {
-      // Fast path: tail from the end, skip expensive banner search on full 2MB buffer.
-      // Banner is near the top and gets discarded by tail anyway.
-      cleanBuffer = strippedBuffer.slice(-tailBytes);
-      truncated = true;
-      // Avoid starting mid-ANSI-escape: find first newline within the first 4KB
-      // and start from there. This prevents xterm.js from parsing a partial escape
-      // sequence which corrupts cursor position for all subsequent Ink redraws.
-      const firstNewline = cleanBuffer.indexOf('\n');
-      if (firstNewline > 0 && firstNewline < 4096) {
-        cleanBuffer = cleanBuffer.slice(firstNewline + 1);
-      }
-    } else {
-      // Full buffer: clean junk before actual Claude content
-      cleanBuffer = strippedBuffer;
-
-      // Find where Claude banner starts (has color codes before "Claude")
-      const claudeMatch = cleanBuffer.match(CLAUDE_BANNER_PATTERN);
-      if (claudeMatch && claudeMatch.index !== undefined && claudeMatch.index > 0) {
-        let lineStart = claudeMatch.index;
-        while (lineStart > 0 && cleanBuffer[lineStart - 1] !== '\n') {
-          lineStart--;
-        }
-        cleanBuffer = cleanBuffer.slice(lineStart);
-      }
-    }
-
-    // Remove Ctrl+L and leading whitespace (cheap on tailed subset)
-    cleanBuffer = cleanBuffer.replace(CTRL_L_PATTERN, '').replace(LEADING_WHITESPACE_PATTERN, '');
+    // Buffer reconstruction (live-pane prepend + Ink/alt-screen cleanup + tail)
+    // lives in route-helpers.ts, shared with fleet's device adapter.
+    const { terminalBuffer, fullSize, truncated } = computeSessionTerminalBuffer(ctx, session, tailBytes);
 
     return {
-      terminalBuffer: cleanBuffer,
+      terminalBuffer,
       status: session.status,
       fullSize,
       truncated,
