@@ -4,7 +4,9 @@ import { existsSync, rmSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-const TEST_PORT = 3099;
+// 3093/3094: must stay clear of DEFAULT_CODEMAN_PORT (3100) — a fleet node
+// commonly occupies 3100 on dev machines, and TEST_PORT+1 previously hit it.
+const TEST_PORT = 3093;
 const CASES_DIR = join(homedir(), 'codeman-cases');
 
 describe('Quick Start API', () => {
