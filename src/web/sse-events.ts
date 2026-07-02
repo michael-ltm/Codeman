@@ -5,7 +5,7 @@
  * and referenced by the frontend (`SSE_EVENTS` in `constants.js`).
  * Both files MUST be kept in sync.
  *
- * 120 event constants organized by category:
+ * 132 event constants organized by category:
  * - **Core** (1): init
  * - **Session lifecycle** (17): created, updated, deleted, terminal, idle, working, ...
  * - **Session: Ralph** (6): ralphLoopUpdate, todoUpdate, completionDetected, ...
@@ -26,6 +26,7 @@
  * - **Orchestrator** (12): stateChanged, planProgress, planReady, phase*, verification, task*, completed, error
  * - **Clipboard** (1): write
  * - **Cases** (4): created, linked, deleted, order-changed
+ * - **Fleet** (3): device-online, device-offline, sessions-updated
  *
  * Naming convention: `domain:action` (e.g., `session:created`, `respawn:stateChanged`)
  *
@@ -357,6 +358,15 @@ export const CaseDeleted = 'case:deleted' as const;
 /** Case ordering changed. */
 export const CaseOrderChanged = 'case:order-changed' as const;
 
+// ─── Fleet ───────────────────────────────────────────────────────────────────
+
+/** A fleet device (local or a remote node agent) came online. Payload: FleetDeviceSummary. */
+export const FleetDeviceOnline = 'fleet:device-online' as const;
+/** A fleet device went offline (node disconnected). Payload: { deviceId: string }. */
+export const FleetDeviceOffline = 'fleet:device-offline' as const;
+/** A fleet device's session list changed. Payload: { deviceId: string; sessions: FleetSessionSummary[] }. */
+export const FleetSessionsUpdated = 'fleet:sessions-updated' as const;
+
 // ─── Namespace Re-export ─────────────────────────────────────────────────────
 
 /**
@@ -531,4 +541,9 @@ export const SseEvent = {
   CaseLinked,
   CaseDeleted,
   CaseOrderChanged,
+
+  // Fleet
+  FleetDeviceOnline,
+  FleetDeviceOffline,
+  FleetSessionsUpdated,
 } as const;

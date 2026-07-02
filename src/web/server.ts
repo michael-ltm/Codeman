@@ -156,6 +156,7 @@ import {
   registerOrchestratorRoutes,
   registerWsRoutes,
   registerFleetWsRoutes,
+  registerFleetRoutes,
 } from './routes/index.js';
 import { DeviceRegistry } from '../fleet/device-registry.js';
 import { FleetCentralController } from '../fleet/central-controller.js';
@@ -919,6 +920,10 @@ export class WebServer extends EventEmitter {
       registry: this.fleetRegistry,
       getHostPolicy: () => this.getHostPolicy(),
     });
+    // Fleet dashboard REST API (`/api/fleet/*`) — aggregate state, pairing, and
+    // per-device session lifecycle. `POST /api/fleet/pair` is auth-exempt (see
+    // middleware/auth.ts); every other route here uses the normal dashboard auth.
+    registerFleetRoutes(this.app, { controller: this.fleetController, registry: this.fleetRegistry });
   }
 
   /**

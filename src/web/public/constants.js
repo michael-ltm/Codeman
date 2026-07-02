@@ -10,7 +10,7 @@
  * @globals {function} scheduleBackground - scheduler.postTask wrapper (background priority)
  * @globals {function} getEventCoords - Unified mouse/touch coordinate extractor
  * @globals {function} escapeHtml - XSS-safe HTML escaping
- * @globals {object} SSE_EVENTS - Centralized SSE event type constants (120 event types; must match backend src/web/sse-events.ts)
+ * @globals {object} SSE_EVENTS - Centralized SSE event type constants (132 event types; must match backend src/web/sse-events.ts)
  * @globals {Array} BUILTIN_RESPAWN_PRESETS - Built-in respawn configuration presets
  *
  * @dependency None (first in load order)
@@ -409,6 +409,11 @@ const SSE_EVENTS = {
   CASE_LINKED: 'case:linked',
   CASE_DELETED: 'case:deleted',
   CASE_ORDER_CHANGED: 'case:order-changed',
+
+  // Fleet
+  FLEET_DEVICE_ONLINE: 'fleet:device-online',
+  FLEET_DEVICE_OFFLINE: 'fleet:device-offline',
+  FLEET_SESSIONS_UPDATED: 'fleet:sessions-updated',
 };
 
 // ═══════════════════════════════════════════════════════════════
