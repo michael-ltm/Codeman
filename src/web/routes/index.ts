@@ -19,3 +19,4 @@ export { registerOrchestratorRoutes } from './orchestrator-routes.js';
 export { registerClipboardRoutes } from './clipboard-routes.js';
 export { registerSearchRoutes } from './search-routes.js';
 export { registerWsRoutes } from './ws-routes.js';
+export { registerFleetWsRoutes } from './fleet-ws-routes.js';

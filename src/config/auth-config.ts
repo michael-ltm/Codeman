@@ -27,6 +27,16 @@ export const AUTH_FAILURE_MAX = 10;
 /** Failed auth attempt tracking window (ms) */
 export const AUTH_FAILURE_WINDOW_MS = 15 * 60 * 1000;
 
+/**
+ * Max `POST /api/fleet/pair` attempts per IP per window. The pairing code IS the
+ * credential (Basic Auth is bypassed for this route — see auth.ts), so this is
+ * the only thing standing between a caller and brute-forcing an 8-char code.
+ */
+export const FLEET_PAIR_RATE_LIMIT_MAX = 10;
+
+/** `POST /api/fleet/pair` rate limit window (ms). */
+export const FLEET_PAIR_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
 // ============================================================================
 // Hooks
 // ============================================================================

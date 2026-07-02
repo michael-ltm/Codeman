@@ -18,6 +18,8 @@ import {
   MAX_AUTH_SESSIONS,
   AUTH_FAILURE_MAX,
   AUTH_FAILURE_WINDOW_MS,
+  FLEET_PAIR_RATE_LIMIT_MAX,
+  FLEET_PAIR_RATE_LIMIT_WINDOW_MS,
 } from '../../config/auth-config.js';
 import { getHookSecret, HOOK_SECRET_HEADER } from '../../config/hook-secret.js';
 
@@ -30,6 +32,7 @@ interface AuthState {
   authFailures: StaleExpirationMap<string, number> | null;
   qrAuthFailures: StaleExpirationMap<string, number> | null;
   hookSecretFailures: StaleExpirationMap<string, number> | null;
+  fleetPairAttempts: StaleExpirationMap<string, number> | null;
 }
 
 /**
@@ -47,6 +50,7 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
     authFailures: null,
     qrAuthFailures: null,
     hookSecretFailures: null,
+    fleetPairAttempts: null,
   };
 
   const authPassword = process.env.CODEMAN_PASSWORD;
@@ -83,9 +87,19 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
     refreshOnGet: false,
   });
 
+  // Fleet pairing attempt counter per IP — independent bucket, 1-minute window
+  // (see the /api/fleet/pair bypass below). Counts every attempt (not just
+  // failures): the route itself validates the code, this middleware only caps
+  // the attempt rate.
+  state.fleetPairAttempts = new StaleExpirationMap<string, number>({
+    ttlMs: FLEET_PAIR_RATE_LIMIT_WINDOW_MS,
+    refreshOnGet: false,
+  });
+
   const authSessions = state.authSessions;
   const authFailures = state.authFailures;
   const hookSecretFailures = state.hookSecretFailures;
+  const fleetPairAttempts = state.fleetPairAttempts;
 
   function sendAuthRateLimit(
     reply: FastifyReply,
@@ -137,6 +151,35 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
         return;
       }
       // Non-localhost hook requests fall through to normal auth
+    }
+
+    // Fleet device pairing: the pairing code IS the credential (single-use,
+    // 10-minute TTL, consumed by DeviceRegistry.consumePairingCode inside the
+    // route itself) — a brand-new node has no dashboard password to present, so
+    // Basic Auth would just be friction with nothing to check. Guarded by its
+    // own per-IP rate limit (independent bucket from authFailures) so a missing
+    // or guessed code can't be brute-forced.
+    if (req.url === '/api/fleet/pair' && req.method === 'POST') {
+      const ip = req.ip;
+      const attempts = fleetPairAttempts.get(ip) ?? 0;
+      if (attempts >= FLEET_PAIR_RATE_LIMIT_MAX) {
+        sendAuthRateLimit(reply, ip, fleetPairAttempts);
+        return;
+      }
+      fleetPairAttempts.set(ip, attempts + 1);
+      done();
+      return;
+    }
+
+    // Fleet node WebSocket: authenticated by a per-device Bearer token
+    // (DeviceRegistry.authenticate), checked by the route itself — see
+    // fleet-ws-routes.ts. A headless node agent has no cookie jar and no Basic
+    // Auth credentials to present. Nothing else under /api/fleet/* or
+    // /ws/fleet/devices/* is exempted — those still require Basic Auth/cookie
+    // like every other dashboard route.
+    if (req.url === '/ws/fleet/node' && req.method === 'GET') {
+      done();
+      return;
     }
 
     // QR auth path — handled by the route itself (token validation + rate limiting)
