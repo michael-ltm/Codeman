@@ -375,58 +375,85 @@ Object.assign(CodemanApp.prototype, {
 
     const existing = this._fleetTerms.get(key);
     if (existing) {
-      // Re-attach by checking the ACTUAL DOM parent, not the cached `el`: a
-      // sibling tab's open() may have cleared this container (innerHTML=''),
-      // detaching this alive-but-hidden terminal. Without this check a
-      // switch-back into the same tile would leave it blank.
-      const node = existing.term.element;
-      if (node && node.parentElement !== containerEl) {
-        containerEl.innerHTML = '';
-        containerEl.appendChild(node);
+      // A closed/closing WebSocket can never be reused — re-attaching one would
+      // give a live-looking tile with a dead input/output pipe (this is the
+      // stale-dead-rec reuse path: an offline tile the reconnect sweep hasn't
+      // reached yet, or one whose device dropped). Tear the dead rec down and
+      // fall through to build a fresh terminal + WS. CONNECTING (0)/OPEN (1) are
+      // healthy and re-attach normally.
+      const wsState = existing.ws ? existing.ws.readyState : 3;
+      if (wsState !== 0 && wsState !== 1) {
+        this.closeFleetTerminal(key);
+      } else {
+        return this._fleetReattachTerminal(existing, key, containerEl);
       }
-      // Task 14: grid layout switches rebuild the tile DOM wholesale, so a
-      // surviving pinned key's ResizeObserver would otherwise keep watching
-      // the OLD (now detached) container forever. Re-bind it to the new one
-      // whenever the container actually changed. No-op for Task 13's
-      // single-tile path, where containerEl is always the same persistent
-      // #fleet-term-main node.
-      if (existing.el !== containerEl) {
-        try {
-          if (existing.resizeObserver) existing.resizeObserver.disconnect();
-        } catch {
-          /* already disconnected */
-        }
-        if (typeof ResizeObserver !== 'undefined') {
-          const ro = new ResizeObserver(() => {
-            try {
-              existing.fit.fit();
-            } catch {
-              /* container hidden */
-            }
-            this._fleetSendResize(key);
-          });
-          ro.observe(containerEl);
-          existing.resizeObserver = ro;
-        }
-      }
-      existing.el = containerEl;
-      try {
-        existing.fit.fit();
-      } catch {
-        /* not measurable yet */
-      }
-      this._fleetSendResize(key);
-      // Reattaching moves only the terminal's own DOM node — any offline
-      // overlay lived in the OLD container and was left behind. Reapply it so
-      // a still-offline tile doesn't look silently "recovered" after a
-      // layout switch or tab re-select.
-      if (existing.offline) this._fleetMarkTileOffline(key);
-      return;
     }
+    // Fresh instance (no existing rec, or the dead one was just torn down above).
+    {
+      const { deviceId, sessionId } = this._fleetSplitKey(key);
+      if (!deviceId || !sessionId) return;
+      await this._fleetCreateTerminal(key, deviceId, sessionId, containerEl);
+    }
+  },
 
-    const { deviceId, sessionId } = this._fleetSplitKey(key);
-    if (!deviceId || !sessionId) return;
+  /** Re-attach an existing live terminal `rec` into `containerEl` (DOM relocate,
+   *  ResizeObserver rebind, offline-overlay reapply). Split out of openFleetTerminal
+   *  so the dead-WS reopen path can cleanly fall through to fresh creation. */
+  _fleetReattachTerminal(existing, key, containerEl) {
+    // Re-attach by checking the ACTUAL DOM parent, not the cached `el`: a
+    // sibling tab's open() may have cleared this container (innerHTML=''),
+    // detaching this alive-but-hidden terminal. Without this check a
+    // switch-back into the same tile would leave it blank.
+    const node = existing.term.element;
+    if (node && node.parentElement !== containerEl) {
+      containerEl.innerHTML = '';
+      containerEl.appendChild(node);
+    }
+    // Task 14: grid layout switches rebuild the tile DOM wholesale, so a
+    // surviving pinned key's ResizeObserver would otherwise keep watching
+    // the OLD (now detached) container forever. Re-bind it to the new one
+    // whenever the container actually changed. No-op for Task 13's
+    // single-tile path, where containerEl is always the same persistent
+    // #fleet-term-main node.
+    if (existing.el !== containerEl) {
+      try {
+        if (existing.resizeObserver) existing.resizeObserver.disconnect();
+      } catch {
+        /* already disconnected */
+      }
+      if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => {
+          try {
+            existing.fit.fit();
+          } catch {
+            /* container hidden */
+          }
+          this._fleetSendResize(key);
+        });
+        ro.observe(containerEl);
+        existing.resizeObserver = ro;
+      }
+    }
+    existing.el = containerEl;
+    try {
+      existing.fit.fit();
+    } catch {
+      /* not measurable yet */
+    }
+    this._fleetSendResize(key);
+    // Reattaching moves only the terminal's own DOM node — any offline
+    // overlay lived in the OLD container and was left behind. Reapply it so
+    // a still-offline tile doesn't look silently "recovered" after a
+    // layout switch or tab re-select.
+    if (existing.offline) this._fleetMarkTileOffline(key);
+  },
 
+  /**
+   * Build a brand-new terminal + dedicated WS for `key` inside `containerEl`.
+   * Loads a replay buffer, then binds a dedicated WS whose input closure
+   * captures THIS socket only (no cross-device keystroke leakage).
+   */
+  async _fleetCreateTerminal(key, deviceId, sessionId, containerEl) {
     containerEl.innerHTML = '';
     const term = new Terminal({
       scrollback: 5000,
@@ -456,6 +483,13 @@ Object.assign(CodemanApp.prototype, {
       resizeObserver: null,
       offline: false,
       offlineEl: null,
+      // Set by closeFleetTerminal before it calls ws.close() so this rec's own
+      // onclose handler can tell an intentional teardown (no overlay) from an
+      // involuntary drop (device offline / cap / generic → recoverable overlay).
+      intentionalClose: false,
+      // The overlay message to (re)paint while offline; kept on the rec so the
+      // re-attach path reapplies the SAME reason after a layout switch/tab select.
+      offlineMessage: null,
     };
     this._fleetTerms.set(key, rec);
 
@@ -485,7 +519,15 @@ Object.assign(CodemanApp.prototype, {
       // m.t === 'ia' (input ack): no local pending queue to reconcile here.
     };
     ws.onclose = (ev) => {
-      if (ev.code === 4009) this._fleetMarkTileOffline(key);
+      // An intentional teardown (closeFleetTerminal) sets this flag on THIS rec
+      // before closing — leave no overlay. Any OTHER close (device offline 4009,
+      // per-IP cap 4008, network drop / server restart with no code) is an
+      // involuntary disconnect: paint a recoverable overlay and mark rec.offline
+      // so fleet:device-online → _fleetReconnectOfflineTiles reopens it. Messages
+      // are static string literals (no interpolation) to preserve XSS discipline.
+      if (rec.intentionalClose) return;
+      const message = ev && ev.code === 4008 ? '连接数已达上限' : '连接已断开';
+      this._fleetMarkTileOffline(key, message);
     };
     ws.onerror = () => {
       /* surfaced via onclose */
@@ -577,7 +619,7 @@ Object.assign(CodemanApp.prototype, {
     }
   },
 
-  _fleetMarkTileOffline(key) {
+  _fleetMarkTileOffline(key, message) {
     const rec = this._fleetTerms.get(key);
     if (!rec) return;
     // Task 14: persists across reattach (layout switches rebuild tile DOM),
@@ -586,6 +628,12 @@ Object.assign(CodemanApp.prototype, {
     // already exists, so a fresh rec (or one whose container just changed)
     // stays marked.
     rec.offline = true;
+    // Remember the reason so the re-attach path (which calls this with no
+    // message) repaints the same text. `message` is always a static string
+    // literal from the caller — never interpolated user/remote data — so
+    // textContent below stays XSS-safe.
+    if (typeof message === 'string') rec.offlineMessage = message;
+    const overlayText = rec.offlineMessage || '设备已离线';
     // rec.el can be STALE: in layout 1 every background tab's rec.el aliases
     // the SAME #fleet-term-main container the currently-visible tab now owns
     // (selectFleetTab never closes the previous tab's rec — see task-14
@@ -599,7 +647,7 @@ Object.assign(CodemanApp.prototype, {
     if (rec.el.querySelector('.tile-offline')) return;
     const overlay = document.createElement('div');
     overlay.className = 'tile-offline';
-    overlay.textContent = '设备已离线';
+    overlay.textContent = overlayText;
     rec.el.appendChild(overlay);
     rec.offlineEl = overlay;
   },
@@ -607,6 +655,12 @@ Object.assign(CodemanApp.prototype, {
   closeFleetTerminal(key) {
     const rec = this._fleetTerms.get(key);
     if (!rec) return;
+    // Mark BEFORE closing so this rec's onclose handler treats the close as
+    // intentional and skips the recoverable offline overlay. The captured `rec`
+    // in that closure sees this flag even after we delete the key below (a reopen
+    // for the same key would install a NEW rec, so the stale onclose can't stamp
+    // the fresh tile offline).
+    rec.intentionalClose = true;
     try {
       if (rec.resizeObserver) rec.resizeObserver.disconnect();
     } catch {
