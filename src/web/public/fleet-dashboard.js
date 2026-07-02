@@ -455,6 +455,7 @@ Object.assign(CodemanApp.prototype, {
       cid: `fleet-${Math.random().toString(36).slice(2, 10)}`,
       resizeObserver: null,
       offline: false,
+      offlineEl: null,
     };
     this._fleetTerms.set(key, rec);
 
@@ -585,11 +586,22 @@ Object.assign(CodemanApp.prototype, {
     // already exists, so a fresh rec (or one whose container just changed)
     // stays marked.
     rec.offline = true;
-    if (!rec.el || rec.el.querySelector('.tile-offline')) return;
+    // rec.el can be STALE: in layout 1 every background tab's rec.el aliases
+    // the SAME #fleet-term-main container the currently-visible tab now owns
+    // (selectFleetTab never closes the previous tab's rec — see task-14
+    // report). Only paint the overlay when this terminal's own node is
+    // actually the thing living in rec.el right now; otherwise we'd stamp
+    // "offline" onto whatever OTHER key's terminal currently occupies that
+    // container. openFleetTerminal's re-attach path reapplies the overlay
+    // once this terminal is handed its own container back.
+    const node = rec.term && rec.term.element;
+    if (!rec.el || !node || node.parentElement !== rec.el) return;
+    if (rec.el.querySelector('.tile-offline')) return;
     const overlay = document.createElement('div');
     overlay.className = 'tile-offline';
-    overlay.textContent = '设备离线';
+    overlay.textContent = '设备已离线';
     rec.el.appendChild(overlay);
+    rec.offlineEl = overlay;
   },
 
   closeFleetTerminal(key) {
@@ -606,11 +618,29 @@ Object.assign(CodemanApp.prototype, {
       /* ignore */
     }
     try {
+      // xterm's own dispose() already detaches term.element from whatever
+      // parent it currently lives in (it registers an internal disposable
+      // that does `this.element?.parentNode?.removeChild(this.element)`) —
+      // that removal is already surgical, scoped to this terminal's own
+      // node. What is NOT safe is touching rec.el itself: in layout 1 every
+      // background tab's rec.el aliases the SAME #fleet-term-main container
+      // the currently-visible tab now owns (selectFleetTab opens every tab
+      // into that one container and never closes the previous tab's rec).
+      // Blanket-clearing rec.el here — reachable via _fleetEvictIfNeeded
+      // once a 7th session is opened, or via the tab-close ("×") button on
+      // any background tab — would wipe out whatever OTHER key's terminal
+      // is now living in that container, blanking the visible tile.
       rec.term.dispose();
     } catch {
       /* ignore */
     }
-    if (rec.el) rec.el.innerHTML = '';
+    // The offline overlay (if any) is a plain DOM node this rec created for
+    // itself — xterm's dispose() doesn't know about it. Remove it via its
+    // OWN current parent reference, never via rec.el, for the same
+    // stale-container reason as above.
+    if (rec.offlineEl && rec.offlineEl.parentElement) {
+      rec.offlineEl.parentElement.removeChild(rec.offlineEl);
+    }
     this._fleetTerms.delete(key);
     if (this._fleetSelectedKey === key) this._fleetSelectedKey = null;
   },
