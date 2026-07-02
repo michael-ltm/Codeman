@@ -11472,3 +11472,85 @@ html[data-skin="daylight-blue"] .welcome-btn-tunnel.active:hover {
   gap: 10px;
   opacity: 0.7;
 }
+
+/* ── Split-grid layout (Task 14) ── */
+.fleet-layout-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border, #333);
+}
+.fleet-layout-btn {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #333);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.fleet-layout-btn.active {
+  opacity: 1;
+  border-color: var(--accent, #3a86);
+}
+.fleet-tab.pinned {
+  border: 1px solid var(--accent, #3a86);
+}
+.fleet-tab-pin {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.5;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.fleet-tab-pin:hover,
+.fleet-tab-pin.active {
+  opacity: 1;
+}
+/* Grid tiles (layout 2 / 2x2) additionally split into a header + body; the
+   base .fleet-tile rule stays untouched so the single-tile (#fleet-term-main)
+   layout keeps its exact Task 13 appearance. */
+.fleet-tile-grid {
+  display: flex;
+  flex-direction: column;
+}
+.fleet-tile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--border, #333);
+  flex: 0 0 auto;
+}
+.fleet-tile-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fleet-tile-empty {
+  opacity: 0.5;
+}
+.fleet-tile-close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.fleet-tile-close:hover {
+  opacity: 1;
+}
+.fleet-tile-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}

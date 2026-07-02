@@ -3,7 +3,11 @@
  *
  * Renders the three-zone fleet view (device list / global tab strip / focused
  * single terminal) and drives remote terminals over the Task 11 browser WS
- * endpoint. Task 14 layers a split-grid on top of the primitives produced here.
+ * endpoint. Task 14 layers a split-grid (1 / 2 / 2x2 tiles) on top of the
+ * primitives produced here: each tile pins one session key and owns an
+ * independent openFleetTerminal() instance, so input routing per tile is
+ * guaranteed by the same per-socket closure discipline as the single-tile
+ * view — there is no shared/multiplexed WS.
  *
  * Security discipline: every string that originates from a remote node (device
  * names, hostnames, session labels, working dirs, tab titles, pairing/join
@@ -11,10 +15,11 @@
  * terminal's input handler is bound to that terminal's own WebSocket via a
  * closure, so keystrokes for one device can never be delivered to another.
  *
- * Produced on CodemanApp.prototype (Task 14 depends on these names):
+ * Produced on CodemanApp.prototype:
  *   initFleetDashboard, showFleetDashboard, hideFleetDashboard,
  *   refreshFleetState, renderFleetDevices, renderFleetTabs, selectFleetTab,
- *   openFleetTerminal, closeFleetTerminal, _fleetState, _fleetTerms.
+ *   openFleetTerminal, closeFleetTerminal, _fleetState, _fleetTerms,
+ *   setFleetLayout, pinFleetTab, unpinFleetTile, _fleetLayout, _fleetPinned.
  *
  * @mixin Extends CodemanApp.prototype via Object.assign
  * @dependency app.js (CodemanApp), fleet-api.js (listFleet/…), constants.js (escapeHtml)
@@ -43,6 +48,13 @@ Object.assign(CodemanApp.prototype, {
     this._fleetHiddenTabKeys = new Set();
     this._fleetShown = false;
     this._fleetPairTimer = null;
+    // Task 14 split-grid state: _fleetLayout is the slot count (1/2/4);
+    // _fleetPinned[i] is the session key occupying slot i (or null); _fleetLru
+    // tracks last-use timestamps per key for the ≤6-instance eviction rule.
+    this._fleetLayout = 1;
+    this._fleetPinned = [null];
+    this._fleetLru = new Map();
+    this._fleetFocusedTileIndex = 0;
     this._wireFleetControls();
     try {
       this._fleetState = await this.listFleet();
@@ -76,6 +88,19 @@ Object.assign(CodemanApp.prototype, {
     if (sessions) sessions.addEventListener('click', (e) => this._onFleetSessionsClick(e));
     const drawer = document.getElementById('fleet-pair-drawer');
     if (drawer) drawer.addEventListener('click', (e) => this._onFleetPairDrawerClick(e));
+
+    // Task 14: layout toolbar (1 / 2 / 2x2) and grid tile interactions.
+    const layoutToolbar = document.getElementById('fleet-layout-toolbar');
+    if (layoutToolbar) {
+      layoutToolbar.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-layout-btn]');
+        if (!btn) return;
+        this.setFleetLayout(Number(btn.dataset.layoutBtn));
+      });
+    }
+    const termArea = document.getElementById('fleet-term-area');
+    if (termArea) termArea.addEventListener('click', (e) => this._onFleetTermAreaClick(e));
+    this._updateLayoutToolbar();
   },
 
   /** Reveal the dashboard and hide (but never destroy) the local session view. */
@@ -121,6 +146,9 @@ Object.assign(CodemanApp.prototype, {
     this.renderFleetDevices();
     this._renderFleetSessions();
     this.renderFleetTabs();
+    // Rule 7: a device coming back online (fleet:device-online → here) should
+    // auto-reconnect any pinned tile that's still showing its offline overlay.
+    this._fleetReconnectOfflineTiles();
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -252,15 +280,23 @@ Object.assign(CodemanApp.prototype, {
 
   _fleetTabHtml(t) {
     const active = t.key === this._fleetSelectedKey;
-    return `<div class="fleet-tab${active ? ' active' : ''}" data-key="${escapeHtml(t.key)}" title="${escapeHtml(t.title)}">
+    const pinned = Array.isArray(this._fleetPinned) && this._fleetPinned.indexOf(t.key) !== -1;
+    return `<div class="fleet-tab${active ? ' active' : ''}${pinned ? ' pinned' : ''}" data-key="${escapeHtml(t.key)}" title="${escapeHtml(t.title)}">
       <span class="dot ${escapeHtml(this._fleetStatusDot(t.status))}"></span>
       <span class="fleet-tab-title">${escapeHtml(t.title)}</span>
       <span class="fleet-tab-mode">${escapeHtml(t.mode)}</span>
+      <button type="button" class="fleet-tab-pin${pinned ? ' active' : ''}" data-action="pin-tab" data-key="${escapeHtml(t.key)}" aria-label="${pinned ? '已钉选到分屏' : '钉选到分屏'}" title="${pinned ? '已钉选到分屏' : '钉选到分屏'}">📌</button>
       <button type="button" class="fleet-tab-close" data-action="close-tab" data-key="${escapeHtml(t.key)}" aria-label="关闭标签">×</button>
     </div>`;
   },
 
   _onFleetTabsClick(e) {
+    const pinBtn = e.target.closest('[data-action="pin-tab"]');
+    if (pinBtn) {
+      const key = pinBtn.dataset.key;
+      if (key) this.pinFleetTab(key);
+      return;
+    }
     const closeBtn = e.target.closest('[data-action="close-tab"]');
     if (closeBtn) {
       const key = closeBtn.dataset.key;
@@ -268,6 +304,10 @@ Object.assign(CodemanApp.prototype, {
       // Local-only close: drop from the visible set and tear down this browser's
       // terminal/WS. The session KEEPS RUNNING on the device (never stopped).
       this._fleetHiddenTabKeys.add(key);
+      // If this tab is pinned into a grid slot, free the slot too — otherwise
+      // _fleetPinned would keep pointing at a key whose instance just died.
+      const pinnedIdx = Array.isArray(this._fleetPinned) ? this._fleetPinned.indexOf(key) : -1;
+      if (pinnedIdx !== -1) this._fleetPinned[pinnedIdx] = null;
       this.closeFleetTerminal(key);
       if (this._fleetSelectedKey === key) {
         this._fleetSelectedKey = null;
@@ -275,6 +315,7 @@ Object.assign(CodemanApp.prototype, {
         if (next) this.selectFleetTab(next.key);
       }
       this.renderFleetTabs();
+      if (pinnedIdx !== -1) this._fleetRenderTiles();
       return;
     }
     const tab = e.target.closest('.fleet-tab');
@@ -286,10 +327,37 @@ Object.assign(CodemanApp.prototype, {
     this._fleetSelectedKey = key;
     const tab = this._fleetFindTab(key);
     if (tab) this._fleetSelectedDeviceId = tab.deviceId;
+
+    if (this._fleetLayout && this._fleetLayout > 1) {
+      // Task 14: the grid has no #fleet-term-main, so every pre-existing
+      // caller of selectFleetTab (tab click, session list "打开", new-session
+      // auto-select) needs a grid-aware meaning for "select" instead of
+      // silently no-op'ing against a missing container. Focus the tile if
+      // already pinned; otherwise pin into the first empty/oldest slot.
+      this.renderFleetTabs();
+      this.renderFleetDevices();
+      this._renderFleetSessions();
+      const idx = (this._fleetPinned || []).indexOf(key);
+      if (idx !== -1) {
+        this._fleetFocusTile(idx);
+        this._fleetTouch(key);
+      } else {
+        this.pinFleetTab(key);
+      }
+      return;
+    }
+
+    // Layout 1: unchanged Task 13 single-tile behavior. _fleetPinned[0] is
+    // kept in sync purely as bookkeeping (grow-from-1 layout switches and the
+    // ≤6-instance eviction both read _fleetPinned) — it does not alter what
+    // gets rendered here.
+    this._fleetPinned = [key];
     this.renderFleetTabs();
     this.renderFleetDevices();
     this._renderFleetSessions();
     this.openFleetTerminal(key, document.getElementById('fleet-term-main'));
+    this._fleetTouch(key);
+    this._fleetEvictIfNeeded();
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -316,6 +384,31 @@ Object.assign(CodemanApp.prototype, {
         containerEl.innerHTML = '';
         containerEl.appendChild(node);
       }
+      // Task 14: grid layout switches rebuild the tile DOM wholesale, so a
+      // surviving pinned key's ResizeObserver would otherwise keep watching
+      // the OLD (now detached) container forever. Re-bind it to the new one
+      // whenever the container actually changed. No-op for Task 13's
+      // single-tile path, where containerEl is always the same persistent
+      // #fleet-term-main node.
+      if (existing.el !== containerEl) {
+        try {
+          if (existing.resizeObserver) existing.resizeObserver.disconnect();
+        } catch {
+          /* already disconnected */
+        }
+        if (typeof ResizeObserver !== 'undefined') {
+          const ro = new ResizeObserver(() => {
+            try {
+              existing.fit.fit();
+            } catch {
+              /* container hidden */
+            }
+            this._fleetSendResize(key);
+          });
+          ro.observe(containerEl);
+          existing.resizeObserver = ro;
+        }
+      }
       existing.el = containerEl;
       try {
         existing.fit.fit();
@@ -323,6 +416,11 @@ Object.assign(CodemanApp.prototype, {
         /* not measurable yet */
       }
       this._fleetSendResize(key);
+      // Reattaching moves only the terminal's own DOM node — any offline
+      // overlay lived in the OLD container and was left behind. Reapply it so
+      // a still-offline tile doesn't look silently "recovered" after a
+      // layout switch or tab re-select.
+      if (existing.offline) this._fleetMarkTileOffline(key);
       return;
     }
 
@@ -356,6 +454,7 @@ Object.assign(CodemanApp.prototype, {
       seq: 0,
       cid: `fleet-${Math.random().toString(36).slice(2, 10)}`,
       resizeObserver: null,
+      offline: false,
     };
     this._fleetTerms.set(key, rec);
 
@@ -479,7 +578,14 @@ Object.assign(CodemanApp.prototype, {
 
   _fleetMarkTileOffline(key) {
     const rec = this._fleetTerms.get(key);
-    if (!rec || !rec.el || rec.el.querySelector('.tile-offline')) return;
+    if (!rec) return;
+    // Task 14: persists across reattach (layout switches rebuild tile DOM),
+    // where openFleetTerminal's re-attach path re-applies the overlay if this
+    // flag is still set. Set unconditionally, even if the overlay node
+    // already exists, so a fresh rec (or one whose container just changed)
+    // stays marked.
+    rec.offline = true;
+    if (!rec.el || rec.el.querySelector('.tile-offline')) return;
     const overlay = document.createElement('div');
     overlay.className = 'tile-offline';
     overlay.textContent = '设备离线';
@@ -507,6 +613,266 @@ Object.assign(CodemanApp.prototype, {
     if (rec.el) rec.el.innerHTML = '';
     this._fleetTerms.delete(key);
     if (this._fleetSelectedKey === key) this._fleetSelectedKey = null;
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // Split-grid layout (Task 14)
+  // ─────────────────────────────────────────────────────────────
+
+  /**
+   * Switch the grid to 1 / 2 / 2x2 tiles. Surviving pinned keys carry forward
+   * into the EARLIEST slots of the new array (spec: shrink keeps earliest
+   * slots); anything that falls off the end is torn down via
+   * closeFleetTerminal. The tile DOM is rebuilt from scratch, then every
+   * surviving/new slot is (re)opened — openFleetTerminal's re-attach path
+   * (adapted above to re-bind the ResizeObserver) makes that cheap for keys
+   * that were already alive.
+   */
+  setFleetLayout(n) {
+    n = Number(n);
+    if (n !== 1 && n !== 2 && n !== 4) return;
+    const area = document.getElementById('fleet-term-area');
+    if (!area) return;
+    if (n === this._fleetLayout) {
+      this._updateLayoutToolbar();
+      return;
+    }
+
+    const carried = this._fleetLayout === 1 ? [this._fleetSelectedKey || null] : (this._fleetPinned || []).slice();
+    const nextPinned = new Array(n).fill(null);
+    for (let i = 0; i < n; i++) nextPinned[i] = carried[i] || null;
+    // Shrink: close whatever falls off the end of the carried array.
+    for (let i = n; i < carried.length; i++) {
+      const key = carried[i];
+      if (key) this.closeFleetTerminal(key);
+    }
+
+    this._fleetLayout = n;
+    this._fleetPinned = nextPinned;
+    this._fleetFocusedTileIndex = 0;
+    area.setAttribute('data-layout', String(n));
+
+    if (n === 1) {
+      area.innerHTML = `<div class="fleet-tile" id="fleet-term-main"></div>`;
+      this._updateLayoutToolbar();
+      const key = nextPinned[0];
+      // Always re-render the tab strip: slots that fell off the end above
+      // were just closeFleetTerminal'd, so their .pinned highlight must
+      // clear even when the surviving slot 0 is also empty.
+      this._fleetSelectedKey = key || null;
+      this.renderFleetTabs();
+      if (key) this._fleetOpenTile(key, document.getElementById('fleet-term-main'));
+      return;
+    }
+
+    area.innerHTML = nextPinned.map((_, i) => this._fleetTileShellHtml(i)).join('');
+    this._updateLayoutToolbar();
+    this.renderFleetTabs();
+    this._fleetRenderTiles();
+  },
+
+  _updateLayoutToolbar() {
+    const toolbar = document.getElementById('fleet-layout-toolbar');
+    if (!toolbar) return;
+    toolbar.querySelectorAll('[data-layout-btn]').forEach((btn) => {
+      btn.classList.toggle('active', Number(btn.dataset.layoutBtn) === this._fleetLayout);
+    });
+  },
+
+  _fleetTileShellHtml(i) {
+    return `<div class="fleet-tile fleet-tile-grid" id="fleet-tile-${i}" data-tile-index="${i}">
+      <div class="fleet-tile-head"></div>
+      <div class="fleet-tile-body" id="fleet-tile-${i}-body"></div>
+    </div>`;
+  },
+
+  /** (Re)populate every grid tile's header + terminal from _fleetPinned. No-op in layout 1. */
+  _fleetRenderTiles() {
+    if (this._fleetLayout === 1 || !Array.isArray(this._fleetPinned)) return;
+    for (let i = 0; i < this._fleetPinned.length; i++) {
+      const key = this._fleetPinned[i];
+      const tileEl = document.getElementById(`fleet-tile-${i}`);
+      const bodyEl = document.getElementById(`fleet-tile-${i}-body`);
+      if (!tileEl || !bodyEl) continue;
+      const headEl = tileEl.querySelector('.fleet-tile-head');
+      tileEl.classList.toggle('focused', i === this._fleetFocusedTileIndex);
+      if (!key) {
+        if (headEl)
+          headEl.innerHTML = `<span class="fleet-tile-title fleet-tile-empty">空位 · 点击标签页的 📌 钉选到此</span>`;
+        bodyEl.innerHTML = '';
+        continue;
+      }
+      const tab = this._fleetFindTab(key);
+      const title = escapeHtml(tab ? tab.title : key);
+      if (headEl) {
+        headEl.innerHTML = `<span class="fleet-tile-title">${title}</span><button type="button" class="fleet-tile-close" data-action="unpin-tile" data-index="${i}" aria-label="取消钉选">×</button>`;
+      }
+      this._fleetOpenTile(key, bodyEl);
+    }
+  },
+
+  /** openFleetTerminal + LRU bookkeeping + eviction, for every Task 14 call site that opens a tile. */
+  _fleetOpenTile(key, containerEl) {
+    this.openFleetTerminal(key, containerEl);
+    this._fleetTouch(key);
+    this._fleetEvictIfNeeded();
+  },
+
+  /**
+   * Pin `key` into the first empty grid slot (or replace the least-recently-
+   * used pinned slot if full). If `key` is already pinned somewhere, this is
+   * the same-session-double-pin guard (spec rule 4): no second instance is
+   * created — the existing tile is focused and the user gets a hint instead.
+   */
+  pinFleetTab(key) {
+    if (!key || !this._fleetState) return;
+    if (!Array.isArray(this._fleetPinned) || this._fleetPinned.length !== this._fleetLayout) {
+      this._fleetPinned = new Array(this._fleetLayout).fill(null);
+    }
+    const existingIdx = this._fleetPinned.indexOf(key);
+    if (existingIdx !== -1) {
+      this.showToast?.('已在分屏中', 'info');
+      this._fleetFocusTile(existingIdx);
+      this._fleetTouch(key);
+      return;
+    }
+    if (this._fleetLayout === 1) {
+      // Single-tile layout: "pin" and "select" are the same action.
+      this.selectFleetTab(key);
+      return;
+    }
+    let slot = this._fleetPinned.indexOf(null);
+    if (slot === -1) {
+      slot = this._fleetOldestPinnedSlot();
+      const evictedKey = this._fleetPinned[slot];
+      if (evictedKey) this.closeFleetTerminal(evictedKey);
+    }
+    this._fleetPinned[slot] = key;
+    this.renderFleetTabs();
+    this._fleetRenderTiles();
+    this._fleetFocusTile(slot);
+  },
+
+  /** Clear grid slot `index`, tearing down its terminal/WS if occupied. */
+  unpinFleetTile(index) {
+    if (!Array.isArray(this._fleetPinned) || index < 0 || index >= this._fleetPinned.length) return;
+    const key = this._fleetPinned[index];
+    this._fleetPinned[index] = null;
+    if (key) {
+      this.closeFleetTerminal(key);
+      if (this._fleetLru) this._fleetLru.delete(key);
+    }
+    if (this._fleetLayout === 1) {
+      const area = document.getElementById('fleet-term-area');
+      if (area) area.innerHTML = `<div class="fleet-tile" id="fleet-term-main"></div>`;
+      this.renderFleetTabs();
+      return;
+    }
+    this.renderFleetTabs();
+    this._fleetRenderTiles();
+  },
+
+  _fleetOldestPinnedSlot() {
+    let slot = 0;
+    let oldest = Infinity;
+    for (let i = 0; i < this._fleetPinned.length; i++) {
+      const k = this._fleetPinned[i];
+      if (!k) return i;
+      const t = (this._fleetLru && this._fleetLru.get(k)) || 0;
+      if (t < oldest) {
+        oldest = t;
+        slot = i;
+      }
+    }
+    return slot;
+  },
+
+  /** Visual-only tile focus (rule 3) — keyboard focus stays with xterm itself. */
+  _fleetFocusTile(index) {
+    this._fleetFocusedTileIndex = index;
+    const area = document.getElementById('fleet-term-area');
+    if (!area) return;
+    area.querySelectorAll('.fleet-tile').forEach((el) => el.classList.remove('focused'));
+    const tile = document.getElementById(`fleet-tile-${index}`);
+    if (tile) tile.classList.add('focused');
+  },
+
+  _fleetTouch(key) {
+    if (!this._fleetLru) this._fleetLru = new Map();
+    this._fleetLru.set(key, Date.now());
+  },
+
+  /**
+   * Cap total live remote-terminal WS connections at 6 (spec: mirrors the
+   * central controller's own ≤6 concurrency ceiling). Every currently pinned
+   * key (any grid slot) is exempt; among the rest, close the
+   * least-recently-used first. Runs after every _fleetOpenTile so growth past
+   * the cap — mainly from background layout-1 tab history — is corrected
+   * immediately.
+   */
+  _fleetEvictIfNeeded() {
+    if (!this._fleetTerms) return;
+    const pinnedSet = new Set((this._fleetPinned || []).filter(Boolean));
+    while (this._fleetTerms.size > 6) {
+      let oldestKey = null;
+      let oldestTime = Infinity;
+      for (const key of this._fleetTerms.keys()) {
+        if (pinnedSet.has(key)) continue;
+        const t = (this._fleetLru && this._fleetLru.get(key)) || 0;
+        if (t < oldestTime) {
+          oldestTime = t;
+          oldestKey = key;
+        }
+      }
+      if (!oldestKey) break; // everything left is pinned — can't evict further
+      this.closeFleetTerminal(oldestKey);
+      if (this._fleetLru) this._fleetLru.delete(oldestKey);
+    }
+  },
+
+  _onFleetTermAreaClick(e) {
+    const unpinBtn = e.target.closest('[data-action="unpin-tile"]');
+    if (unpinBtn) {
+      const idx = Number(unpinBtn.dataset.index);
+      if (Number.isInteger(idx)) this.unpinFleetTile(idx);
+      return;
+    }
+    const tile = e.target.closest('.fleet-tile[data-tile-index]');
+    if (!tile) return;
+    const idx = Number(tile.dataset.tileIndex);
+    if (!Number.isInteger(idx)) return;
+    this._fleetFocusTile(idx);
+    const key = this._fleetPinned[idx];
+    if (key) this._fleetTouch(key);
+  },
+
+  /**
+   * Rule 7: a device that just came back online (SSE fleet:device-online →
+   * refreshFleetState → here) may still have pinned tiles showing the
+   * offline overlay from their old (permanently-closed) WS. Tear those down
+   * and reopen fresh — a closed WebSocket cannot be reused, so "reconnect"
+   * means a full closeFleetTerminal + openFleetTerminal cycle.
+   */
+  _fleetReconnectOfflineTiles() {
+    if (!this._fleetState || !Array.isArray(this._fleetPinned)) return;
+    const devicesById = new Map((this._fleetState.devices || []).map((d) => [d.id, d]));
+    this._fleetPinned.forEach((key, index) => {
+      if (!key) return;
+      const rec = this._fleetTerms.get(key);
+      if (!rec || !rec.offline) return;
+      const { deviceId } = this._fleetSplitKey(key);
+      const device = devicesById.get(deviceId);
+      if (!device || device.status !== 'online') return;
+      this.closeFleetTerminal(key);
+      if (this._fleetLayout === 1) {
+        this._fleetSelectedKey = key;
+        this.renderFleetTabs();
+        this._fleetOpenTile(key, document.getElementById('fleet-term-main'));
+      } else {
+        const bodyEl = document.getElementById(`fleet-tile-${index}-body`);
+        if (bodyEl) this._fleetOpenTile(key, bodyEl);
+      }
+    });
   },
 
   // ─────────────────────────────────────────────────────────────
