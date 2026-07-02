@@ -23,6 +23,7 @@ import type { FastifyInstance } from 'fastify';
 import { createRouteTestHarness } from './_route-test-utils.js';
 import { registerFleetRoutes } from '../../src/web/routes/fleet-routes.js';
 import { httpStatusForErrorCode, type ApiErrorCode } from '../../src/types.js';
+import { MAX_INPUT_LENGTH } from '../../src/config/terminal-limits.js';
 import type { FleetDeviceHandle } from '../../src/fleet/device-adapter.js';
 import type {
   CreateFleetSessionRequest,
@@ -94,6 +95,7 @@ class MockController {
   getDashboardState = vi.fn(async (): Promise<FleetDashboardState> => makeDashboardState());
   getHandle = vi.fn((_deviceId: string): FleetDeviceHandle | null => null);
   isOnline = vi.fn((_deviceId: string): boolean => false);
+  hasSession = vi.fn((_deviceId: string, _sessionId: string): boolean => true);
 }
 
 /** Mock DeviceRegistry — only the methods fleet-routes.ts calls directly. */
@@ -404,6 +406,93 @@ describe('fleet-routes', () => {
       expect(res.statusCode).toBe(200);
       const body = res.json();
       expect(body.data).toEqual({ buffer: '' });
+    });
+  });
+
+  // ========== POST /api/fleet/devices/:deviceId/sessions/:sessionId/input ==========
+
+  describe('POST /api/fleet/devices/:deviceId/sessions/:sessionId/input', () => {
+    const url = '/api/fleet/devices/dev_1/sessions/sess_1/input';
+
+    it('returns 409 "Device is offline" when the device is offline', async () => {
+      harness.controller.getHandle.mockReturnValueOnce(null);
+      harness.controller.isOnline.mockReturnValueOnce(false);
+
+      const res = await harness.app.inject({
+        method: 'POST',
+        url,
+        payload: { input: 'hello' },
+      });
+
+      expect(res.statusCode).toBe(409);
+      const body = res.json();
+      expect(body.error).toBe('Device is offline');
+    });
+
+    it('returns 404 when the device has no such session', async () => {
+      const handle = makeHandle();
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+      harness.controller.hasSession.mockReturnValueOnce(false);
+
+      const res = await harness.app.inject({
+        method: 'POST',
+        url,
+        payload: { input: 'hello' },
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(handle.writeInput).not.toHaveBeenCalled();
+    });
+
+    it('forwards sessionId, input, seq, and clientId to handle.writeInput() and returns {}', async () => {
+      const handle = makeHandle();
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+      harness.controller.hasSession.mockReturnValueOnce(true);
+
+      const res = await harness.app.inject({
+        method: 'POST',
+        url,
+        payload: { input: 'hello world', seq: 3, clientId: 'client-abc' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.data).toEqual({});
+      expect(handle.writeInput).toHaveBeenCalledWith('sess_1', 'hello world', 3, 'client-abc');
+    });
+
+    it('rejects input longer than MAX_INPUT_LENGTH with 400 and never calls writeInput', async () => {
+      const handle = makeHandle();
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+      harness.controller.hasSession.mockReturnValueOnce(true);
+
+      const res = await harness.app.inject({
+        method: 'POST',
+        url,
+        payload: { input: 'a'.repeat(MAX_INPUT_LENGTH + 1) },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(handle.writeInput).not.toHaveBeenCalled();
+    });
+
+    it('rejects a body missing input with 400 and never calls writeInput', async () => {
+      const handle = makeHandle();
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+      harness.controller.hasSession.mockReturnValueOnce(true);
+
+      const res = await harness.app.inject({
+        method: 'POST',
+        url,
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(handle.writeInput).not.toHaveBeenCalled();
     });
   });
 });
