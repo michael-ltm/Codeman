@@ -368,6 +368,24 @@ export class FleetCentralController extends EventEmitter {
     return this.localDevices.get(deviceId) ?? this.remoteHandles.get(deviceId) ?? null;
   }
 
+  /**
+   * True if `sessionId` is a session the device actually has. Added for Task 11's
+   * browser terminal WS route: `RemoteDeviceHandle.subscribeTerminal` doesn't
+   * validate `sessionId` — it just ref-counts a sink under that key and fires
+   * `terminal:subscribe` on the wire, so subscribing to a bogus remote sessionId
+   * would silently create a dead subscription instead of failing. Checked against
+   * `RemoteDeviceHandle`'s session cache (seeded by `hello`, kept current by
+   * `heartbeat`/`session:update`) for remote devices. Local devices return `true`
+   * here unconditionally — `LocalSessionOps` looks sessions up by id synchronously
+   * on every call (`getSessionOrThrow`) and throws for an unknown one, so an
+   * invalid local sessionId is already rejected downstream instead of going quiet.
+   */
+  hasSession(deviceId: string, sessionId: string): boolean {
+    const remote = this.remoteHandles.get(deviceId);
+    if (remote) return remote.sessionList().some((s) => s.id === sessionId);
+    return this.localDevices.has(deviceId);
+  }
+
   async getDashboardState(): Promise<FleetDashboardState> {
     const devices: FleetDeviceSummary[] = [];
     for (const local of this.localDevices.values()) devices.push(local.summary());

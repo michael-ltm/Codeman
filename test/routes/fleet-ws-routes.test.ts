@@ -1,13 +1,20 @@
 /**
- * @fileoverview Tests for the node WebSocket endpoint (`/ws/fleet/node`).
+ * @fileoverview Tests for the fleet WebSocket endpoints:
+ * - `/ws/fleet/node` (Task 9) — the node agent's wire entrypoint.
+ * - `/ws/fleet/devices/:deviceId/sessions/:sessionId/terminal` (Task 11) — the
+ *   browser-facing remote terminal proxy.
  *
  * Like ws-routes.test.ts, this uses a real listening Fastify server (WS upgrade
  * requests aren't supported by app.inject()) and the `ws` package as the client.
- * The `FleetCentralController` is mocked (vi.fn() members) — this file only
- * verifies the route's own auth/handshake/framing behavior, not the controller's
- * internals (covered by test/fleet/central-controller.test.ts). `DeviceRegistry`
- * is real, backed by a temp file, so a device is paired through the actual
- * pairing flow to get a real deviceId/token pair.
+ * The `FleetCentralController` is mocked — a real `node:events` `EventEmitter`
+ * subclass with vi.fn() methods, so `controller.on('device-offline', ...)` /
+ * `.emit(...)` behave exactly like the real controller (Task 8) while
+ * `getHandle`/`isOnline`/`hasSession`/etc. stay fully controllable per test.
+ * This file only verifies each route's own auth/handshake/framing behavior, not
+ * the controller's internals (covered by test/fleet/central-controller.test.ts).
+ * `DeviceRegistry` is real, backed by a temp file, so a device is paired through
+ * the actual pairing flow to get a real deviceId/token pair (used by the node
+ * endpoint's Bearer auth only — the browser endpoint doesn't touch the registry).
  *
  * @dependency src/web/routes/fleet-ws-routes.ts (registerFleetWsRoutes)
  * Port: 3171
@@ -20,10 +27,12 @@ import WebSocket from 'ws';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { EventEmitter } from 'node:events';
 import { registerFleetWsRoutes } from '../../src/web/routes/fleet-ws-routes.js';
 import { DeviceRegistry } from '../../src/fleet/device-registry.js';
 import type { FleetCentralController } from '../../src/fleet/central-controller.js';
 import type { FleetCapabilities, FleetSessionSummary, NodeToCentralFrame } from '../../src/fleet/protocol.js';
+import type { TerminalSink } from '../../src/fleet/local-session-ops.js';
 
 const PORT = 3171;
 
@@ -86,15 +95,44 @@ function helloFrame(
   };
 }
 
-function makeMockController() {
-  return {
-    connectNode: vi.fn(),
-    disconnectNode: vi.fn(),
-    handleNodeFrame: vi.fn(),
-  };
+/**
+ * Mock `FleetCentralController`: a real `EventEmitter` (so `.on('device-offline', ...)`
+ * / `.emit(...)` in the route under test behave exactly like the real controller,
+ * which itself extends EventEmitter — see central-controller.ts) plus vi.fn()
+ * methods for everything the routes call directly.
+ */
+class MockFleetController extends EventEmitter {
+  connectNode = vi.fn();
+  disconnectNode = vi.fn();
+  handleNodeFrame = vi.fn();
+  getHandle = vi.fn();
+  isOnline = vi.fn();
+  hasSession = vi.fn();
 }
 
-type MockController = ReturnType<typeof makeMockController>;
+function makeMockController(): MockFleetController {
+  return new MockFleetController();
+}
+
+type MockController = MockFleetController;
+
+/** A controllable fake `FleetDeviceHandle` for the browser terminal WS tests.
+ *  `subscribeTerminal` records the sink it's given (and the returned unsub) via
+ *  the vi.fn()'s own mock.calls/mock.results, so tests can trigger sink events
+ *  and assert the unsub is called on disconnect. */
+function makeFakeHandle(deviceId: string) {
+  return {
+    deviceId,
+    summary: vi.fn(),
+    listSessions: vi.fn(),
+    createSession: vi.fn(),
+    stopSession: vi.fn(),
+    writeInput: vi.fn(),
+    resize: vi.fn(),
+    subscribeTerminal: vi.fn((_sessionId: string, _sink: TerminalSink) => vi.fn()),
+    getTerminalBuffer: vi.fn(),
+  };
+}
 
 /** Helper: open a WebSocket with optional headers and wait for OPEN state. */
 function connectWs(path: string, headers?: Record<string, string>, timeoutMs = 5000): Promise<WebSocket> {
@@ -125,6 +163,23 @@ function waitForClose(ws: WebSocket, timeoutMs = 2000): Promise<{ code: number; 
       // here since waitForClose only cares about the close event outcome.
     });
   });
+}
+
+/** Helper: wait for the next WS message, parsed as JSON. */
+function nextMessage(ws: WebSocket, timeoutMs = 2000): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('WS message timeout')), timeoutMs);
+    ws.once('message', (raw) => {
+      clearTimeout(timer);
+      resolve(JSON.parse(String(raw)));
+    });
+  });
+}
+
+/** Strips the DEC 2026 synchronized-update wrapper (`\x1b[?2026h` ... `\x1b[?2026l`)
+ *  the batching layer wraps every 'o' payload in, so tests can assert on the raw text. */
+function stripSync(d: string): string {
+  return d.replace(/^\x1b\[\?2026h/, '').replace(/\x1b\[\?2026l$/, '');
 }
 
 describe('fleet-ws-routes', () => {
@@ -335,6 +390,241 @@ describe('fleet-ws-routes', () => {
         expect(controller.disconnectNode).toHaveBeenCalledTimes(1);
       });
       expect(controller.disconnectNode).toHaveBeenCalledWith(deviceId, socketPassedToConnect);
+    });
+  });
+
+  // ========== 6. Browser terminal endpoint ==========
+  // /ws/fleet/devices/:deviceId/sessions/:sessionId/terminal — see task-11-brief.md.
+
+  describe('browser terminal endpoint', () => {
+    const browserDeviceId = 'dev_browser_1';
+    const termSessionId = 'sess-1';
+    const path = `/ws/fleet/devices/${browserDeviceId}/sessions/${termSessionId}/terminal`;
+
+    let openSockets: WebSocket[];
+
+    beforeEach(() => {
+      openSockets = [];
+    });
+
+    afterEach(async () => {
+      // Safety net: close anything a test left open and wait for the route's
+      // 'close' handler to run, so the module-level per-IP counter (and any
+      // listener) never leaks into the next test.
+      await Promise.all(
+        openSockets
+          .filter((ws) => ws.readyState !== WebSocket.CLOSED)
+          .map((ws) => {
+            const closed = waitForClose(ws).catch(() => {});
+            ws.close();
+            return closed;
+          })
+      );
+    });
+
+    /** Wires the mock controller to report `browserDeviceId` online with `termSessionId`. */
+    function setupOnlineDevice() {
+      const handle = makeFakeHandle(browserDeviceId);
+      controller.getHandle.mockReturnValue(handle);
+      controller.isOnline.mockReturnValue(true);
+      controller.hasSession.mockReturnValue(true);
+      return handle;
+    }
+
+    async function connectTerminal(headers?: Record<string, string>): Promise<WebSocket> {
+      const ws = await connectWs(path, headers);
+      openSockets.push(ws);
+      return ws;
+    }
+
+    it('closes 4004 for an unknown device (getHandle returns null)', async () => {
+      controller.getHandle.mockReturnValue(null);
+      const ws = new WebSocket(`ws://127.0.0.1:${PORT}${path}`);
+      openSockets.push(ws);
+      const { code, reason } = await waitForClose(ws);
+      expect(code).toBe(4004);
+      expect(reason).toBe('Unknown device or session');
+    });
+
+    it('closes 4004 for an offline device (isOnline false)', async () => {
+      const handle = makeFakeHandle(browserDeviceId);
+      controller.getHandle.mockReturnValue(handle);
+      controller.isOnline.mockReturnValue(false);
+      const ws = new WebSocket(`ws://127.0.0.1:${PORT}${path}`);
+      openSockets.push(ws);
+      const { code } = await waitForClose(ws);
+      expect(code).toBe(4004);
+      expect(handle.subscribeTerminal).not.toHaveBeenCalled();
+    });
+
+    it('closes 4004 when hasSession reports the session is not in the device cache', async () => {
+      const handle = makeFakeHandle(browserDeviceId);
+      controller.getHandle.mockReturnValue(handle);
+      controller.isOnline.mockReturnValue(true);
+      controller.hasSession.mockReturnValue(false);
+      const ws = new WebSocket(`ws://127.0.0.1:${PORT}${path}`);
+      openSockets.push(ws);
+      const { code } = await waitForClose(ws);
+      expect(code).toBe(4004);
+      expect(handle.subscribeTerminal).not.toHaveBeenCalled();
+    });
+
+    it('closes 4003 for a disallowed Origin', async () => {
+      setupOnlineDevice();
+      const ws = new WebSocket(`ws://127.0.0.1:${PORT}${path}`, {
+        headers: { Origin: 'http://evil.example.com' },
+      });
+      openSockets.push(ws);
+      const { code } = await waitForClose(ws);
+      expect(code).toBe(4003);
+    });
+
+    it('translates subscribeTerminal sink events to o/c/r frames, batching data with DEC 2026 sync markers', async () => {
+      const handle = setupOnlineDevice();
+      const ws = await connectTerminal();
+      await vi.waitFor(() => expect(handle.subscribeTerminal).toHaveBeenCalledTimes(1));
+      const [subscribedSessionId, sink] = handle.subscribeTerminal.mock.calls[0] as [string, TerminalSink];
+      expect(subscribedSessionId).toBe(termSessionId);
+
+      let msgPromise = nextMessage(ws);
+      sink({ kind: 'data', data: 'hello from device' });
+      const dataMsg = (await msgPromise) as { t: string; d: string };
+      expect(dataMsg.t).toBe('o');
+      expect(dataMsg.d.startsWith('\x1b[?2026h')).toBe(true);
+      expect(dataMsg.d.endsWith('\x1b[?2026l')).toBe(true);
+      expect(stripSync(dataMsg.d)).toBe('hello from device');
+
+      msgPromise = nextMessage(ws);
+      sink({ kind: 'clear' });
+      expect(await msgPromise).toEqual({ t: 'c' });
+
+      msgPromise = nextMessage(ws);
+      sink({ kind: 'refresh' });
+      expect(await msgPromise).toEqual({ t: 'r' });
+    });
+
+    it('coalesces rapid data events into a single batched frame', async () => {
+      const handle = setupOnlineDevice();
+      const ws = await connectTerminal();
+      await vi.waitFor(() => expect(handle.subscribeTerminal).toHaveBeenCalledTimes(1));
+      const [, sink] = handle.subscribeTerminal.mock.calls[0] as [string, TerminalSink];
+
+      const msgPromise = nextMessage(ws);
+      sink({ kind: 'data', data: 'chunk1' });
+      sink({ kind: 'data', data: 'chunk2' });
+      sink({ kind: 'data', data: 'chunk3' });
+      const msg = (await msgPromise) as { t: string; d: string };
+      expect(stripSync(msg.d)).toBe('chunk1chunk2chunk3');
+    });
+
+    it('forwards {t:"i"} to handle.writeInput with all four args and ACKs with {t:"ia",seq}', async () => {
+      const handle = setupOnlineDevice();
+      const ws = await connectTerminal();
+      await vi.waitFor(() => expect(handle.subscribeTerminal).toHaveBeenCalledTimes(1));
+
+      const msgPromise = nextMessage(ws);
+      ws.send(JSON.stringify({ t: 'i', d: 'ls -la\n', seq: 42, cid: 'cid-1' }));
+      const ack = await msgPromise;
+      expect(ack).toEqual({ t: 'ia', seq: 42 });
+      expect(handle.writeInput).toHaveBeenCalledWith(termSessionId, 'ls -la\n', 42, 'cid-1');
+    });
+
+    it('does not ACK an {t:"i"} frame without a seq, but still forwards it', async () => {
+      const handle = setupOnlineDevice();
+      const ws = await connectTerminal();
+      await vi.waitFor(() => expect(handle.subscribeTerminal).toHaveBeenCalledTimes(1));
+
+      ws.send(JSON.stringify({ t: 'i', d: 'no-seq-here' }));
+      await vi.waitFor(() => {
+        expect(handle.writeInput).toHaveBeenCalledWith(termSessionId, 'no-seq-here', undefined, undefined);
+      });
+    });
+
+    it('rejects an {t:"i"} frame longer than MAX_INPUT_LENGTH', async () => {
+      const handle = setupOnlineDevice();
+      const ws = await connectTerminal();
+      await vi.waitFor(() => expect(handle.subscribeTerminal).toHaveBeenCalledTimes(1));
+
+      const tooLong = 'x'.repeat(64 * 1024 + 1);
+      ws.send(JSON.stringify({ t: 'i', d: tooLong, seq: 1 }));
+
+      // Follow up with a valid frame to confirm the connection survived and only
+      // the oversized one was dropped.
+      ws.send(JSON.stringify({ t: 'i', d: 'ok', seq: 2 }));
+      await vi.waitFor(() => expect(handle.writeInput).toHaveBeenCalledWith(termSessionId, 'ok', 2, undefined));
+      expect(handle.writeInput).not.toHaveBeenCalledWith(termSessionId, tooLong, 1, undefined);
+    });
+
+    it('forwards {t:"z"} to handle.resize with mapped viewportType/force and enforces 1-500/1-200 bounds', async () => {
+      const handle = setupOnlineDevice();
+      const ws = await connectTerminal();
+      await vi.waitFor(() => expect(handle.subscribeTerminal).toHaveBeenCalledTimes(1));
+
+      ws.send(JSON.stringify({ t: 'z', c: 120, r: 40, f: true, v: 'desktop' }));
+      await vi.waitFor(() => {
+        expect(handle.resize).toHaveBeenCalledWith(termSessionId, 120, 40, { viewportType: 'desktop', force: true });
+      });
+
+      handle.resize.mockClear();
+      ws.send(JSON.stringify({ t: 'z', c: 501, r: 40 }));
+      ws.send(JSON.stringify({ t: 'z', c: 10, r: 0 }));
+      // A subsequent valid resize proves the out-of-bounds ones above were ignored, not queued.
+      ws.send(JSON.stringify({ t: 'z', c: 80, r: 24 }));
+      await vi.waitFor(() =>
+        expect(handle.resize).toHaveBeenCalledWith(termSessionId, 80, 24, { viewportType: undefined, force: false })
+      );
+      expect(handle.resize).toHaveBeenCalledTimes(1);
+    });
+
+    it("closes 4009 when the controller emits device-offline for this connection's deviceId", async () => {
+      setupOnlineDevice();
+      const ws = await connectTerminal();
+      await vi.waitFor(() => expect(controller.getHandle).toHaveBeenCalled());
+
+      const closePromise = waitForClose(ws);
+      controller.emit('device-offline', browserDeviceId);
+      const { code } = await closePromise;
+      expect(code).toBe(4009);
+    });
+
+    it('ignores a device-offline event for a different deviceId', async () => {
+      setupOnlineDevice();
+      const ws = await connectTerminal();
+      await vi.waitFor(() => expect(controller.getHandle).toHaveBeenCalled());
+
+      controller.emit('device-offline', 'some-other-device');
+      // Send a resize afterwards; if the socket had been (wrongly) closed this would throw/no-op.
+      ws.send(JSON.stringify({ t: 'z', c: 80, r: 24 }));
+      await vi.waitFor(() => expect(ws.readyState).toBe(WebSocket.OPEN));
+    });
+
+    it('calls the subscribeTerminal unsub and removes the device-offline listener on client disconnect', async () => {
+      const handle = setupOnlineDevice();
+      const ws = await connectTerminal();
+      await vi.waitFor(() => expect(handle.subscribeTerminal).toHaveBeenCalledTimes(1));
+      const unsub = handle.subscribeTerminal.mock.results[0].value as ReturnType<typeof vi.fn>;
+
+      const listenersBefore = controller.listenerCount('device-offline');
+      expect(listenersBefore).toBeGreaterThan(0);
+
+      ws.close();
+      await waitForClose(ws);
+
+      await vi.waitFor(() => expect(unsub).toHaveBeenCalledTimes(1));
+      expect(controller.listenerCount('device-offline')).toBe(listenersBefore - 1);
+    });
+
+    it('closes 4008 for a 7th concurrent browser terminal connection from the same IP', async () => {
+      setupOnlineDevice();
+      for (let i = 0; i < 6; i++) {
+        await connectTerminal();
+      }
+
+      const seventh = new WebSocket(`ws://127.0.0.1:${PORT}${path}`);
+      openSockets.push(seventh);
+      const { code, reason } = await waitForClose(seventh);
+      expect(code).toBe(4008);
+      expect(reason).toBe('Too many connections');
     });
   });
 });

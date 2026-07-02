@@ -337,4 +337,29 @@ describe('FleetCentralController', () => {
     expect(onBroadcast).toHaveBeenCalledWith('fleet:device-offline', { deviceId });
     expect(onDeviceOffline).toHaveBeenCalledWith(deviceId);
   });
+
+  it('10. hasSession checks the remote session cache and returns false for an unknown device', async () => {
+    const reg = makeRegistry();
+    const deviceId = pairDevice(reg);
+    const controller = new FleetCentralController(reg);
+    const socket = makeSocket();
+    const session = makeSession({ deviceId, id: 'sess-1' });
+    controller.connectNode(deviceId, socket, helloFrame(deviceId, [session]));
+
+    expect(controller.hasSession(deviceId, 'sess-1')).toBe(true);
+    expect(controller.hasSession(deviceId, 'sess-does-not-exist')).toBe(false);
+    expect(controller.hasSession('dev_never_connected', 'sess-1')).toBe(false);
+  });
+
+  it('11. hasSession returns true for any sessionId on a known local device', async () => {
+    const reg = makeRegistry();
+    const controller = new FleetCentralController(reg);
+    controller.registerLocalDevice(makeLocalHandle());
+
+    // Local devices don't get a session-cache check here — LocalSessionOps looks
+    // sessions up synchronously and throws for an unknown one, so hasSession just
+    // confirms the device itself is registered.
+    expect(controller.hasSession('dev_local', 'any-session-id')).toBe(true);
+    expect(controller.hasSession('dev_never_registered', 'any-session-id')).toBe(false);
+  });
 });
