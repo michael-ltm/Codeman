@@ -319,8 +319,8 @@ Object.assign(CodemanApp.prototype, {
       return;
     }
 
-    const carried =
-      this._fleetGridLayout === 1 ? [this.activeSessionId || null] : (this._fleetGridPinned || []).slice();
+    const wasLayout1 = this._fleetGridLayout === 1;
+    const carried = wasLayout1 ? [this.activeSessionId || null] : (this._fleetGridPinned || []).slice();
 
     if (n === 1) {
       // Tear down every tile — the native terminal takes over.
@@ -335,13 +335,22 @@ Object.assign(CodemanApp.prototype, {
       grid.innerHTML = '';
       this._fleetGridUpdateControl();
       // The native terminal was never resized while covered; a defensive refit
-      // + resend keeps it crisp on return (server-side no-op if dims match).
+      // keeps it crisp on return (server-side no-op if dims match).
       try {
         this.fitAddon?.fit();
       } catch {
         /* not measurable */
       }
-      if (this.activeSessionId) this.sendResize?.(this.activeSessionId)?.catch?.(() => {});
+      // The native WS was suspended on the way INTO the grid (below) so it
+      // wouldn't fight the tiles' own WS for the same session's desktop-sizing
+      // claim (session.resize is last-writer-wins). Reconnect it now via the
+      // SAME path selectSession uses on an ordinary tab click (_connectWs +
+      // buffer refresh + refit) — the goal is for this tab to land in exactly
+      // the state it would be in had the user just clicked it. No-op if the
+      // grid was opened with no active session (e.g. from the welcome screen).
+      if (this.activeSessionId) {
+        this.selectSession(this.activeSessionId, { forceReload: true }).catch(() => {});
+      }
       return;
     }
 
@@ -355,6 +364,17 @@ Object.assign(CodemanApp.prototype, {
         this._fleetGridLru?.delete(key);
       }
     }
+    // Growing OUT of the native single-terminal view (layout 1 → 2/2×2): the
+    // active session is about to be pinned into tile 0 with its OWN dedicated
+    // WS, but the native terminal's WS (still bound to activeSessionId, still
+    // holding a desktop-sizing claim) was never told to let go — two live
+    // desktop claims on the same session then race in session.resize
+    // (last-writer-wins, transient mis-render), and a second of the
+    // MAX_WS_PER_SESSION slots is silently burned. Suspend the native WS now,
+    // before any tile WS opens, so there is no window where both exist. The
+    // native terminal DOM itself is untouched underneath — the grid overlay
+    // simply covers it.
+    if (wasLayout1) this._disconnectWs();
     this._fleetGridLayout = n;
     this._fleetGridPinned = nextPinned;
     this._fleetGridFocusedIndex = 0;
