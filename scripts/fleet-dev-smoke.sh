@@ -9,9 +9,17 @@
 #
 # Isolation: CODEMAN_INSTANCE derives BOTH the data dir (~/.codeman-<instance>)
 # AND the tmux socket (-L codeman-<instance>) from one variable (instance.ts).
-# Using two distinct instance names (fleetc/fleetn) is therefore sufficient to
-# guarantee this script never touches ~/.codeman (production data) or the
-# production `codeman` tmux socket — no CODEMAN_DATA_DIR override needed.
+# Using two distinct instance names (fleetc/fleetn) isolates the two smoke
+# processes FROM EACH OTHER, but that alone is NOT enough: CODEMAN_DATA_DIR
+# takes unconditional priority over the instance-derived data dir
+# (src/config/instance.ts:22-23,51) and CODEMAN_TMUX_SOCKET takes
+# unconditional priority over the instance-derived socket
+# (src/tmux-manager.ts:497). If either is already exported in the caller's
+# shell, BOTH central and node would silently inherit that same override
+# (possibly production ~/.codeman) and isolation collapses even though
+# CODEMAN_INSTANCE is set correctly below. That's why every Codeman env var
+# this script cares about is unset immediately after `set -euo pipefail` —
+# the script then sets each one explicitly, so nothing is inherited.
 # This mirrors the existing convention in scripts/run-beta.sh.
 #
 # No CODEMAN_PASSWORD is set: both servers bind 127.0.0.1 only, and auth
@@ -23,6 +31,15 @@
 # Exit 0 + trailing "SMOKE PASS" on success.
 
 set -euo pipefail
+
+# Sanitize the environment before anything else runs: CODEMAN_DATA_DIR and
+# CODEMAN_TMUX_SOCKET take unconditional priority over CODEMAN_INSTANCE (see
+# the Isolation note above), so a value leaked in from the caller's shell
+# would otherwise silently defeat this script's isolation. Every other
+# Codeman env var below is one this script sets explicitly further down, so
+# starting from a clean slate guarantees only this script's own values apply.
+unset CODEMAN_DATA_DIR CODEMAN_TMUX_SOCKET CODEMAN_INSTANCE CODEMAN_PORT CODEMAN_HOST 2>/dev/null || true
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
@@ -43,21 +60,29 @@ NODE_LOG="$(mktemp -t fleet-smoke-node.XXXXXX)"
 
 cleanup() {
   local status=$?
-  # Kill both server processes AND any children they spawned (tmux server,
-  # shell PTYs, ...) via process-group kill: each was started with `&` as the
-  # leader of its own group under `set -m`-less bash, so `kill -TERM -$pid`
-  # signals the whole group. Fall back to `pkill -P` for any stragglers, then
-  # a plain kill on the tracked pid. All best-effort — never fail cleanup.
+  # Kill the two server processes and any direct children they spawned
+  # (short-lived tmux client invocations, shell helpers, ...) via `pkill -P`
+  # plus a direct kill on the tracked pid, escalating to SIGKILL after a
+  # grace period. This deliberately does NOT use a process-group kill
+  # (`kill -TERM -$pid`): plain `cmd &` backgrounding in non-interactive bash
+  # (no `set -m`) does not give the job its own process group — it shares
+  # the shell's — so `kill -- -$pid` would be a silent no-op there, masked
+  # by `|| true`. Real coverage comes from two places instead: (1) pkill -P /
+  # kill below for the server processes and their direct children, and
+  # (2) the `tmux kill-server` calls further down, which are required
+  # regardless — tmux daemonizes its server into its own session the moment
+  # it starts, so it's never a member of any ancestor's process group and
+  # only `tmux -L <socket> kill-server` can reach it. All best-effort — never
+  # fail cleanup.
   for pid in "$NODE_PID" "$CENTRAL_PID"; do
     [ -n "$pid" ] || continue
-    kill -TERM "-$pid" 2>/dev/null || true
     pkill -TERM -P "$pid" 2>/dev/null || true
     kill -TERM "$pid" 2>/dev/null || true
   done
   sleep 1
   for pid in "$NODE_PID" "$CENTRAL_PID"; do
     [ -n "$pid" ] || continue
-    kill -KILL "-$pid" 2>/dev/null || true
+    pkill -KILL -P "$pid" 2>/dev/null || true
     kill -KILL "$pid" 2>/dev/null || true
   done
 

@@ -89,7 +89,7 @@ hash). Then bring the node online:
 codeman node run
 ```
 
-`codeman node run` refuses to start (`✗ Not joined to a fleet …`) if
+`codeman node run` refuses to start (`Not joined to a fleet …`) if
 `fleet-node.json` is missing — run `node join` first. It reads its listen
 port from `CODEMAN_PORT` (default 3100 — pick something free if you're also
 running a normal `codeman web` on the same box) and always binds
@@ -116,12 +116,25 @@ bind loopback only, and the auth middleware is a no-op unless
 a throwaway local run but must never be copied verbatim onto a
 network-reachable instance.
 
-The script is fully self-contained: it isolates both instances via
-`CODEMAN_INSTANCE` (never touches `~/.codeman` or the production `-L codeman`
-tmux socket), and its `EXIT` trap kills both server processes and their
-process groups, tears down the two per-run tmux socket servers
-(`tmux -L codeman-fleetc kill-server`, `tmux -L codeman-fleetn kill-server`),
-and removes `~/.codeman-fleetc`/`~/.codeman-fleetn` — verified by inspecting
+The script is fully self-contained: right after `set -euo pipefail` it
+unsets `CODEMAN_DATA_DIR`/`CODEMAN_TMUX_SOCKET`/`CODEMAN_INSTANCE`/
+`CODEMAN_PORT`/`CODEMAN_HOST` so a value already exported in the caller's
+shell can't override the isolation it sets up below — both
+`CODEMAN_DATA_DIR` and `CODEMAN_TMUX_SOCKET` take unconditional priority
+over the instance-derived paths (see "Per-instance isolation" above), so
+without this unset a leaked env var would make both smoke processes
+silently share one target, possibly production `~/.codeman`. It isolates
+both instances via `CODEMAN_INSTANCE` (never touches `~/.codeman` or the
+production `-L codeman` tmux socket), and its `EXIT` trap kills both server
+processes and their direct children (`pkill -P` then a direct `kill`,
+escalating to `SIGKILL` after a 1s grace period — plain `cmd &` backgrounding
+in non-interactive bash does not give a job its own process group, so this
+script does not rely on process-group kills for cleanup), tears down the two
+per-run tmux socket servers (`tmux -L codeman-fleetc kill-server`,
+`tmux -L codeman-fleetn kill-server` — the only way to reach them, since
+tmux always daemonizes its server into its own session, detached from any
+ancestor's process group), and removes
+`~/.codeman-fleetc`/`~/.codeman-fleetn` — verified by inspecting
 `ps`/`lsof`/`tmux ls` after a run leaves none of the smoke test's processes,
 listening ports, or tmux sessions behind. It polls each readiness condition
 (server up, device online, buffer contains the echo) instead of sleeping a
