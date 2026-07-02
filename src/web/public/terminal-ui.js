@@ -538,7 +538,15 @@ Object.assign(CodemanApp.prototype, {
         // causes Ink to re-render at the new row count, garbling terminal output.
         // Local fit() still runs so xterm knows the viewport size for scrolling.
         const keyboardUp = typeof KeyboardHandler !== 'undefined' && KeyboardHandler.keyboardVisible;
-        if (this.activeSessionId && !keyboardUp) {
+        // Likewise while the split-grid overlay is active: the native terminal
+        // is covered and each visible tile resizes on its OWN WS — a full-dims
+        // send for the hidden native terminal would race a pinned tile's resize
+        // (last-writer-wins desktop claims in session.resize) and flap the PTY.
+        // Its server dims are irrelevant until the layout-1 restore, which
+        // re-sends via selectSession. Optional-chained → undefined/dormant is
+        // falsy, so layout-1-only users never take this branch.
+        const gridActive = this._fleetGridActive?.() === true;
+        if (this.activeSessionId && !keyboardUp && !gridActive) {
           const dims = this.fitAddon.proposeDimensions();
           // Enforce minimum dimensions to prevent layout issues
           const cols = dims ? Math.max(dims.cols, MIN_COLS) : MIN_COLS;
@@ -2171,6 +2179,16 @@ Object.assign(CodemanApp.prototype, {
     // clear the terminal for the same dimensions (which would blank the screen
     // without a subsequent Ink redraw to repaint it).
     this._lastResizeDims = { cols: dims.cols, rows: dims.rows };
+    // Split-grid overlay active: skip the server send entirely (WS and HTTP —
+    // this path is reachable via Ctrl+Shift+R restoreTerminalSize and any
+    // selectSession that runs under the overlay). The native terminal is
+    // hidden and each tile resizes on its OWN WS; a full-dims send here would
+    // race a pinned tile's resize (last-writer-wins desktop claims in
+    // session.resize). Server dims for the covered terminal are irrelevant
+    // until the layout-1 restore, which re-sends via selectSession (grid
+    // already marked dormant by then, so that send passes). The fit() above
+    // still ran. Optional-chained → layout-1-only users never take this.
+    if (this._fleetGridActive?.() === true) return changed;
     const viewportType =
       typeof MobileDetection !== 'undefined' && MobileDetection.getDeviceType
         ? MobileDetection.getDeviceType()

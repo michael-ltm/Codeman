@@ -564,6 +564,15 @@ Object.assign(CodemanApp.prototype, {
 
   /** openFleetGridTerminal + LRU bookkeeping + ≤6 eviction (every tile open). */
   _fleetGridOpenTile(key, containerEl) {
+    // Self-heal against native-WS resurrection: selectSession stays reachable
+    // while the grid is active (closeFleetTab active-tab fallback, vanished-
+    // remote-tab fallback, session-create flows) and reconnects the native WS
+    // + full-dims desktop claim under the overlay. If THAT session is about to
+    // get a tile (with its own WS + tile-dims claim), drop the native socket
+    // first — restoring the invariant that a pinned session's only live socket
+    // is its tile's. Every tile open funnels through here, so every
+    // resurrection path is healed at the exact moment it would matter.
+    if (key === this._wsSessionId) this._disconnectWs?.();
     this.openFleetGridTerminal(key, containerEl);
     this._fleetGridTouch(key);
     this._fleetGridEvictIfNeeded();
