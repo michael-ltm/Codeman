@@ -126,7 +126,7 @@ Object.assign(CodemanApp.prototype, {
     const online = device.status === 'online';
     const selected = device.id === this._fleetSelectedDeviceId;
     const isLocal = device.id === 'local';
-    const hostname = escapeHtml(device.hostname || device.name || device.id.slice(0, 8));
+    const name = escapeHtml(device.name || device.hostname || device.id.slice(0, 8));
     const platform = escapeHtml(device.platform || '');
     const count = Number(device.activeSessionCount || 0);
     const noTmux = device.capabilities && device.capabilities.tmux === false;
@@ -150,7 +150,7 @@ Object.assign(CodemanApp.prototype, {
     return `<div class="fleet-device ${selected ? 'selected' : ''} ${online ? '' : 'offline'}" role="button" tabindex="0" aria-pressed="${selected ? 'true' : 'false'}" onclick="app.selectFleetDevice(${escapeHtml(JSON.stringify(device.id))})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();app.selectFleetDevice(${escapeHtml(JSON.stringify(device.id))})}">
         <span class="fleet-device-dot ${online ? 'online' : 'offline'}" aria-hidden="true"></span>
         <div class="fleet-device-main">
-          <div class="fleet-device-name">${hostname}${localTag}</div>
+          <div class="fleet-device-name">${name}${localTag}</div>
           <div class="fleet-device-meta">
             ${platform ? `<span class="fleet-device-platform">${platform}</span>` : ''}
             <span class="fleet-device-sessions">${count} 会话</span>
@@ -194,7 +194,7 @@ Object.assign(CodemanApp.prototype, {
     sel.innerHTML = (devices || [])
       .map((d) => {
         const online = d.status === 'online';
-        const name = escapeHtml(d.hostname || d.name || d.id.slice(0, 8));
+        const name = escapeHtml(d.name || d.hostname || d.id.slice(0, 8));
         const local = d.id === 'local' ? ' (本机)' : '';
         const suffix = online ? '' : ' — offline';
         return `<option value="${escapeHtml(d.id)}" ${online ? '' : 'disabled'}>${name}${local}${suffix}</option>`;
