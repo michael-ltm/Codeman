@@ -595,6 +595,9 @@ Object.assign(CodemanApp.prototype, {
         if (this._localEchoOverlay?.hasPending) {
           this._localEchoOverlay.rerender();
         }
+        // Split-grid: collapse to the native single terminal if the viewport
+        // crossed into the phone breakpoint. No-op while the grid is dormant.
+        this._fleetOnViewportResize?.();
       }, 300); // Trailing-edge: only fire after 300ms of no resize events
     };
 

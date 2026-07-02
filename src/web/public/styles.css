@@ -11098,6 +11098,187 @@ html[data-skin="daylight-blue"] .welcome-btn-tunnel.active:hover {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   Split-grid (Task 20) — native restyle of the deleted Rev 2 grid.
+   Every color/size is an existing design token so it follows the
+   data-skin theme automatically. Desktop/tablet only (the header
+   control is hidden at the phone breakpoint in mobile.css, and the
+   logic refuses to leave layout 1 on phones).
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Header segmented control (1 / 2 / 2×2), sits beside the fleet button
+   in the header icon row — mirrors the `.fleet-mode-seg` idiom. */
+.grid-layout-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px;
+  margin: 0 2px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--btn-radius);
+}
+.grid-layout-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: calc(var(--btn-radius) - 1px);
+  transition: all var(--transition-smooth);
+}
+.grid-layout-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.grid-layout-btn.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.grid-layout-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Grid overlay: fills the terminal area (anchored to the position:relative
+   `.main`), layered above the welcome overlay (z-index 10) and the native
+   single terminal underneath — which is left untouched and correctly sized,
+   so returning to layout 1 needs no refit. Empty + hidden until active. */
+.fleet-grid {
+  display: none;
+}
+.fleet-grid.active {
+  display: grid;
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  gap: 6px;
+  padding: 6px;
+  background: var(--bg-dark);
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+.fleet-grid.active[data-layout='2'] {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+.fleet-grid.active[data-layout='4'] {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.fleet-grid-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--term-bg, #161b23);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color var(--transition-smooth);
+}
+.fleet-grid-tile.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.fleet-grid-tile.empty {
+  border-style: dashed;
+}
+.fleet-grid-tile.empty .fleet-grid-tile-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fleet-grid-tile-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0 6px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+}
+.fleet-grid-tile-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fleet-grid-tile-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.fleet-grid-tile-close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.fleet-grid-tile-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+.fleet-grid-tile-body .xterm {
+  width: 100%;
+  height: 100%;
+  padding: 2px 4px;
+}
+.fleet-grid-tile-body .xterm-viewport {
+  background: transparent !important;
+}
+
+/* Empty-slot hint — the pin affordance is "click a session tab". */
+.fleet-grid-empty-hint {
+  padding: 0 12px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Per-tile disconnect overlay: painted on an involuntary WS close (device
+   offline / cap / drop) and refreshed with a static message; cleared on
+   auto-reconnect. Static literals only — never interpolated remote data. */
+.fleet-grid-tile .tile-offline {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  background: rgba(var(--accent-rgb), 0.06);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* ═══════════════════════════════════════════════════════════════
    Fleet device panel (Rev 3, Task 19) — a docked side panel in the
    panels-ui idiom (mirrors `.file-browser-panel`: fixed, `.visible`
    toggle, header + scrollable body). Every color is an existing CSS

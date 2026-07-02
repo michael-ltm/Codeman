@@ -445,6 +445,13 @@ html.mobile-init .file-browser-panel {
     display: none !important;
   }
 
+  /* Split-grid is desktop/tablet only (spec §6.3): hide the layout control on
+     phones. The logic in fleet-tabs.js also refuses to leave layout 1 here, so
+     the grid can never activate at this breakpoint. */
+  .grid-layout-seg {
+    display: none !important;
+  }
+
   /* Mobile voice input button in toolbar — initially hidden via inline style,
      shown by VoiceInput._showButtons() clearing the inline display */
   .btn-voice-mobile {

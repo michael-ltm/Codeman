@@ -29,8 +29,20 @@
  *
  * First version scope (spec §6.1 / §11): view terminal, type input, close tab
  * (local visibility only), and an explicit `stopFleetSession()` (wired into the
- * device panel in Task 19). The split-grid is intentionally gone here — it is
- * re-added natively in Task 20.
+ * device panel in Task 19).
+ *
+ * Split-grid (Task 20, spec §6.3): the second half of this module re-implements
+ * the deleted Rev 2 grid natively. Layout 1 is the native single-terminal
+ * pipeline (grid machinery fully dormant, local red line byte-identical);
+ * layouts 2 / 2×2 overlay a grid of independent xterm tiles, each with its OWN
+ * WS bound to its tile key (`sessionId` for a LOCAL tab, `deviceId:sessionId`
+ * for a REMOTE one — local tiles hit `/ws/sessions/*` + `/api/sessions/*`,
+ * remote tiles hit the fleet proxy). Ported Rev 2 semantics (≤4 tiles, ≤6
+ * live instances w/ LRU eviction of unpinned, offline overlay, device-online
+ * auto-reconnect, intentional-close flag, surgical DOM teardown via term
+ * dispose) live in `openFleetGridTerminal`/`_fleetGridEvictIfNeeded`/
+ * `closeFleetGridTerminal`/`_fleetGridReconnectOfflineTiles`. Desktop/tablet
+ * only — `setFleetGridLayout` refuses to leave layout 1 on phones.
  *
  * @mixin Extends CodemanApp.prototype via Object.assign
  * @dependency app.js (CodemanApp), fleet-api.js (listFleet/fleetStopSession),
@@ -49,6 +61,7 @@ Object.assign(CodemanApp.prototype, {
     // Keys the user explicitly closed this browser session. `refreshFleetState`
     // won't re-add them (close = local visibility only; a reload forgets it).
     this._fleetHidden = new Set();
+    this.initFleetGrid();
     this.refreshFleetState();
   },
 
@@ -119,6 +132,13 @@ Object.assign(CodemanApp.prototype, {
     this._fleetState = state;
     this._updateFleetBadge?.();
     this._renderFleetPanelIfOpen?.();
+
+    // Split-grid (Task 20): a device that just came back online may have
+    // pinned tiles still showing their offline overlay — reconnect them. Also
+    // refresh live tile titles (a remote tab's status/label may have changed).
+    // Both are no-ops while the grid is dormant (layout 1).
+    this._fleetGridReconnectOfflineTiles?.();
+    this._fleetGridRefreshTitles?.();
 
     // If the active tab was a remote one that vanished (device removed / session
     // gone), release the terminal and fall back to a local tab or the welcome.
@@ -235,5 +255,633 @@ Object.assign(CodemanApp.prototype, {
         </span>
         <span class="tab-close" onclick="event.stopPropagation(); app.requestCloseSession(${keyJson})" title="Close tab (session keeps running)" aria-label="Close remote tab" tabindex="0">&times;</span>
       </div>`;
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Split-grid (Task 20, spec §6.3) — native re-implementation of the deleted
+// Rev 2 grid. Layout 1 = the native single-terminal pipeline, fully dormant
+// (every method below early-returns while `_fleetGridLayout === 1`, so the
+// local red line stays byte-identical). Layouts 2 / 2×2 overlay `#fleetGrid`
+// (anchored to the position:relative `.main`, above the welcome overlay) with
+// independent xterm tiles, each with its OWN WebSocket bound to its tile key.
+//
+// Tile key: a LOCAL session id (no colon) OR a REMOTE `deviceId:sessionId`.
+// `_fleetGridTileTarget()` maps the key to local `/ws/sessions/*` +
+// `/api/sessions/*` or the remote fleet proxy. Everything else (eviction,
+// offline overlay, reconnect, intentional-close, surgical teardown) is ported
+// from Rev 2's `55ff739` fleet-dashboard.js.
+// ═══════════════════════════════════════════════════════════════════════════
+Object.assign(CodemanApp.prototype, {
+  /** One-time grid state bootstrap (called from initFleetTabs). */
+  initFleetGrid() {
+    this._fleetGridLayout = 1; // slot count: 1 (native) | 2 | 4
+    this._fleetGridPinned = [null]; // _fleetGridPinned[i] = tile key or null
+    this._fleetGridTerms = new Map(); // key -> { term, fit, ws, el, ... }
+    this._fleetGridLru = new Map(); // key -> last-touch ms (≤6 eviction)
+    this._fleetGridFocusedIndex = 0;
+    this._fleetGridWired = false;
+    this._fleetGridUpdateControl();
+  },
+
+  /** True while a multi-tile grid is showing (2 / 2×2). */
+  _fleetGridActive() {
+    return this._fleetGridLayout > 1;
+  },
+
+  /** Phone breakpoint (spec §6.3: grid is desktop/tablet only). */
+  _isPhone() {
+    return (
+      typeof MobileDetection !== 'undefined' &&
+      MobileDetection.getDeviceType &&
+      MobileDetection.getDeviceType() === 'mobile'
+    );
+  },
+
+  /**
+   * Switch the grid to 1 / 2 / 2×2. Phones are forced to layout 1. Surviving
+   * pinned keys carry into the earliest slots; growing from layout 1 seeds
+   * slot 0 with the currently active tab. Anything that falls off the end is
+   * torn down. Layout 1 tears down ALL tiles and hands back to the native
+   * single terminal underneath (untouched → no refit needed).
+   */
+  setFleetGridLayout(n) {
+    n = Number(n);
+    if (n !== 1 && n !== 2 && n !== 4) return;
+    if (this._isPhone()) {
+      if (n !== 1) this.showToast?.('分屏在手机上不可用 · Split-screen is desktop only', 'info');
+      n = 1;
+    }
+    const grid = document.getElementById('fleetGrid');
+    if (!grid) return;
+    if (n === this._fleetGridLayout) {
+      this._fleetGridUpdateControl();
+      return;
+    }
+
+    const carried =
+      this._fleetGridLayout === 1 ? [this.activeSessionId || null] : (this._fleetGridPinned || []).slice();
+
+    if (n === 1) {
+      // Tear down every tile — the native terminal takes over.
+      for (const key of Array.from(this._fleetGridTerms.keys())) this.closeFleetGridTerminal(key);
+      this._fleetGridLru?.clear?.();
+      this._fleetGridLayout = 1;
+      this._fleetGridPinned = [null];
+      this._fleetGridFocusedIndex = 0;
+      grid.classList.remove('active');
+      grid.removeAttribute('data-layout');
+      grid.setAttribute('aria-hidden', 'true');
+      grid.innerHTML = '';
+      this._fleetGridUpdateControl();
+      // The native terminal was never resized while covered; a defensive refit
+      // + resend keeps it crisp on return (server-side no-op if dims match).
+      try {
+        this.fitAddon?.fit();
+      } catch {
+        /* not measurable */
+      }
+      if (this.activeSessionId) this.sendResize?.(this.activeSessionId)?.catch?.(() => {});
+      return;
+    }
+
+    const nextPinned = new Array(n).fill(null);
+    for (let i = 0; i < n; i++) nextPinned[i] = carried[i] || null;
+    // Shrink: close whatever falls off the end of the carried array.
+    for (let i = n; i < carried.length; i++) {
+      const key = carried[i];
+      if (key) {
+        this.closeFleetGridTerminal(key);
+        this._fleetGridLru?.delete(key);
+      }
+    }
+    this._fleetGridLayout = n;
+    this._fleetGridPinned = nextPinned;
+    this._fleetGridFocusedIndex = 0;
+    grid.classList.add('active');
+    grid.setAttribute('data-layout', String(n));
+    grid.setAttribute('aria-hidden', 'false');
+    grid.innerHTML = nextPinned.map((_, i) => this._fleetGridTileShellHtml(i)).join('');
+    this._fleetGridWireControl();
+    this._fleetGridUpdateControl();
+    this._fleetGridRenderTiles();
+  },
+
+  /** Sync the header segmented control's active/aria-pressed state. */
+  _fleetGridUpdateControl() {
+    const seg = document.getElementById('gridLayoutSeg');
+    if (!seg) return;
+    seg.querySelectorAll('[data-grid-layout]').forEach((btn) => {
+      const on = Number(btn.dataset.gridLayout) === this._fleetGridLayout;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  },
+
+  /** Attach the delegated grid click handler exactly once. */
+  _fleetGridWireControl() {
+    if (this._fleetGridWired) return;
+    const grid = document.getElementById('fleetGrid');
+    if (!grid) return;
+    this._fleetGridWired = true;
+    grid.addEventListener('click', (e) => this._onFleetGridClick(e));
+  },
+
+  _onFleetGridClick(e) {
+    const unpinBtn = e.target.closest('[data-action="unpin-grid-tile"]');
+    if (unpinBtn) {
+      const idx = Number(unpinBtn.dataset.index);
+      if (Number.isInteger(idx)) this.unpinFleetGridTile(idx);
+      return;
+    }
+    const tile = e.target.closest('.fleet-grid-tile[data-tile-index]');
+    if (!tile) return;
+    const idx = Number(tile.dataset.tileIndex);
+    if (!Number.isInteger(idx)) return;
+    this._fleetGridFocusTile(idx);
+    const key = this._fleetGridPinned[idx];
+    if (key) this._fleetGridTouch(key);
+  },
+
+  _fleetGridTileShellHtml(i) {
+    return `<div class="fleet-grid-tile" id="fleet-grid-tile-${i}" data-tile-index="${i}">
+      <div class="fleet-grid-tile-head"></div>
+      <div class="fleet-grid-tile-body" id="fleet-grid-tile-${i}-body"></div>
+    </div>`;
+  },
+
+  /**
+   * Grid entry point invoked by `handleSessionTabClick`: while a multi-tile
+   * grid is active a tab click PINS instead of selecting into the single view.
+   * Returns true iff it handled the click (so the caller returns early). No-op
+   * → false while dormant, keeping the local single-view path byte-identical.
+   */
+  _maybePinToGrid(key) {
+    if (!this._fleetGridActive()) return false;
+    this.pinFleetGridTab(key);
+    return true;
+  },
+
+  /**
+   * Pin `key` into the first empty slot (or evict the least-recently-used
+   * pinned slot when full). A double-pin focuses the existing tile + hints,
+   * never creating a second instance of the same session.
+   */
+  pinFleetGridTab(key) {
+    if (!key || !this._fleetGridActive()) return;
+    if (!Array.isArray(this._fleetGridPinned) || this._fleetGridPinned.length !== this._fleetGridLayout) {
+      this._fleetGridPinned = new Array(this._fleetGridLayout).fill(null);
+    }
+    const existingIdx = this._fleetGridPinned.indexOf(key);
+    if (existingIdx !== -1) {
+      this.showToast?.('已在分屏中 · Already pinned', 'info');
+      this._fleetGridFocusTile(existingIdx);
+      this._fleetGridTouch(key);
+      return;
+    }
+    let slot = this._fleetGridPinned.indexOf(null);
+    if (slot === -1) {
+      slot = this._fleetGridOldestPinnedSlot();
+      const evicted = this._fleetGridPinned[slot];
+      if (evicted) {
+        this.closeFleetGridTerminal(evicted);
+        this._fleetGridLru?.delete(evicted);
+      }
+    }
+    this._fleetGridPinned[slot] = key;
+    this._fleetGridFocusedIndex = slot;
+    this._fleetGridRenderTiles();
+  },
+
+  /** Clear grid slot `index`, tearing down its terminal/WS if occupied. */
+  unpinFleetGridTile(index) {
+    if (!Array.isArray(this._fleetGridPinned) || index < 0 || index >= this._fleetGridPinned.length) return;
+    const key = this._fleetGridPinned[index];
+    this._fleetGridPinned[index] = null;
+    if (key) {
+      this.closeFleetGridTerminal(key);
+      this._fleetGridLru?.delete(key);
+    }
+    this._fleetGridRenderTiles();
+  },
+
+  /** (Re)populate every tile's header + terminal from `_fleetGridPinned`. */
+  _fleetGridRenderTiles() {
+    if (!this._fleetGridActive() || !Array.isArray(this._fleetGridPinned)) return;
+    for (let i = 0; i < this._fleetGridPinned.length; i++) {
+      const key = this._fleetGridPinned[i];
+      const tileEl = document.getElementById(`fleet-grid-tile-${i}`);
+      const bodyEl = document.getElementById(`fleet-grid-tile-${i}-body`);
+      if (!tileEl || !bodyEl) continue;
+      const headEl = tileEl.querySelector('.fleet-grid-tile-head');
+      tileEl.classList.toggle('focused', i === this._fleetGridFocusedIndex);
+      if (!key) {
+        tileEl.classList.add('empty');
+        if (headEl) headEl.innerHTML = '';
+        bodyEl.innerHTML =
+          '<div class="fleet-grid-empty-hint">空位 · 点击上方标签页钉入此格<br>Empty · click a session tab to pin here</div>';
+        continue;
+      }
+      tileEl.classList.remove('empty');
+      // Title is the ONLY place a remote (untrusted) string reaches the DOM →
+      // escapeHtml. The unpin × is a static control.
+      if (headEl) {
+        headEl.innerHTML = `<span class="fleet-grid-tile-title">${escapeHtml(
+          this._fleetGridTileTitle(key)
+        )}</span><button type="button" class="fleet-grid-tile-close" data-action="unpin-grid-tile" data-index="${i}" aria-label="取消钉选 · Unpin" title="取消钉选 · Unpin">&times;</button>`;
+      }
+      this._fleetGridOpenTile(key, bodyEl);
+    }
+  },
+
+  /** Human title for a tile key (local session name or remote tab title). */
+  _fleetGridTileTitle(key) {
+    const local = this.sessions && this.sessions.get(key);
+    if (local) return (this.getSessionName && this.getSessionName(local)) || local.name || key;
+    const tab = this.fleetTabs && this.fleetTabs.get(key);
+    if (tab) return tab.title || `${tab.deviceName || ''} / ${tab.sessionLabel || ''}` || key;
+    return key;
+  },
+
+  /**
+   * Resolve a tile key to its terminal endpoints. Local keys (a plain session
+   * id) hit the native `/ws/sessions/*` + `/api/sessions/*`; remote keys resolve
+   * via the fleet registry to the fleet proxy.
+   */
+  _fleetGridTileTarget(key) {
+    const f = this._fleetTarget ? this._fleetTarget(key) : null;
+    if (f) {
+      return {
+        kind: 'remote',
+        deviceId: f.deviceId,
+        sessionId: f.sessionId,
+        wsPath: `/ws/fleet/devices/${encodeURIComponent(f.deviceId)}/sessions/${encodeURIComponent(
+          f.sessionId
+        )}/terminal`,
+      };
+    }
+    return {
+      kind: 'local',
+      wsPath: `/ws/sessions/${encodeURIComponent(key)}/terminal`,
+      bufferUrl: `/api/sessions/${encodeURIComponent(key)}/terminal`,
+    };
+  },
+
+  /** Best-effort replay buffer for a tile (handles both envelope shapes). */
+  async _fleetGridFetchBuffer(target) {
+    try {
+      if (target.kind === 'remote') {
+        const res = await this.fleetTerminalBuffer(target.deviceId, target.sessionId);
+        return (res && res.buffer) || '';
+      }
+      const res = await fetch(target.bufferUrl);
+      const data = (await res.json())?.data;
+      return (data && data.terminalBuffer) || '';
+    } catch {
+      return '';
+    }
+  },
+
+  /** openFleetGridTerminal + LRU bookkeeping + ≤6 eviction (every tile open). */
+  _fleetGridOpenTile(key, containerEl) {
+    this.openFleetGridTerminal(key, containerEl);
+    this._fleetGridTouch(key);
+    this._fleetGridEvictIfNeeded();
+  },
+
+  /**
+   * Open (or re-attach) the terminal for `key` inside `containerEl`. A closed/
+   * closing WS can never be reused — tear the dead rec down and rebuild. An
+   * in-flight ws (`null`, buffer fetch not yet done) counts as healthy (0), as
+   * do CONNECTING (0) / OPEN (1) — those re-attach.
+   */
+  async openFleetGridTerminal(key, containerEl) {
+    if (!key || !containerEl) return;
+    const existing = this._fleetGridTerms.get(key);
+    if (existing) {
+      const wsState = existing.ws ? existing.ws.readyState : 0;
+      if (wsState !== 0 && wsState !== 1) {
+        this.closeFleetGridTerminal(key);
+      } else {
+        return this._fleetGridReattach(existing, key, containerEl);
+      }
+    }
+    const target = this._fleetGridTileTarget(key);
+    if (!target) return;
+    await this._fleetGridCreateTerminal(key, target, containerEl);
+  },
+
+  /** Re-attach a live `rec` into a rebuilt tile body (DOM relocate + RO rebind). */
+  _fleetGridReattach(existing, key, containerEl) {
+    const node = existing.term.element;
+    if (node && node.parentElement !== containerEl) {
+      containerEl.innerHTML = '';
+      containerEl.appendChild(node);
+    }
+    if (existing.el !== containerEl) {
+      try {
+        if (existing.resizeObserver) existing.resizeObserver.disconnect();
+      } catch {
+        /* already disconnected */
+      }
+      if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => {
+          try {
+            existing.fit.fit();
+          } catch {
+            /* container hidden */
+          }
+          this._fleetGridSendResize(key);
+        });
+        ro.observe(containerEl);
+        existing.resizeObserver = ro;
+      }
+    }
+    existing.el = containerEl;
+    try {
+      existing.fit.fit();
+    } catch {
+      /* not measurable yet */
+    }
+    this._fleetGridSendResize(key);
+    if (existing.offline) this._fleetGridMarkOffline(key);
+  },
+
+  /** Build a brand-new xterm + dedicated WS for `key` (input bound to THIS socket). */
+  async _fleetGridCreateTerminal(key, target, containerEl) {
+    containerEl.innerHTML = '';
+    const term = new Terminal({
+      scrollback: 5000,
+      allowProposedApi: true,
+      fontFamily: '"Fira Code", "Cascadia Code", "JetBrains Mono", "SF Mono", Monaco, monospace',
+      fontSize: 12,
+      lineHeight: 1.2,
+      cursorBlink: false,
+      allowTransparency: true,
+      theme: window.codemanCurrentXtermTheme ? { ...window.codemanCurrentXtermTheme() } : undefined,
+    });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(containerEl);
+    try {
+      fit.fit();
+    } catch {
+      /* not measurable yet */
+    }
+
+    const rec = {
+      term,
+      fit,
+      ws: null, // in-flight until assigned below → treated as healthy on reattach
+      el: containerEl,
+      seq: 0,
+      cid: `grid-${Math.random().toString(36).slice(2, 10)}`,
+      resizeObserver: null,
+      offline: false,
+      offlineEl: null,
+      intentionalClose: false,
+      offlineMessage: null,
+    };
+    this._fleetGridTerms.set(key, rec);
+
+    const buf = await this._fleetGridFetchBuffer(target);
+    // The tile may have been evicted/closed during the await — bail if so.
+    if (this._fleetGridTerms.get(key) !== rec) return;
+    if (buf) {
+      try {
+        term.write(buf);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = `${proto}://${location.host}${target.wsPath}`;
+    const ws = new WebSocket(url);
+    rec.ws = ws;
+    ws.onopen = () => this._fleetGridSendResize(key);
+    ws.onmessage = (ev) => {
+      let m;
+      try {
+        m = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (m.t === 'o') term.write(m.d);
+      else if (m.t === 'c') term.clear();
+      else if (m.t === 'r') this._fleetGridRefreshBuffer(key);
+      // m.t === 'ia' (input ack): no local pending queue to reconcile here.
+    };
+    ws.onclose = (ev) => {
+      // Intentional teardown → no overlay. Any other close (device offline,
+      // per-IP cap 4008, drop/restart) → recoverable overlay. Messages are
+      // static literals (no interpolation) to preserve XSS discipline.
+      if (rec.intentionalClose) return;
+      const message = ev && ev.code === 4008 ? '连接数已达上限 · Too many connections' : '连接已断开 · Disconnected';
+      this._fleetGridMarkOffline(key, message);
+    };
+    ws.onerror = () => {
+      /* surfaced via onclose */
+    };
+
+    term.onData((d) => {
+      if (ws.readyState !== 1) return;
+      rec.seq += 1;
+      ws.send(JSON.stringify({ t: 'i', d, seq: rec.seq, cid: rec.cid }));
+    });
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => {
+        try {
+          fit.fit();
+        } catch {
+          /* container hidden */
+        }
+        this._fleetGridSendResize(key);
+      });
+      ro.observe(containerEl);
+      rec.resizeObserver = ro;
+    }
+  },
+
+  /** Fit + typed resize on this tile's OWN WS ({t:'z',v:'desktop'} → claimDesktopSizing). */
+  _fleetGridSendResize(key) {
+    const rec = this._fleetGridTerms.get(key);
+    if (!rec || !rec.ws || rec.ws.readyState !== 1) return;
+    const cols = rec.term.cols;
+    const rows = rec.term.rows;
+    if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 1 || rows < 1) return;
+    rec.ws.send(JSON.stringify({ t: 'z', c: cols, r: rows, v: 'desktop' }));
+  },
+
+  async _fleetGridRefreshBuffer(key) {
+    const rec = this._fleetGridTerms.get(key);
+    if (!rec) return;
+    const target = this._fleetGridTileTarget(key);
+    if (!target) return;
+    const buf = await this._fleetGridFetchBuffer(target);
+    try {
+      rec.term.reset();
+      if (buf) rec.term.write(buf);
+    } catch {
+      /* keep whatever is on screen */
+    }
+  },
+
+  /** Paint/refresh this tile's offline overlay (textContent only → XSS-safe). */
+  _fleetGridMarkOffline(key, message) {
+    const rec = this._fleetGridTerms.get(key);
+    if (!rec) return;
+    rec.offline = true;
+    if (typeof message === 'string') rec.offlineMessage = message;
+    const overlayText = rec.offlineMessage || '设备已离线 · Device offline';
+    const node = rec.term && rec.term.element;
+    // Only paint when this terminal's own node actually lives in rec.el (guards
+    // the reattach window where the node has been relocated).
+    if (!rec.el || !node || node.parentElement !== rec.el) return;
+    const existing = rec.el.querySelector('.tile-offline');
+    if (existing) {
+      existing.textContent = overlayText;
+      return;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'tile-offline';
+    overlay.textContent = overlayText;
+    rec.el.appendChild(overlay);
+    rec.offlineEl = overlay;
+  },
+
+  /** Surgical teardown: dispose the term (removes only its own node), close WS. */
+  closeFleetGridTerminal(key) {
+    const rec = this._fleetGridTerms.get(key);
+    if (!rec) return;
+    // Mark BEFORE closing so this rec's onclose treats the close as intentional
+    // and skips the recoverable overlay.
+    rec.intentionalClose = true;
+    try {
+      if (rec.resizeObserver) rec.resizeObserver.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (rec.ws) rec.ws.close();
+    } catch {
+      /* ignore */
+    }
+    try {
+      // xterm's dispose() detaches ONLY this terminal's own element — never
+      // blanket-clear rec.el (a sibling tile could be relocated through it).
+      rec.term.dispose();
+    } catch {
+      /* ignore */
+    }
+    if (rec.offlineEl && rec.offlineEl.parentElement) {
+      rec.offlineEl.parentElement.removeChild(rec.offlineEl);
+    }
+    this._fleetGridTerms.delete(key);
+  },
+
+  _fleetGridTouch(key) {
+    if (!this._fleetGridLru) this._fleetGridLru = new Map();
+    this._fleetGridLru.set(key, Date.now());
+  },
+
+  _fleetGridOldestPinnedSlot() {
+    let slot = 0;
+    let oldest = Infinity;
+    for (let i = 0; i < this._fleetGridPinned.length; i++) {
+      const k = this._fleetGridPinned[i];
+      if (!k) return i;
+      const t = (this._fleetGridLru && this._fleetGridLru.get(k)) || 0;
+      if (t < oldest) {
+        oldest = t;
+        slot = i;
+      }
+    }
+    return slot;
+  },
+
+  /** Visual-only tile focus (keyboard focus stays with the xterm itself). */
+  _fleetGridFocusTile(index) {
+    this._fleetGridFocusedIndex = index;
+    const grid = document.getElementById('fleetGrid');
+    if (!grid) return;
+    grid.querySelectorAll('.fleet-grid-tile').forEach((el) => el.classList.remove('focused'));
+    const tile = document.getElementById(`fleet-grid-tile-${index}`);
+    if (tile) tile.classList.add('focused');
+  },
+
+  /**
+   * Cap live tile WS at 6 (spec §6.3 — mirrors the central controller's ≤6
+   * concurrency ceiling). Pinned keys are exempt; among the rest, close the
+   * least-recently-used first. Structurally rare (≤4 tiles) — a defensive
+   * guard that self-corrects any future over-open path.
+   */
+  _fleetGridEvictIfNeeded() {
+    if (!this._fleetGridTerms) return;
+    const pinnedSet = new Set((this._fleetGridPinned || []).filter(Boolean));
+    while (this._fleetGridTerms.size > 6) {
+      let oldestKey = null;
+      let oldestTime = Infinity;
+      for (const key of this._fleetGridTerms.keys()) {
+        if (pinnedSet.has(key)) continue;
+        const t = (this._fleetGridLru && this._fleetGridLru.get(key)) || 0;
+        if (t < oldestTime) {
+          oldestTime = t;
+          oldestKey = key;
+        }
+      }
+      if (!oldestKey) break; // everything left is pinned — can't evict further
+      this.closeFleetGridTerminal(oldestKey);
+      this._fleetGridLru?.delete(oldestKey);
+    }
+  },
+
+  /**
+   * A device coming back online (SSE fleet:device-online → refreshFleetState →
+   * here) may leave REMOTE tiles showing a stale offline overlay from their
+   * permanently-closed WS. A closed WebSocket cannot be reused, so "reconnect"
+   * = full close + reopen. Local tiles have no device signal → left as-is.
+   */
+  _fleetGridReconnectOfflineTiles() {
+    if (!this._fleetGridActive() || !this._fleetState || !Array.isArray(this._fleetGridPinned)) return;
+    const devicesById = new Map((this._fleetState.devices || []).map((d) => [d.id, d]));
+    this._fleetGridPinned.forEach((key, index) => {
+      if (!key) return;
+      const rec = this._fleetGridTerms.get(key);
+      if (!rec || !rec.offline) return;
+      const target = this._fleetGridTileTarget(key);
+      if (!target || target.kind !== 'remote') return;
+      const device = devicesById.get(target.deviceId);
+      if (!device || device.status !== 'online') return;
+      this.closeFleetGridTerminal(key);
+      const bodyEl = document.getElementById(`fleet-grid-tile-${index}-body`);
+      if (bodyEl) this._fleetGridOpenTile(key, bodyEl);
+    });
+  },
+
+  /** Refresh live tile-header titles on a fleet-state change (textContent → safe). */
+  _fleetGridRefreshTitles() {
+    if (!this._fleetGridActive() || !Array.isArray(this._fleetGridPinned)) return;
+    for (let i = 0; i < this._fleetGridPinned.length; i++) {
+      const key = this._fleetGridPinned[i];
+      if (!key) continue;
+      const tileEl = document.getElementById(`fleet-grid-tile-${i}`);
+      if (!tileEl) continue;
+      const titleEl = tileEl.querySelector('.fleet-grid-tile-title');
+      if (titleEl) titleEl.textContent = this._fleetGridTileTitle(key);
+    }
+  },
+
+  /** A local session was removed (deleted/exited) → free its tile if pinned. */
+  _fleetGridOnLocalSessionRemoved(sessionId) {
+    if (!this._fleetGridActive() || !Array.isArray(this._fleetGridPinned)) return;
+    const idx = this._fleetGridPinned.indexOf(sessionId);
+    if (idx !== -1) this.unpinFleetGridTile(idx);
+  },
+
+  /** Viewport crossed into the phone breakpoint → collapse the grid (spec §6.3). */
+  _fleetOnViewportResize() {
+    if (this._fleetGridActive() && this._isPhone()) this.setFleetGridLayout(1);
   },
 });

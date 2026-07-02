@@ -3118,6 +3118,10 @@ class CodemanApp {
 
   handleSessionTabClick(event, sessionId) {
     event?.preventDefault?.();
+    // Split-grid active (layout 2 / 2×2): a tab click PINS the session into a
+    // tile instead of the single-view select. Dormant no-op (returns false) at
+    // layout 1, so the local single-view path below stays byte-identical.
+    if (this._maybePinToGrid?.(sessionId)) return;
     // On touch with the keyboard hidden, blur the tapped tab so switching
     // sessions doesn't pop the on-screen keyboard. Focus policy itself lives
     // in selectSession via _shouldFocusTerminalForTabSwitch().
@@ -3981,6 +3985,10 @@ class CodemanApp {
     delete this.respawnTimers[sessionId];
     delete this.respawnCountdownTimers[sessionId];
     delete this.respawnActionLogs[sessionId];
+
+    // Split-grid: free any grid tile pinned to this (now-gone) local session.
+    // No-op while the grid is dormant, so the local red line is unaffected.
+    this._fleetGridOnLocalSessionRemoved?.(sessionId);
   }
 
   async closeSession(sessionId, killMux = true) {
