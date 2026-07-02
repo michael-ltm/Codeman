@@ -53,7 +53,10 @@ export function readFleetNodeConfig(filePath: string = fleetNodeConfigPath()): F
 /** Write the node config to disk, creating parent dirs and locking perms to 0600 (POSIX). */
 export function writeFleetNodeConfig(config: FleetNodeConfig, filePath: string = fleetNodeConfigPath()): void {
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, JSON.stringify(config, null, 2));
+  // `mode` locks perms at creation so the token is never briefly world-readable
+  // for a NEW file. It's ignored when the file already exists, so the chmod
+  // below still re-locks the overwrite case (an earlier looser-perms file).
+  writeFileSync(filePath, JSON.stringify(config, null, 2), { mode: 0o600 });
   if (process.platform !== 'win32') chmodSync(filePath, 0o600);
 }
 

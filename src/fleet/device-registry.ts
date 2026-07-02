@@ -19,9 +19,14 @@ interface StoredFile {
   pairingCodes: Record<string, { expiresAt: number }>;
 }
 
+/** Minimum gap between heartbeat-driven `lastSeenAt` disk persists per device. */
+const TOUCH_PERSIST_INTERVAL_MS = 60 * 1000;
+
 export class DeviceRegistry {
   private file: StoredFile = { devices: {}, pairingCodes: {} };
   private online = new Set<string>();
+  /** Last time each device's `lastSeenAt` was actually written to disk (for touch() debouncing). */
+  private lastPersistedAt = new Map<string, number>();
   constructor(private filePath: string = dataPath('fleet-devices.json')) {
     if (existsSync(filePath)) {
       try {
@@ -70,11 +75,11 @@ export class DeviceRegistry {
   }
   markOnline(deviceId: string, now = Date.now()) {
     this.online.add(deviceId);
-    this.touch(deviceId, now);
+    this.touch(deviceId, now, false);
   }
   markOffline(deviceId: string, now = Date.now()) {
     this.online.delete(deviceId);
-    this.touch(deviceId, now);
+    this.touch(deviceId, now, true); // an offline transition is rare + important — always persist
   }
   getDevice(deviceId: string): FleetDeviceSummary | null {
     const d = this.file.devices[deviceId];
@@ -89,10 +94,20 @@ export class DeviceRegistry {
     writeFileSync(tmp, JSON.stringify(this.file, null, 2));
     renameSync(tmp, this.filePath); // 原子写
   }
-  private touch(deviceId: string, now: number) {
+  /**
+   * Update a device's `lastSeenAt` in memory and persist to disk at most once
+   * per {@link TOUCH_PERSIST_INTERVAL_MS} per device — a 10s heartbeat would
+   * otherwise force a full sync file write+rename ~8,640×/day/device on the
+   * event loop. `force` (markOffline) bypasses the debounce. `lastSeenAt` always
+   * advances in memory regardless, so getDevice()/listDevices() stay current.
+   */
+  private touch(deviceId: string, now: number, force: boolean) {
     const d = this.file.devices[deviceId];
-    if (d) {
-      d.lastSeenAt = now;
+    if (!d) return;
+    d.lastSeenAt = now;
+    const last = this.lastPersistedAt.get(deviceId);
+    if (force || last === undefined || now - last >= TOUCH_PERSIST_INTERVAL_MS) {
+      this.lastPersistedAt.set(deviceId, now);
       this.saveNow();
     }
   }

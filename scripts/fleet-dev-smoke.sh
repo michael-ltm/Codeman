@@ -38,7 +38,12 @@ set -euo pipefail
 # would otherwise silently defeat this script's isolation. Every other
 # Codeman env var below is one this script sets explicitly further down, so
 # starting from a clean slate guarantees only this script's own values apply.
-unset CODEMAN_DATA_DIR CODEMAN_TMUX_SOCKET CODEMAN_INSTANCE CODEMAN_PORT CODEMAN_HOST 2>/dev/null || true
+# CODEMAN_PASSWORD/CODEMAN_USERNAME are the exception — this script never sets
+# them (its whole precondition is "no auth"), so an inherited password would
+# turn every unauthenticated curl below into a 401 and make the readiness polls
+# time out with a misleading failure. Unset them here to guarantee no-auth.
+unset CODEMAN_DATA_DIR CODEMAN_TMUX_SOCKET CODEMAN_INSTANCE CODEMAN_PORT CODEMAN_HOST \
+  CODEMAN_PASSWORD CODEMAN_USERNAME 2>/dev/null || true
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

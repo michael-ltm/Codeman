@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -61,6 +61,27 @@ describe('DeviceRegistry', () => {
     const reloaded = new DeviceRegistry(file);
     expect(reloaded.listDevices().map((x) => x.id)).toEqual([deviceId]);
     expect(reloaded.getDevice(deviceId)?.status).toBe('offline'); // 重启后一律 offline
+  });
+
+  it('touch() debounces heartbeat disk writes: repeated markOnline within 60s persists once; markOffline forces a write', () => {
+    const { code } = reg.createPairingCode(1000);
+    const { deviceId } = reg.consumePairingCode(code, joinInfo, 2000);
+    // Spy AFTER pairing so we only count the online/offline writes, not the
+    // (still-eager) pairing persist.
+    const saveSpy = vi.spyOn(reg, 'saveNow');
+
+    reg.markOnline(deviceId, 3000);
+    reg.markOnline(deviceId, 3001); // 1ms later — within the 60s window, no disk write
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    // lastSeenAt still advances in memory even without a disk write.
+    expect(reg.getDevice(deviceId)?.lastSeenAt).toBe(3001);
+
+    reg.markOffline(deviceId, 4000); // markOffline always persists
+    expect(saveSpy).toHaveBeenCalledTimes(2);
+
+    // A markOnline more than 60s after the last persist writes again.
+    reg.markOnline(deviceId, 4000 + 60_001);
+    expect(saveSpy).toHaveBeenCalledTimes(3);
   });
 
   it('tolerates corrupted fleet-devices.json; falls back to empty state', () => {

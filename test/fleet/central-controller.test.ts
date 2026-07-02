@@ -362,4 +362,64 @@ describe('FleetCentralController', () => {
     expect(controller.hasSession('dev_local', 'any-session-id')).toBe(true);
     expect(controller.hasSession('dev_never_registered', 'any-session-id')).toBe(false);
   });
+
+  it('12. create-session ack upserts the new session into the cache and broadcasts fleet:sessions-updated (before heartbeat)', async () => {
+    const reg = makeRegistry();
+    const deviceId = pairDevice(reg);
+    const controller = new FleetCentralController(reg);
+    const socket = makeSocket();
+    controller.connectNode(deviceId, socket, helloFrame(deviceId));
+    const handle = controller.getHandle(deviceId)!;
+    const onBroadcast = vi.fn();
+    controller.on('broadcast', onBroadcast);
+
+    const input: CreateFleetSessionRequest = { workingDir: '/proj' };
+    const promise = handle.createSession(input);
+    const sent = framesSent(socket, 'create-session');
+    const created = makeSession({ deviceId, id: 'sess-new' });
+
+    // Until the ack lands the browser-terminal readiness gate must fail closed.
+    expect(controller.hasSession(deviceId, 'sess-new')).toBe(false);
+
+    controller.handleNodeFrame(deviceId, { t: 'ack', requestId: sent[0].requestId as string, data: created });
+
+    // Synchronously after the ack: cache updated (so the terminal WS 4004 gate
+    // passes immediately, no ≤10s heartbeat wait) + a sessions-updated broadcast.
+    expect(controller.hasSession(deviceId, 'sess-new')).toBe(true);
+    expect(onBroadcast).toHaveBeenCalledWith('fleet:sessions-updated', { deviceId, sessions: [created] });
+
+    await expect(promise).resolves.toEqual(created);
+  });
+
+  it('13. connectNode replacing a live connection emits device-offline once, ends online, and the new socket is live', () => {
+    const reg = makeRegistry();
+    const deviceId = pairDevice(reg);
+    const controller = new FleetCentralController(reg);
+    const onDeviceOffline = vi.fn();
+    const onBroadcast = vi.fn();
+    controller.on('device-offline', onDeviceOffline);
+    controller.on('broadcast', onBroadcast);
+
+    const sock1 = makeSocket();
+    controller.connectNode(deviceId, sock1, helloFrame(deviceId));
+    expect(onDeviceOffline).not.toHaveBeenCalled(); // first connect: nothing to replace
+
+    const sock2 = makeSocket();
+    controller.connectNode(deviceId, sock2, helloFrame(deviceId));
+
+    // The replace notifies open browser terminals exactly once (they close 4009
+    // and auto-reconnect once the device — which never actually left — is live).
+    expect(onDeviceOffline).toHaveBeenCalledTimes(1);
+    expect(onDeviceOffline).toHaveBeenCalledWith(deviceId);
+    expect(sock1.close).toHaveBeenCalledWith(4000, 'replaced');
+
+    // A replace must NOT tell the dashboard the device went offline.
+    expect(onBroadcast).not.toHaveBeenCalledWith('fleet:device-offline', expect.anything());
+
+    // Device ends online with the new socket as the live handle.
+    expect(controller.isOnline(deviceId)).toBe(true);
+    const handle = controller.getHandle(deviceId)!;
+    handle.writeInput('sess-1', 'x');
+    expect(sock2.send).toHaveBeenCalled();
+  });
 });

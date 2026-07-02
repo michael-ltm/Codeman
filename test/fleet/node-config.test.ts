@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mkdtempSync, statSync, readFileSync } from 'node:fs';
+import { mkdtempSync, statSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -28,6 +28,15 @@ describe('fleet node config', () => {
     if (process.platform !== 'win32') {
       expect(statSync(file).mode & 0o777).toBe(0o600);
     }
+  });
+
+  it('overwriting a pre-existing looser-perms file re-locks it to 0600', () => {
+    if (process.platform === 'win32') return; // POSIX perms only
+    const file = join(mkdtempSync(join(tmpdir(), 'fleet-node-')), 'fleet-node.json');
+    writeFileSync(file, '{}', { mode: 0o644 });
+    expect(statSync(file).mode & 0o777).toBe(0o644);
+    writeFleetNodeConfig(cfg, file);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
   it('collectDeviceJoinInfo fills host facts and capabilities', () => {

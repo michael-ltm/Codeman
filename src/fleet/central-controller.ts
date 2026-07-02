@@ -50,6 +50,9 @@ interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  /** Ran synchronously inside `resolvePending` BEFORE `resolve`, so cache/broadcast
+   *  side effects (e.g. create-session upsert) are visible the instant the ack lands. */
+  onResolve?: (data: unknown) => void;
 }
 
 /**
@@ -82,7 +85,11 @@ class RemoteDeviceHandle implements FleetDeviceHandle {
     socket: NodeSocketLike,
     private readonly registry: DeviceRegistry,
     private readonly nextRequestId: () => string,
-    private readonly requestTimeoutMs: number
+    private readonly requestTimeoutMs: number,
+    /** Invoked (by a controller-supplied closure) after the local session cache
+     *  changes out-of-band from a heartbeat — i.e. a create-session ack — so the
+     *  controller can broadcast `fleet:sessions-updated` for this device. */
+    private readonly onSessionsChanged: () => void
   ) {
     this.deviceId = deviceId;
     this.socket = socket;
@@ -116,7 +123,17 @@ class RemoteDeviceHandle implements FleetDeviceHandle {
   }
 
   async createSession(input: CreateFleetSessionRequest): Promise<FleetSessionSummary> {
-    const data = await this.request((requestId) => ({ t: 'create-session', requestId, payload: input }));
+    // Seed the session cache from the ack itself (the node does NOT send a
+    // separate session:update for a create), so hasSession() is true the instant
+    // this resolves — otherwise the create→selectFleetTab→terminal-WS flow races
+    // the ≤10s heartbeat, hits the 4004 readiness gate, and wedges the tile.
+    const data = await this.request(
+      (requestId) => ({ t: 'create-session', requestId, payload: input }),
+      (result) => {
+        this.upsertSession(result as FleetSessionSummary);
+        this.onSessionsChanged();
+      }
+    );
     return data as FleetSessionSummary;
   }
 
@@ -203,6 +220,7 @@ class RemoteDeviceHandle implements FleetDeviceHandle {
     if (!p) return;
     this.pending.delete(requestId);
     clearTimeout(p.timer);
+    p.onResolve?.(data); // synchronous side effects (cache upsert + broadcast) BEFORE the awaiter runs
     p.resolve(data);
   }
 
@@ -233,7 +251,10 @@ class RemoteDeviceHandle implements FleetDeviceHandle {
     this.socket.send(JSON.stringify(frame));
   }
 
-  private request(build: (requestId: string) => CentralRequestFrame): Promise<unknown> {
+  private request(
+    build: (requestId: string) => CentralRequestFrame,
+    onResolve?: (data: unknown) => void
+  ): Promise<unknown> {
     const requestId = this.nextRequestId();
     const frame = build(requestId);
     return new Promise<unknown>((resolve, reject) => {
@@ -241,7 +262,7 @@ class RemoteDeviceHandle implements FleetDeviceHandle {
         this.pending.delete(requestId);
         reject(new Error('Fleet node request timed out'));
       }, this.requestTimeoutMs);
-      this.pending.set(requestId, { resolve, reject, timer });
+      this.pending.set(requestId, { resolve, reject, timer, onResolve });
       this.send(frame);
     });
   }
@@ -271,6 +292,11 @@ export class FleetCentralController extends EventEmitter {
     opts?: { requestTimeoutMs?: number }
   ) {
     super();
+    // One 'device-offline' listener is registered per open browser terminal WS
+    // (see fleet-ws-routes.ts). A dashboard with several split panes / viewers
+    // routinely exceeds the default cap of 10, so lift it — these listeners are
+    // bounded by live sockets and removed on close, not a leak.
+    this.setMaxListeners(0);
     this.requestTimeoutMs = opts?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   }
 
@@ -281,6 +307,13 @@ export class FleetCentralController extends EventEmitter {
   connectNode(deviceId: string, socket: NodeSocketLike, hello: Extract<NodeToCentralFrame, { t: 'hello' }>): void {
     const existing = this.remoteHandles.get(deviceId);
     if (existing) {
+      // Notify open browser terminals BEFORE swapping in the new handle: the
+      // fleet-ws-routes 'device-offline' listener closes them 4009 so a stale
+      // tile (reconnect-after-sleep / NAT rebind) can't zombify. We deliberately
+      // do NOT broadcast 'fleet:device-offline' to the dashboard — the device
+      // never actually left, it's reconnecting — so the frontend auto-reconnect
+      // path restores tiles the moment the new connection is live below.
+      this.emit('device-offline', deviceId);
       // Replace, don't disconnect: closing the stale socket and settling its
       // own pending/sinks must NOT touch registry/offline state, or run any
       // cleanup that could clobber the new connection we're about to install.
@@ -294,7 +327,8 @@ export class FleetCentralController extends EventEmitter {
       socket,
       this.registry,
       () => this.nextRequestId(),
-      this.requestTimeoutMs
+      this.requestTimeoutMs,
+      () => this.emit('broadcast', 'fleet:sessions-updated', { deviceId, sessions: handle.sessionList() })
     );
     handle.replaceSessions(hello.sessions);
     this.remoteHandles.set(deviceId, handle);

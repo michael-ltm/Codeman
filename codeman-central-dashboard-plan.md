@@ -1396,7 +1396,7 @@ curl --noproxy '*' -u 'admin:<password>' http://100.93.252.18:3100/api/fleet
 - [ ] 创建会话可指定设备/workingDir/mode;停止会话从中央生效;设备离线时创建返回 409。
 - [ ] 配对码过期、一次性;节点重启免重配自动重连;中央重启后节点自动恢复 online。
 - [ ] 设备本地 web UI 创建的会话,中央同样可见可控(嵌入式 agent 的核心收益)。
-- [ ] tmux 缺失设备显示能力错误,不能创建会话。
+- [ ] ~~tmux 缺失设备显示能力错误,不能创建会话。~~ **【已知限制】** 服务器无 tmux 时**根本无法启动**(`createMultiplexer()` 在 `src/mux-factory.ts:17` 直接抛错 `tmux not found`,`codeman web` / `codeman node run` 拒绝启动),因此**在线**的 tmux-less 节点在设计上不可能存在——凡是 online 的设备必然自带可用 tmux。`capabilities.tmux===false` 的能力错误标签只对 **join 注册后从未上线(offline)** 的设备可达(能力信息来自配对时的静态探测)。完整行为见 `docs/fleet-dashboard.md` 的 Troubleshooting → "tmux missing"。
 - [ ] `npm run build && npm run typecheck && npm run lint && npm test` 全绿。
 
 ## Security Notes
