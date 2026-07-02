@@ -834,3 +834,20 @@ describe('CLI Configuration', () => {
     });
   });
 });
+
+describe('default web port', async () => {
+  it('is 3100', async () => {
+    const { DEFAULT_CODEMAN_PORT } = await import('../src/config/server-defaults.js');
+    expect(DEFAULT_CODEMAN_PORT).toBe(3100);
+  });
+
+  it('cli --port option defaults to 3100', async () => {
+    const { DEFAULT_CODEMAN_PORT } = await import('../src/config/server-defaults.js');
+    const webCommand = program.commands.find((command) => command.name() === 'web');
+    expect(webCommand).toBeDefined();
+
+    const portOption = webCommand!.options.find((opt) => opt.long === '--port');
+    expect(portOption).toBeDefined();
+    expect(portOption!.defaultValue).toBe(String(DEFAULT_CODEMAN_PORT));
+  });
+});

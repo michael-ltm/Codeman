@@ -130,6 +130,7 @@ import type { EventLoopMonitorHandle } from '../utils/index.js';
 import { MAX_CONCURRENT_SESSIONS, MAX_SSE_CLIENTS } from '../config/map-limits.js';
 import { MAX_PASTE_IMAGE_BYTES } from '../config/buffer-limits.js';
 import { resolveTerminalHistoryConfig } from '../config/terminal-history.js';
+import { DEFAULT_CODEMAN_PORT } from '../config/server-defaults.js';
 import { SseEvent } from './sse-events.js';
 import { getLatestPlanUsage } from './plan-usage-latest.js';
 import type { ScheduledRun } from './ports/index.js';
@@ -289,7 +290,7 @@ export class WebServer extends EventEmitter {
     taskUpdated: (data: unknown) => void;
   } | null = null;
   constructor(
-    port: number = 3000,
+    port: number = DEFAULT_CODEMAN_PORT,
     https: boolean = false,
     testMode: boolean = false,
     host: string = '127.0.0.1',
@@ -2483,7 +2484,7 @@ export class WebServer extends EventEmitter {
 }
 
 export async function startWebServer(
-  port: number = 3000,
+  port: number = DEFAULT_CODEMAN_PORT,
   https: boolean = false,
   testMode: boolean = false,
   host: string = '127.0.0.1',

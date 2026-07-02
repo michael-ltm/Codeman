@@ -15,6 +15,7 @@ import https from 'node:https';
 import { readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { dataPath } from './config/instance.js';
+import { DEFAULT_CODEMAN_PORT } from './config/server-defaults.js';
 import { getSessionManager } from './session-manager.js';
 import { getTaskQueue } from './task-queue.js';
 import { getRalphLoop } from './ralph-loop.js';
@@ -577,7 +578,11 @@ program
   .command('web')
   .description('Start the web interface')
   .option('-H, --host <host>', 'Host to bind to', process.env.CODEMAN_HOST || '127.0.0.1')
-  .option('-p, --port <port>', 'Port to listen on (env: CODEMAN_PORT)', process.env.CODEMAN_PORT || '3000')
+  .option(
+    '-p, --port <port>',
+    'Port to listen on (env: CODEMAN_PORT)',
+    process.env.CODEMAN_PORT || String(DEFAULT_CODEMAN_PORT)
+  )
   .option('--https', 'Enable HTTPS with self-signed certificate (only needed for remote access, not localhost)')
   .option('--title-hostname <hostname>', 'Override the hostname shown in the browser title')
   .option(
