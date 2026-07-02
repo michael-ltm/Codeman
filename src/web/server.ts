@@ -155,7 +155,14 @@ import {
   registerSearchRoutes,
   registerOrchestratorRoutes,
   registerWsRoutes,
+  registerFleetWsRoutes,
 } from './routes/index.js';
+import { DeviceRegistry } from '../fleet/device-registry.js';
+import { FleetCentralController } from '../fleet/central-controller.js';
+import { LocalDeviceAdapter } from '../fleet/device-adapter.js';
+import { createLocalSessionOps } from '../fleet/local-session-ops.js';
+import { collectDeviceJoinInfo } from '../fleet/node-config.js';
+import { startFleetNodeAgentIfConfigured, type FleetNodeAgent } from '../fleet/node-agent.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -274,6 +281,15 @@ export class WebServer extends EventEmitter {
   private authFailures: StaleExpirationMap<string, number> | null = null;
   private qrAuthFailures: StaleExpirationMap<string, number> | null = null;
   private hookSecretFailures: StaleExpirationMap<string, number> | null = null;
+  private fleetPairAttempts: StaleExpirationMap<string, number> | null = null;
+  // Fleet dashboard: device registry + central controller (this process is a central).
+  private readonly fleetRegistry: DeviceRegistry = new DeviceRegistry();
+  private readonly fleetController: FleetCentralController = new FleetCentralController(this.fleetRegistry);
+  // Route context captured in setupRoutes(); reused by start() to build the fleet node agent
+  // against the SAME context the routes use (live session map).
+  private routeContext: ReturnType<WebServer['createRouteContext']> | null = null;
+  // Fleet node agent — only started when fleet-node.json exists (device joined a fleet).
+  private fleetNodeAgent: FleetNodeAgent | null = null;
   private pushStore: PushSubscriptionStore = new PushSubscriptionStore();
   private teamWatcher: TeamWatcher = new TeamWatcher();
   private _orchestratorLoop: import('../orchestrator-loop.js').OrchestratorLoop | null = null;
@@ -345,6 +361,9 @@ export class WebServer extends EventEmitter {
     this.mux.on('statsUpdated', (sessions) => {
       this.broadcast(SseEvent.MuxStatsUpdated, sessions);
     });
+
+    // Fleet: fan out the central controller's device/session events to SSE clients.
+    this.fleetController.on('broadcast', (event: string, data: unknown) => this.broadcast(event, data));
 
     // Set up subagent watcher listeners
     this.setupSubagentWatcherListeners();
@@ -673,6 +692,7 @@ export class WebServer extends EventEmitter {
       this.authFailures = authState.authFailures;
       this.qrAuthFailures = authState.qrAuthFailures;
       this.hookSecretFailures = authState.hookSecretFailures;
+      this.fleetPairAttempts = authState.fleetPairAttempts;
     }
 
     // WebSocket support (terminal I/O — low-latency bidirectional channel)
@@ -860,6 +880,22 @@ export class WebServer extends EventEmitter {
 
     // Register all route modules
     const ctx = this.createRouteContext();
+    // Capture the route context so start() builds the fleet node agent against the
+    // SAME object the routes use (live session map, not a stale copy).
+    this.routeContext = ctx;
+    // Fleet: register this process's own machine as the 'local' device so the
+    // dashboard can drive local sessions uniformly with remote nodes.
+    this.fleetController.registerLocalDevice(
+      new LocalDeviceAdapter(
+        {
+          deviceId: 'local',
+          name: getHostname(),
+          version: APP_VERSION,
+          capabilities: collectDeviceJoinInfo().capabilities,
+        },
+        createLocalSessionOps('local', ctx)
+      )
+    );
     registerPushRoutes(this.app, ctx);
     registerTeamRoutes(this.app, ctx);
     registerMuxRoutes(this.app, ctx);
@@ -877,6 +913,12 @@ export class WebServer extends EventEmitter {
     registerSearchRoutes(this.app, ctx);
     registerOrchestratorRoutes(this.app, ctx);
     registerWsRoutes(this.app, ctx, () => this.getHostPolicy());
+    // Fleet node WebSocket endpoint (`/ws/fleet/node`) — remote node agents connect here.
+    registerFleetWsRoutes(this.app, {
+      controller: this.fleetController,
+      registry: this.fleetRegistry,
+      getHostPolicy: () => this.getHostPolicy(),
+    });
   }
 
   /**
@@ -2016,6 +2058,17 @@ export class WebServer extends EventEmitter {
     // Start team watcher for agent team awareness (always on — lightweight polling)
     this.teamWatcher.start();
     console.log('Team watcher started - monitoring ~/.claude/teams/ for agent team activity');
+
+    // Fleet node agent: if this device has been paired (fleet-node.json exists),
+    // connect to its central controller and bridge remote control to local sessions.
+    // Skipped in test mode (mirrors restoreMuxSessions) so tests never open a real
+    // outbound WS or pick up a developer's real pairing config.
+    if (!this.testMode && this.routeContext) {
+      this.fleetNodeAgent = startFleetNodeAgentIfConfigured(this.routeContext);
+      if (this.fleetNodeAgent) {
+        console.log('Fleet node agent started - connecting to central controller from fleet-node.json');
+      }
+    }
   }
 
   /**
@@ -2331,6 +2384,12 @@ export class WebServer extends EventEmitter {
     // Set stopping flag to prevent new timer creation during shutdown
     this.sse.setStopping();
 
+    // Stop the fleet node agent (halts heartbeat + reconnect, closes the socket).
+    if (this.fleetNodeAgent) {
+      this.fleetNodeAgent.stop();
+      this.fleetNodeAgent = null;
+    }
+
     if (this._pasteImageGcStop) {
       this._pasteImageGcStop();
       this._pasteImageGcStop = null;
@@ -2472,6 +2531,10 @@ export class WebServer extends EventEmitter {
     if (this.hookSecretFailures) {
       this.hookSecretFailures.dispose();
       this.hookSecretFailures = null;
+    }
+    if (this.fleetPairAttempts) {
+      this.fleetPairAttempts.dispose();
+      this.fleetPairAttempts = null;
     }
     this.activePlanOrchestrators.clear();
     this.cleaningUp.clear();

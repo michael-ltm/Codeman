@@ -22,7 +22,7 @@ import { getRalphLoop } from './ralph-loop.js';
 import { getStore } from './state-store.js';
 import { getErrorMessage } from './types.js';
 import { isSupportedAttachmentExtension } from './attachment-registry.js';
-import { joinFleet } from './fleet/node-config.js';
+import { joinFleet, readFleetNodeConfig } from './fleet/node-config.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -686,8 +686,46 @@ nodeCmd
   .command('run')
   .description('Run web server bound to 127.0.0.1 with fleet agent')
   .action(async () => {
-    console.error(chalk.red('✗ `codeman node run` is not implemented yet'));
-    process.exit(1);
+    // `node run` is a thin alias for `codeman web` on loopback: the web server's
+    // start() detects fleet-node.json and starts the FleetNodeAgent itself. There
+    // is no separate session stack.
+    if (!readFleetNodeConfig()) {
+      console.error(chalk.red('Not joined to a fleet. Run `codeman node join <central-url> --code <code>` first.'));
+      process.exit(1);
+    }
+
+    const { startWebServer } = await import('./web/server.js');
+    const host = '127.0.0.1';
+    const port = parseInt(process.env.CODEMAN_PORT || String(DEFAULT_CODEMAN_PORT), 10);
+
+    console.log(chalk.cyan(`Starting Codeman fleet node on ${host}:${port}...`));
+
+    try {
+      const server = await startWebServer(port, false, false, host);
+      console.log(chalk.green(`\n✓ Fleet node running at http://${host}:${port}`));
+      console.log(chalk.gray('  Connecting to central controller from fleet-node.json'));
+      console.log(chalk.gray('  Press Ctrl+C to stop\n'));
+
+      // Graceful shutdown handler — flush state and clean up on SIGTERM/SIGINT
+      let shuttingDown = false;
+      const shutdown = async (signal: string) => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        console.log(chalk.yellow(`\n${signal} received, shutting down gracefully...`));
+        try {
+          await server.stop();
+        } catch (err) {
+          console.error(chalk.red(`Error during shutdown: ${getErrorMessage(err)}`));
+        }
+        process.exit(0);
+      };
+      process.on('SIGTERM', () => shutdown('SIGTERM'));
+      process.on('SIGINT', () => shutdown('SIGINT'));
+      process.on('SIGHUP', () => shutdown('SIGHUP'));
+    } catch (err) {
+      console.error(chalk.red(`✗ Failed to start fleet node: ${getErrorMessage(err)}`));
+      process.exit(1);
+    }
   });
 
 export { program };
