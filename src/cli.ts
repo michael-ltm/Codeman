@@ -22,6 +22,7 @@ import { getRalphLoop } from './ralph-loop.js';
 import { getStore } from './state-store.js';
 import { getErrorMessage } from './types.js';
 import { isSupportedAttachmentExtension } from './attachment-registry.js';
+import { joinFleet } from './fleet/node-config.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -659,6 +660,34 @@ program
       console.log(renderTable(results, host.environment));
     }
     process.exit(computeExitCode(results));
+  });
+
+// ============ Fleet Node Commands ============
+
+const nodeCmd = program.command('node').description('Fleet node commands');
+
+nodeCmd
+  .command('join <central-url>')
+  .description('Pair this device with a fleet central controller')
+  .requiredOption('--code <pair-code>', 'one-time pairing code from central dashboard')
+  .option('--name <device-name>', 'device display name (default: hostname)')
+  .action(async (centralUrl, opts) => {
+    try {
+      const cfg = await joinFleet(centralUrl, opts.code, opts.name);
+      console.log(chalk.green(`✓ Joined fleet as ${cfg.deviceName} (${cfg.deviceId}).`));
+      console.log('Restart `codeman web` (or run `codeman node run`) to come online.');
+    } catch (err) {
+      console.error(chalk.red(`✗ Failed to join fleet: ${getErrorMessage(err)}`));
+      process.exit(1);
+    }
+  });
+
+nodeCmd
+  .command('run')
+  .description('Run web server bound to 127.0.0.1 with fleet agent')
+  .action(async () => {
+    console.error(chalk.red('✗ `codeman node run` is not implemented yet'));
+    process.exit(1);
   });
 
 export { program };

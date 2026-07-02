@@ -835,6 +835,26 @@ describe('CLI Configuration', () => {
   });
 });
 
+describe('fleet node commands', () => {
+  it('registers `node join` with a required --code option', () => {
+    const nodeCommand = program.commands.find((command) => command.name() === 'node');
+    expect(nodeCommand).toBeDefined();
+
+    const joinCommand = nodeCommand!.commands.find((command) => command.name() === 'join');
+    expect(joinCommand).toBeDefined();
+
+    const codeOption = joinCommand!.options.find((opt) => opt.long === '--code');
+    expect(codeOption).toBeDefined();
+    expect(codeOption!.mandatory).toBe(true);
+  });
+
+  it('registers `node run` (stub, completed in a later task)', () => {
+    const nodeCommand = program.commands.find((command) => command.name() === 'node');
+    const runCommand = nodeCommand!.commands.find((command) => command.name() === 'run');
+    expect(runCommand).toBeDefined();
+  });
+});
+
 describe('default web port', async () => {
   it('is 3100', async () => {
     const { DEFAULT_CODEMAN_PORT } = await import('../src/config/server-defaults.js');
