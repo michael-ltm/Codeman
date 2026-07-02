@@ -119,6 +119,7 @@
         <button class="btn-icon-header btn-redraw-terminal btn-redraw-terminal--hidden" onclick="app.restoreTerminalSize()" title="Redraw terminal to fit current screen (Ctrl+Shift+R)" aria-label="Redraw terminal"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg></button>
         <button class="btn-icon-header btn-response-viewer-header btn-response-viewer-header--hidden" onclick="app.toggleResponseViewer()" title="View last response" aria-label="View last response"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
         <button class="btn-icon-header btn-away-digest" onclick="app.openAwayDigest()" title="Away Digest" aria-label="Open away digest"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></button>
+        <button class="btn-icon-header btn-fleet-devices" id="fleetDevicesBtn" onclick="app.toggleFleetPanel()" title="Fleet devices" aria-label="Open fleet devices panel" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><span class="fleet-devices-badge" id="fleetDevicesBadge" style="display:none;">0</span></button>
         <button class="btn-icon-header btn-attachments-history btn-attachments-history--hidden" id="attachmentsHistoryBtn" onclick="app.toggleAttachmentHistory()" title="Attachments" aria-label="Open attachment history" aria-expanded="false">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
           <span class="attachment-history-badge" id="attachmentHistoryBadge" style="display:none;">0</span>
@@ -668,6 +669,82 @@
           <div class="subagent-detail ultracode-agent-grid" id="ultracodeAgentGrid">
             <div class="subagent-empty">Select a run to view its agents</div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fleet Devices Panel (Rev 3 融入式, Task 19) — a docked side panel in the
+         panels-ui idiom (same `.visible` toggle / header+body structure as the
+         file-browser panel). Manages devices, pairing, and remote session
+         create/stop. Remote sessions themselves still render as native tabs. -->
+    <div class="fleet-panel" id="fleetPanel" role="dialog" aria-label="Fleet devices">
+      <div class="fleet-panel-header">
+        <span class="fleet-panel-title">设备 · Devices</span>
+        <div class="fleet-panel-actions">
+          <button class="btn-icon-sm" onclick="app.refreshFleetState()" title="Refresh" aria-label="Refresh fleet">&#x21BB;</button>
+          <button class="btn-icon-sm" onclick="app.closeFleetPanel()" title="Close" aria-label="Close fleet panel">&times;</button>
+        </div>
+      </div>
+      <div class="fleet-panel-body">
+        <section class="fleet-section">
+          <div class="fleet-section-title">设备列表</div>
+          <div class="fleet-device-list" id="fleetDeviceList">
+            <div class="fleet-empty">暂无设备。生成配对码以加入新设备。</div>
+          </div>
+        </section>
+
+        <section class="fleet-section">
+          <div class="fleet-section-title">配对新设备</div>
+          <button class="btn-toolbar btn-sm" id="fleetPairBtn" onclick="app.generateFleetPairingCode()">生成配对码</button>
+          <div class="fleet-pairing" id="fleetPairing" style="display:none;">
+            <div class="fleet-pairing-code" id="fleetPairingCode">——</div>
+            <div class="fleet-pairing-expiry" id="fleetPairingExpiry"></div>
+            <div class="fleet-join-row">
+              <code class="fleet-join-cmd" id="fleetJoinCmd"></code>
+              <button class="btn-icon-sm" onclick="app.copyFleetJoinCommand()" title="Copy join command" aria-label="Copy join command">&#x2398;</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="fleet-section">
+          <div class="fleet-section-title">远程新建会话</div>
+          <label class="fleet-field-label" for="fleetCreateDevice">设备</label>
+          <select class="fleet-select" id="fleetCreateDevice" aria-label="Target device"></select>
+          <label class="fleet-field-label" for="fleetCreateDir">工作目录 <span class="fleet-req" aria-hidden="true">*</span></label>
+          <input type="text" class="fleet-input" id="fleetCreateDir" placeholder="/path/to/project" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+          <label class="fleet-field-label">模式</label>
+          <div class="fleet-mode-seg" id="fleetCreateMode" role="group" aria-label="Session mode">
+            <button type="button" class="fleet-mode-btn active" data-mode="claude" onclick="app.setFleetCreateMode('claude')">claude</button>
+            <button type="button" class="fleet-mode-btn" data-mode="codex" onclick="app.setFleetCreateMode('codex')">codex</button>
+            <button type="button" class="fleet-mode-btn" data-mode="shell" onclick="app.setFleetCreateMode('shell')">shell</button>
+            <button type="button" class="fleet-mode-btn" data-mode="gemini" onclick="app.setFleetCreateMode('gemini')">gemini</button>
+            <button type="button" class="fleet-mode-btn" data-mode="opencode" onclick="app.setFleetCreateMode('opencode')">opencode</button>
+          </div>
+          <button class="btn-toolbar btn-run btn-sm fleet-create-btn" id="fleetCreateBtn" onclick="app.submitFleetCreateSession()">新建会话</button>
+        </section>
+      </div>
+    </div>
+
+    <!-- Stop-remote-session confirmation (app modal convention — NO native confirm) -->
+    <div class="modal" id="fleetStopModal">
+      <div class="modal-backdrop" onclick="app.cancelStopFleetSession()"></div>
+      <div class="modal-content modal-sm">
+        <div class="modal-header">
+          <h3>停止远程会话</h3>
+          <button class="modal-close" onclick="app.cancelStopFleetSession()" aria-label="Cancel stop session">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-session-name" id="fleetStopName"></p>
+          <p class="fleet-stop-warn">将在远端设备上终止该会话,操作不可撤销。</p>
+        </div>
+        <div class="close-options">
+          <button class="close-option close-option-danger" onclick="app.confirmStopFleetSession()">
+            <span class="close-option-title">停止会话</span>
+            <span class="close-option-desc">Terminate the remote session</span>
+          </button>
+        </div>
+        <div class="modal-footer-cancel">
+          <button class="btn-toolbar btn-sm" onclick="app.cancelStopFleetSession()">取消</button>
         </div>
       </div>
     </div>
@@ -2067,6 +2144,7 @@
   <script defer src="api-client.js"></script>
   <script defer src="fleet-api.js"></script>
   <script defer src="fleet-tabs.js"></script>
+  <script defer src="fleet-panel.js"></script>
   <script defer src="subagent-windows.js"></script>
   <script defer src="ultracode-windows.js"></script>
   <script defer src="image-input.js"></script>

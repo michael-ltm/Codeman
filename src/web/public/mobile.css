@@ -1128,6 +1128,21 @@ html.mobile-init .file-browser-panel {
     max-height: 35vh;
   }
 
+  /* Fleet device panel — the header button STAYS on phones (core feature,
+     unlike away-digest). Dock it near-full-width so device names, the pairing
+     command, and the create form never overflow the narrow viewport. */
+  .fleet-panel {
+    width: 100%;
+    max-width: 100%;
+    left: 0;
+    right: 0;
+    top: auto;
+    border-radius: 8px 8px 0 0;
+    bottom: calc(44px + 2rem + var(--safe-area-bottom));
+    height: auto;
+    max-height: 60vh;
+  }
+
   /* Modals must stack above the fixed mobile header (z-index 1200), or the
      modal header with the close button is buried underneath it and the
      full-screen modal cannot be dismissed */

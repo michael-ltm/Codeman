@@ -11096,3 +11096,377 @@ html[data-skin="daylight-blue"] .welcome-btn-tunnel.active:hover {
 .session-tab.fleet-tab.fleet-offline {
   opacity: 0.55;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Fleet device panel (Rev 3, Task 19) — a docked side panel in the
+   panels-ui idiom (mirrors `.file-browser-panel`: fixed, `.visible`
+   toggle, header + scrollable body). Every color is an existing CSS
+   variable so it follows the data-skin theme automatically.
+   ═══════════════════════════════════════════════════════════════ */
+.fleet-panel {
+  position: fixed;
+  top: calc(var(--header-height) + 10px);
+  right: 20px;
+  width: 320px;
+  height: calc(100dvh - var(--header-height) - var(--toolbar-height) - 40px);
+  max-height: 720px;
+  min-width: 240px;
+  min-height: 320px;
+  background: rgba(19, 19, 22, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 100;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.fleet-panel.visible {
+  display: flex;
+}
+
+.fleet-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.6rem;
+  background: var(--bg-input);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.fleet-panel-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fleet-panel-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.fleet-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.5rem 0.6rem 0.75rem;
+}
+
+.fleet-panel-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.fleet-panel-body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.fleet-section {
+  margin-bottom: 1rem;
+}
+
+.fleet-section-title {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.fleet-empty,
+.fleet-session-empty {
+  padding: 0.75rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+/* Device rows */
+.fleet-device {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 0.35rem;
+  cursor: pointer;
+  background: var(--bg-dark);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.fleet-device:hover {
+  border-color: var(--border-light);
+}
+
+.fleet-device.selected {
+  border-color: var(--accent);
+  background: var(--bg-input);
+}
+
+.fleet-device.offline {
+  opacity: 0.6;
+}
+
+.fleet-device-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 0.3rem;
+  flex: 0 0 auto;
+  background: var(--text-muted);
+}
+
+.fleet-device-dot.online {
+  background: var(--success, #3fb950);
+}
+
+.fleet-device-dot.offline {
+  background: var(--text-muted);
+}
+
+.fleet-device-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.fleet-device-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-local-tag {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 500;
+  padding: 0 0.3rem;
+  border-radius: 3px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  vertical-align: middle;
+}
+
+.fleet-device-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.15rem;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.fleet-cap-warn {
+  color: var(--warning, #d29922);
+  font-weight: 600;
+}
+
+/* Remote sessions under a selected device */
+.fleet-session-list {
+  margin: -0.15rem 0 0.5rem 1.1rem;
+  padding-left: 0.4rem;
+  border-left: 1px solid var(--border);
+}
+
+.fleet-session {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.3rem;
+  font-size: 0.72rem;
+}
+
+.fleet-session-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--text-muted);
+}
+
+.fleet-session-dot.busy {
+  background: var(--warning, #d29922);
+}
+
+.fleet-session-dot.idle {
+  background: var(--success, #3fb950);
+}
+
+.fleet-session-dot.error {
+  background: var(--error, #f85149);
+}
+
+.fleet-session-label {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-session-mode {
+  display: inline-block;
+  font-size: 0.6rem;
+  padding: 0 0.25rem;
+  margin-right: 0.3rem;
+  border-radius: 3px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+}
+
+.fleet-session-stop {
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--error, #f85149);
+  cursor: pointer;
+}
+
+.fleet-session-stop:hover {
+  border-color: var(--error, #f85149);
+  background: rgba(248, 81, 73, 0.12);
+}
+
+/* Pairing */
+.fleet-pairing {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-dark);
+}
+
+.fleet-pairing-code {
+  font-family: var(--font-mono, monospace);
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+}
+
+.fleet-pairing-expiry {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  margin: 0.15rem 0 0.4rem;
+}
+
+.fleet-join-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.fleet-join-cmd {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.64rem;
+  color: var(--text);
+  background: var(--bg-input);
+  border-radius: 4px;
+  padding: 0.3rem 0.4rem;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* Create form */
+.fleet-field-label {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin: 0.5rem 0 0.2rem;
+}
+
+.fleet-req {
+  color: var(--error, #f85149);
+}
+
+.fleet-select,
+.fleet-input {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+  font-family: inherit;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+}
+
+.fleet-select:focus,
+.fleet-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.fleet-mode-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.fleet-mode-btn {
+  flex: 1 1 auto;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.68rem;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-dark);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.fleet-mode-btn.active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--bg-input);
+}
+
+.fleet-create-btn {
+  width: 100%;
+  margin-top: 0.6rem;
+}
+
+.fleet-stop-warn {
+  font-size: 0.72rem;
+  color: var(--warning, #d29922);
+  margin-top: 0.4rem;
+}
+
+/* Header button online-device count badge (mirrors the subagent/attachment
+   badges). Positioned on the fleet-devices header button. */
+.btn-fleet-devices {
+  position: relative;
+}
+
+.fleet-devices-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--bg-dark, #0d1117);
+  pointer-events: none;
+}

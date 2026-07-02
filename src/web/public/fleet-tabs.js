@@ -112,6 +112,14 @@ Object.assign(CodemanApp.prototype, {
     }
     this.fleetTabs = next;
 
+    // Cache the full snapshot for the device panel (Task 19) and drive its
+    // header badge + open-panel re-render off the SAME refresh flow. All three
+    // are optional-chained so a partial init (panel module not yet mixed in)
+    // never breaks the tab-strip refresh.
+    this._fleetState = state;
+    this._updateFleetBadge?.();
+    this._renderFleetPanelIfOpen?.();
+
     // If the active tab was a remote one that vanished (device removed / session
     // gone), release the terminal and fall back to a local tab or the welcome.
     if (this.activeSessionId && !next.has(this.activeSessionId) && this._looksLikeFleetKey(this.activeSessionId)) {
