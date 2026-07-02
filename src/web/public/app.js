@@ -262,6 +262,11 @@ const _SSE_HANDLER_MAP = [
 
   // Clipboard
   [SSE_EVENTS.CLIPBOARD_WRITE, '_onClipboardWrite'],
+
+  // Fleet dashboard — device/session churn just re-pulls the aggregate state.
+  [SSE_EVENTS.FLEET_DEVICE_ONLINE, 'refreshFleetState'],
+  [SSE_EVENTS.FLEET_DEVICE_OFFLINE, 'refreshFleetState'],
+  [SSE_EVENTS.FLEET_SESSIONS_UPDATED, 'refreshFleetState'],
 ];
 
 
@@ -633,6 +638,10 @@ class CodemanApp {
       this.initTerminal();
       this.loadFontSize();
       this.connectSSE();
+      // Fleet dashboard: bootstrap after SSE is wired so device/session churn
+      // (fleet:* events → refreshFleetState) is already routed. Self-contained
+      // (its own try/catch); a fleet fetch failure never blocks the local UI.
+      this.initFleetDashboard();
       // Only fetch state if SSE init event hasn't arrived within 3s (avoids duplicate handleInit)
       this._initFallbackTimer = setTimeout(() => {
         if (this._initGeneration === 0) this.loadState();

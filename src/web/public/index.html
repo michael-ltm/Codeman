@@ -1972,6 +1972,31 @@
     </div>
   </div>
 
+  <!-- Fleet Dashboard (multi-device view; hidden until a remote device joins or CODEMAN_FLEET_DASHBOARD=1) -->
+  <div id="fleet-dashboard" class="fleet-dashboard hidden">
+    <header class="fleet-topbar">
+      <div id="fleet-tabs" class="fleet-tabs"></div>
+      <div class="fleet-topbar-actions">
+        <button id="fleet-new-session-btn">新建会话</button>
+        <button id="fleet-pair-btn">添加设备</button>
+        <button id="fleet-back-local-btn">本地视图</button>
+      </div>
+    </header>
+    <div class="fleet-body">
+      <aside id="fleet-devices" class="fleet-devices"></aside>
+      <main class="fleet-main">
+        <div id="fleet-sessions" class="fleet-sessions"></div>
+        <div id="fleet-term-area" class="fleet-term-area" data-layout="1">
+          <div class="fleet-tile" id="fleet-term-main"></div>
+        </div>
+      </main>
+    </div>
+    <div id="fleet-pair-drawer" class="fleet-drawer hidden"></div>
+    <div id="fleet-empty" class="fleet-empty hidden">
+      <p>No devices joined</p><button id="fleet-empty-pair-btn">生成配对码</button>
+    </div>
+  </div>
+
   <!-- Save Preset Modal -->
   <div class="modal" id="savePresetModal">
     <div class="modal-backdrop" onclick="app.closeSavePresetModal()"></div>
@@ -2062,6 +2087,8 @@
   <script defer src="session-ui.js"></script>
   <script defer src="ralph-wizard.js"></script>
   <script defer src="api-client.js"></script>
+  <script defer src="fleet-api.js"></script>
+  <script defer src="fleet-dashboard.js"></script>
   <script defer src="subagent-windows.js"></script>
   <script defer src="ultracode-windows.js"></script>
   <script defer src="image-input.js"></script>

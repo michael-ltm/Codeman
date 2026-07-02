@@ -1,0 +1,699 @@
+/**
+ * @fileoverview Fleet Dashboard core UI, mixed into CodemanApp.prototype.
+ *
+ * Renders the three-zone fleet view (device list / global tab strip / focused
+ * single terminal) and drives remote terminals over the Task 11 browser WS
+ * endpoint. Task 14 layers a split-grid on top of the primitives produced here.
+ *
+ * Security discipline: every string that originates from a remote node (device
+ * names, hostnames, session labels, working dirs, tab titles, pairing/join
+ * strings) is passed through escapeHtml() before it touches innerHTML. Each
+ * terminal's input handler is bound to that terminal's own WebSocket via a
+ * closure, so keystrokes for one device can never be delivered to another.
+ *
+ * Produced on CodemanApp.prototype (Task 14 depends on these names):
+ *   initFleetDashboard, showFleetDashboard, hideFleetDashboard,
+ *   refreshFleetState, renderFleetDevices, renderFleetTabs, selectFleetTab,
+ *   openFleetTerminal, closeFleetTerminal, _fleetState, _fleetTerms.
+ *
+ * @mixin Extends CodemanApp.prototype via Object.assign
+ * @dependency app.js (CodemanApp), fleet-api.js (listFleet/…), constants.js (escapeHtml)
+ * @dependency vendored Terminal + FitAddon (public/vendor); optional WebglAddon
+ * @loadorder after fleet-api.js
+ */
+
+Object.assign(CodemanApp.prototype, {
+  // ─────────────────────────────────────────────────────────────
+  // Lifecycle
+  // ─────────────────────────────────────────────────────────────
+
+  /**
+   * One-time bootstrap: allocate state, wire static controls, fetch the first
+   * fleet snapshot, and decide whether the dashboard should own the first
+   * screen. The central always registers itself as device 'local', so the
+   * first-screen check only counts REMOTE devices — otherwise the dashboard
+   * would unconditionally preempt the normal local UI on every instance.
+   */
+  async initFleetDashboard() {
+    this._fleetTerms = new Map();
+    this._fleetState = null;
+    this._fleetSelectedKey = null;
+    this._fleetSelectedDeviceId = null;
+    this._fleetShowHistory = false;
+    this._fleetHiddenTabKeys = new Set();
+    this._fleetShown = false;
+    this._fleetPairTimer = null;
+    this._wireFleetControls();
+    try {
+      this._fleetState = await this.listFleet();
+    } catch {
+      return;
+    }
+    if (!this._fleetState) return;
+    const devices = this._fleetState.devices || [];
+    const hasRemote = devices.some((d) => d.id !== 'local');
+    if (hasRemote || window.__CODEMAN_FLEET_DASHBOARD__) this.showFleetDashboard();
+  },
+
+  /** Attach delegated + button listeners exactly once (survives re-renders). */
+  _wireFleetControls() {
+    if (this._fleetControlsWired) return;
+    this._fleetControlsWired = true;
+    const on = (id, handler) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('click', handler);
+    };
+    on('fleet-new-session-btn', () => this.openFleetNewSessionForm());
+    on('fleet-pair-btn', () => this.openFleetPairingDrawer());
+    on('fleet-empty-pair-btn', () => this.openFleetPairingDrawer());
+    on('fleet-back-local-btn', () => this.hideFleetDashboard());
+
+    const devices = document.getElementById('fleet-devices');
+    if (devices) devices.addEventListener('click', (e) => this._onFleetDevicesClick(e));
+    const tabs = document.getElementById('fleet-tabs');
+    if (tabs) tabs.addEventListener('click', (e) => this._onFleetTabsClick(e));
+    const sessions = document.getElementById('fleet-sessions');
+    if (sessions) sessions.addEventListener('click', (e) => this._onFleetSessionsClick(e));
+    const drawer = document.getElementById('fleet-pair-drawer');
+    if (drawer) drawer.addEventListener('click', (e) => this._onFleetPairDrawerClick(e));
+  },
+
+  /** Reveal the dashboard and hide (but never destroy) the local session view. */
+  showFleetDashboard() {
+    const dash = document.getElementById('fleet-dashboard');
+    if (!dash) return;
+    const localRoot = document.querySelector('.app');
+    if (localRoot) localRoot.style.display = 'none';
+    dash.classList.remove('hidden');
+    this._fleetShown = true;
+    this.renderFleetDevices();
+    this._renderFleetSessions();
+    this.renderFleetTabs();
+    // Focus the first still-visible tab so the user lands on a live terminal.
+    if (!this._fleetSelectedKey || !this._fleetFindTab(this._fleetSelectedKey)) {
+      const first = this._fleetVisibleTabs()[0];
+      if (first) this.selectFleetTab(first.key);
+    }
+  },
+
+  /** Restore the local session view intact. Fleet terminals are kept alive. */
+  hideFleetDashboard() {
+    const dash = document.getElementById('fleet-dashboard');
+    if (dash) dash.classList.add('hidden');
+    const localRoot = document.querySelector('.app');
+    if (localRoot) localRoot.style.display = '';
+    this._fleetShown = false;
+    // The local xterm was sized while display:none was toggling; refit it.
+    if (this.fitAddon && this.terminal) {
+      try {
+        this.fitAddon.fit();
+      } catch {
+        /* terminal not ready — ignore */
+      }
+    }
+  },
+
+  /** Refresh state from the server, then re-render the visible zones. */
+  async refreshFleetState() {
+    const next = await this.listFleet();
+    if (!next) return;
+    this._fleetState = next;
+    this.renderFleetDevices();
+    this._renderFleetSessions();
+    this.renderFleetTabs();
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // Device list
+  // ─────────────────────────────────────────────────────────────
+
+  renderFleetDevices() {
+    const host = document.getElementById('fleet-devices');
+    if (!host || !this._fleetState) return;
+    const devices = this._fleetState.devices || [];
+    if (!this._fleetSelectedDeviceId && devices.length) {
+      const local = devices.find((d) => d.id === 'local');
+      this._fleetSelectedDeviceId = local ? local.id : devices[0].id;
+    }
+    const empty = document.getElementById('fleet-empty');
+    if (empty) empty.classList.toggle('hidden', devices.length > 0);
+    host.innerHTML = devices.map((d) => this._fleetDeviceCardHtml(d)).join('');
+  },
+
+  _fleetDeviceCardHtml(d) {
+    const offline = d.status !== 'online';
+    const selected = d.id === this._fleetSelectedDeviceId;
+    const caps = d.capabilities || {};
+    const capWarn = caps.tmux === false ? `<div class="fleet-cap-error">⚠ 无 tmux · 会话不可持久</div>` : '';
+    const name = escapeHtml(d.name || d.hostname || d.id);
+    const platform = escapeHtml([d.platform, d.arch].filter(Boolean).join(' '));
+    const hostname = escapeHtml(d.hostname || '');
+    const count = Number(d.activeSessionCount) || 0;
+    const meta = [platform, hostname].filter(Boolean).join(' · ');
+    return `<div class="fleet-device-card${offline ? ' offline' : ''}${selected ? ' selected' : ''}" data-device-id="${escapeHtml(d.id)}">
+      <div class="fleet-device-head"><span class="dot ${offline ? 'offline' : 'online'}"></span><span class="fleet-device-name">${name}</span></div>
+      <div class="fleet-device-meta">${meta}</div>
+      <div class="fleet-device-meta">活动会话 ${count}</div>
+      ${capWarn}
+    </div>`;
+  },
+
+  _onFleetDevicesClick(e) {
+    const card = e.target.closest('.fleet-device-card');
+    if (!card) return;
+    const deviceId = card.dataset.deviceId;
+    if (!deviceId || deviceId === this._fleetSelectedDeviceId) return;
+    this._fleetSelectedDeviceId = deviceId;
+    this.renderFleetDevices();
+    this._renderFleetSessions();
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // Session list (for the selected device)
+  // ─────────────────────────────────────────────────────────────
+
+  _renderFleetSessions() {
+    const host = document.getElementById('fleet-sessions');
+    if (!host || !this._fleetState) return;
+    const deviceId = this._fleetSelectedDeviceId;
+    const device = (this._fleetState.devices || []).find((d) => d.id === deviceId);
+    let sessions = (this._fleetState.sessions || []).filter((s) => s.deviceId === deviceId);
+    if (!this._fleetShowHistory) sessions = sessions.filter((s) => s.status !== 'stopped');
+    const title = device ? escapeHtml(device.name || device.hostname || device.id) : '设备';
+    const toggle = this._fleetShowHistory ? '隐藏历史' : '显示历史';
+    const rows =
+      sessions.map((s) => this._fleetSessionRowHtml(s)).join('') || `<div class="fleet-session-empty">无会话</div>`;
+    host.innerHTML = `<div class="fleet-sessions-head"><span>${title} · 会话</span><button type="button" class="fleet-history-toggle" data-action="toggle-history">${toggle}</button></div>${rows}`;
+  },
+
+  _fleetSessionRowHtml(s) {
+    const key = `${s.deviceId}:${s.id}`;
+    const label = escapeHtml(s.name || s.workingDir || s.id);
+    const stopped = s.status === 'stopped';
+    const actions = stopped
+      ? ''
+      : `<button type="button" class="fleet-session-open" data-action="open" data-key="${escapeHtml(key)}">打开</button><button type="button" class="fleet-session-stop" data-action="stop" data-device-id="${escapeHtml(s.deviceId)}" data-session-id="${escapeHtml(s.id)}">停止</button>`;
+    return `<div class="fleet-session-row">
+      <span class="dot ${escapeHtml(this._fleetStatusDot(s.status))}"></span>
+      <span class="fleet-session-mode">${escapeHtml(s.mode)}</span>
+      <span class="fleet-session-label" title="${escapeHtml(s.workingDir || '')}">${label}</span>
+      ${actions}
+    </div>`;
+  },
+
+  async _onFleetSessionsClick(e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    if (action === 'toggle-history') {
+      this._fleetShowHistory = !this._fleetShowHistory;
+      this._renderFleetSessions();
+    } else if (action === 'open') {
+      const key = btn.dataset.key;
+      if (!key) return;
+      this._fleetHiddenTabKeys.delete(key);
+      this.selectFleetTab(key);
+    } else if (action === 'stop') {
+      const { deviceId, sessionId } = btn.dataset;
+      if (!deviceId || !sessionId) return;
+      btn.disabled = true;
+      await this.fleetStopSession(deviceId, sessionId);
+      await this.refreshFleetState();
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // Global tab strip
+  // ─────────────────────────────────────────────────────────────
+
+  renderFleetTabs() {
+    const host = document.getElementById('fleet-tabs');
+    if (!host || !this._fleetState) return;
+    host.innerHTML = this._fleetVisibleTabs()
+      .map((t) => this._fleetTabHtml(t))
+      .join('');
+  },
+
+  _fleetVisibleTabs() {
+    const tabs = (this._fleetState && this._fleetState.sessionTabs) || [];
+    return tabs.filter((t) => !this._fleetHiddenTabKeys.has(t.key));
+  },
+
+  _fleetFindTab(key) {
+    const tabs = (this._fleetState && this._fleetState.sessionTabs) || [];
+    return tabs.find((t) => t.key === key) || null;
+  },
+
+  _fleetStatusDot(status) {
+    if (status === 'busy') return 'busy';
+    if (status === 'error') return 'error';
+    return 'idle';
+  },
+
+  _fleetTabHtml(t) {
+    const active = t.key === this._fleetSelectedKey;
+    return `<div class="fleet-tab${active ? ' active' : ''}" data-key="${escapeHtml(t.key)}" title="${escapeHtml(t.title)}">
+      <span class="dot ${escapeHtml(this._fleetStatusDot(t.status))}"></span>
+      <span class="fleet-tab-title">${escapeHtml(t.title)}</span>
+      <span class="fleet-tab-mode">${escapeHtml(t.mode)}</span>
+      <button type="button" class="fleet-tab-close" data-action="close-tab" data-key="${escapeHtml(t.key)}" aria-label="关闭标签">×</button>
+    </div>`;
+  },
+
+  _onFleetTabsClick(e) {
+    const closeBtn = e.target.closest('[data-action="close-tab"]');
+    if (closeBtn) {
+      const key = closeBtn.dataset.key;
+      if (!key) return;
+      // Local-only close: drop from the visible set and tear down this browser's
+      // terminal/WS. The session KEEPS RUNNING on the device (never stopped).
+      this._fleetHiddenTabKeys.add(key);
+      this.closeFleetTerminal(key);
+      if (this._fleetSelectedKey === key) {
+        this._fleetSelectedKey = null;
+        const next = this._fleetVisibleTabs()[0];
+        if (next) this.selectFleetTab(next.key);
+      }
+      this.renderFleetTabs();
+      return;
+    }
+    const tab = e.target.closest('.fleet-tab');
+    if (!tab || !tab.dataset.key) return;
+    this.selectFleetTab(tab.dataset.key);
+  },
+
+  selectFleetTab(key) {
+    this._fleetSelectedKey = key;
+    const tab = this._fleetFindTab(key);
+    if (tab) this._fleetSelectedDeviceId = tab.deviceId;
+    this.renderFleetTabs();
+    this.renderFleetDevices();
+    this._renderFleetSessions();
+    this.openFleetTerminal(key, document.getElementById('fleet-term-main'));
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // Terminal
+  // ─────────────────────────────────────────────────────────────
+
+  /**
+   * Open (or re-attach) the remote terminal for `key` inside `containerEl`.
+   * Reuses an existing instance by relocating its DOM. New instances load a
+   * replay buffer, then bind a dedicated WS whose input closure captures THIS
+   * socket only (no cross-device keystroke leakage).
+   */
+  async openFleetTerminal(key, containerEl) {
+    if (!key || !containerEl) return;
+
+    const existing = this._fleetTerms.get(key);
+    if (existing) {
+      // Re-attach by checking the ACTUAL DOM parent, not the cached `el`: a
+      // sibling tab's open() may have cleared this container (innerHTML=''),
+      // detaching this alive-but-hidden terminal. Without this check a
+      // switch-back into the same tile would leave it blank.
+      const node = existing.term.element;
+      if (node && node.parentElement !== containerEl) {
+        containerEl.innerHTML = '';
+        containerEl.appendChild(node);
+      }
+      existing.el = containerEl;
+      try {
+        existing.fit.fit();
+      } catch {
+        /* not measurable yet */
+      }
+      this._fleetSendResize(key);
+      return;
+    }
+
+    const { deviceId, sessionId } = this._fleetSplitKey(key);
+    if (!deviceId || !sessionId) return;
+
+    containerEl.innerHTML = '';
+    const term = new Terminal({
+      scrollback: 5000,
+      allowProposedApi: true,
+      fontFamily: '"Fira Code", "Cascadia Code", "JetBrains Mono", "SF Mono", Monaco, monospace',
+      fontSize: 13,
+      cursorBlink: false,
+      allowTransparency: true,
+    });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(containerEl);
+    this._fleetApplyRenderer(term);
+    try {
+      fit.fit();
+    } catch {
+      /* not measurable yet */
+    }
+
+    const rec = {
+      term,
+      fit,
+      ws: null,
+      el: containerEl,
+      seq: 0,
+      cid: `fleet-${Math.random().toString(36).slice(2, 10)}`,
+      resizeObserver: null,
+    };
+    this._fleetTerms.set(key, rec);
+
+    // Replay buffer (best effort — remote may not support capture).
+    try {
+      const res = await this.fleetTerminalBuffer(deviceId, sessionId);
+      if (res && res.buffer) term.write(res.buffer);
+    } catch {
+      /* buffer optional */
+    }
+
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = `${proto}://${location.host}/ws/fleet/devices/${encodeURIComponent(deviceId)}/sessions/${encodeURIComponent(sessionId)}/terminal`;
+    const ws = new WebSocket(url);
+    rec.ws = ws;
+    ws.onopen = () => this._fleetSendResize(key);
+    ws.onmessage = (ev) => {
+      let m;
+      try {
+        m = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (m.t === 'o') term.write(m.d);
+      else if (m.t === 'c') term.clear();
+      else if (m.t === 'r') this._fleetRefreshBuffer(key);
+      // m.t === 'ia' (input ack): no local pending queue to reconcile here.
+    };
+    ws.onclose = (ev) => {
+      if (ev.code === 4009) this._fleetMarkTileOffline(key);
+    };
+    ws.onerror = () => {
+      /* surfaced via onclose */
+    };
+
+    // Input handler bound to THIS socket via closure — cannot cross devices.
+    term.onData((d) => {
+      if (ws.readyState !== 1) return;
+      rec.seq += 1;
+      ws.send(JSON.stringify({ t: 'i', d, seq: rec.seq, cid: rec.cid }));
+    });
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => {
+        try {
+          fit.fit();
+        } catch {
+          /* container hidden */
+        }
+        this._fleetSendResize(key);
+      });
+      ro.observe(containerEl);
+      rec.resizeObserver = ro;
+    }
+  },
+
+  /**
+   * Grid tiles render on canvas (the xterm default). Only the single-tile
+   * layout (data-layout="1") optionally upgrades to WebGL, and only on desktop
+   * where the addon has been loaded (spec §6.2 / 必查项 3).
+   */
+  _fleetApplyRenderer(term) {
+    const area = document.getElementById('fleet-term-area');
+    const single = !area || area.getAttribute('data-layout') === '1';
+    if (!single) return;
+    if (
+      typeof MobileDetection !== 'undefined' &&
+      MobileDetection.getDeviceType &&
+      MobileDetection.getDeviceType() !== 'desktop'
+    ) {
+      return;
+    }
+    if (typeof WebglAddon === 'undefined') return;
+    try {
+      const addon = new WebglAddon.WebglAddon();
+      if (typeof addon.onContextLoss === 'function') {
+        addon.onContextLoss(() => {
+          try {
+            addon.dispose();
+          } catch {
+            /* already gone */
+          }
+        });
+      }
+      term.loadAddon(addon);
+    } catch {
+      /* WebGL unavailable — canvas/DOM renderer is fine */
+    }
+  },
+
+  _fleetSplitKey(key) {
+    const tab = this._fleetFindTab(key);
+    if (tab) return { deviceId: tab.deviceId, sessionId: tab.sessionId };
+    // Fallback: split on the FIRST colon only (sessionId may contain ':').
+    const parts = key.split(/:(.+)/);
+    return { deviceId: parts[0], sessionId: parts[1] };
+  },
+
+  _fleetSendResize(key) {
+    const rec = this._fleetTerms.get(key);
+    if (!rec || !rec.ws || rec.ws.readyState !== 1) return;
+    const cols = rec.term.cols;
+    const rows = rec.term.rows;
+    if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 1 || rows < 1) return;
+    rec.ws.send(JSON.stringify({ t: 'z', c: cols, r: rows, v: 'desktop' }));
+  },
+
+  async _fleetRefreshBuffer(key) {
+    const rec = this._fleetTerms.get(key);
+    if (!rec) return;
+    const { deviceId, sessionId } = this._fleetSplitKey(key);
+    if (!deviceId || !sessionId) return;
+    try {
+      const res = await this.fleetTerminalBuffer(deviceId, sessionId);
+      rec.term.reset();
+      if (res && res.buffer) rec.term.write(res.buffer);
+    } catch {
+      /* keep whatever is on screen */
+    }
+  },
+
+  _fleetMarkTileOffline(key) {
+    const rec = this._fleetTerms.get(key);
+    if (!rec || !rec.el || rec.el.querySelector('.tile-offline')) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'tile-offline';
+    overlay.textContent = '设备离线';
+    rec.el.appendChild(overlay);
+  },
+
+  closeFleetTerminal(key) {
+    const rec = this._fleetTerms.get(key);
+    if (!rec) return;
+    try {
+      if (rec.resizeObserver) rec.resizeObserver.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (rec.ws) rec.ws.close();
+    } catch {
+      /* ignore */
+    }
+    try {
+      rec.term.dispose();
+    } catch {
+      /* ignore */
+    }
+    if (rec.el) rec.el.innerHTML = '';
+    this._fleetTerms.delete(key);
+    if (this._fleetSelectedKey === key) this._fleetSelectedKey = null;
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // Pairing drawer
+  // ─────────────────────────────────────────────────────────────
+
+  async openFleetPairingDrawer() {
+    const drawer = document.getElementById('fleet-pair-drawer');
+    if (!drawer) return;
+    drawer.classList.remove('hidden');
+    drawer.innerHTML = `<div class="fleet-drawer-body">生成配对码中…</div>`;
+    const data = await this.fleetCreatePairingCode();
+    if (!data) {
+      drawer.innerHTML = `<div class="fleet-drawer-body"><div class="fleet-drawer-head"><span>添加设备</span><button type="button" data-action="close-drawer" aria-label="关闭">×</button></div><div class="fleet-form-error">生成配对码失败</div></div>`;
+      return;
+    }
+    const code = escapeHtml(String(data.code || ''));
+    const joinCommand = escapeHtml(String(data.joinCommand || ''));
+    const expiresAt = Number(data.expiresAt) || 0;
+    drawer.innerHTML = `<div class="fleet-drawer-body">
+      <div class="fleet-drawer-head"><span>添加设备</span><button type="button" data-action="close-drawer" aria-label="关闭">×</button></div>
+      <div class="fleet-pair-code" data-action="copy-code">${code}</div>
+      <div class="fleet-pair-expiry" id="fleet-pair-expiry"></div>
+      <label class="fleet-form-label">在目标设备执行:</label>
+      <div class="fleet-pair-cmd"><code>${joinCommand}</code><button type="button" data-action="copy-join">复制</button></div>
+    </div>`;
+    this._fleetStartPairCountdown(expiresAt);
+  },
+
+  _fleetStartPairCountdown(expiresAt) {
+    if (this._fleetPairTimer) {
+      clearInterval(this._fleetPairTimer);
+      this._fleetPairTimer = null;
+    }
+    const tick = () => {
+      const el = document.getElementById('fleet-pair-expiry');
+      if (!el) {
+        if (this._fleetPairTimer) clearInterval(this._fleetPairTimer);
+        this._fleetPairTimer = null;
+        return;
+      }
+      const remain = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+      if (remain <= 0) {
+        el.textContent = '配对码已过期';
+        if (this._fleetPairTimer) clearInterval(this._fleetPairTimer);
+        this._fleetPairTimer = null;
+        return;
+      }
+      const mm = String(Math.floor(remain / 60)).padStart(2, '0');
+      const ss = String(remain % 60).padStart(2, '0');
+      el.textContent = `有效期剩余 ${mm}:${ss}`;
+    };
+    tick();
+    this._fleetPairTimer = setInterval(tick, 1000);
+  },
+
+  _onFleetPairDrawerClick(e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    if (action === 'close-drawer') {
+      const drawer = document.getElementById('fleet-pair-drawer');
+      if (drawer) drawer.classList.add('hidden');
+      if (this._fleetPairTimer) {
+        clearInterval(this._fleetPairTimer);
+        this._fleetPairTimer = null;
+      }
+    } else if (action === 'copy-join' || action === 'copy-code') {
+      const drawer = document.getElementById('fleet-pair-drawer');
+      const sel = action === 'copy-join' ? '.fleet-pair-cmd code' : '.fleet-pair-code';
+      const node = drawer && drawer.querySelector(sel);
+      // textContent is the decoded (un-escaped) original — safe to copy verbatim.
+      const text = node ? node.textContent : '';
+      if (text && navigator.clipboard) {
+        navigator.clipboard.writeText(text).catch(() => {
+          /* clipboard blocked — no-op */
+        });
+      }
+      if (btn.dataset.action === 'copy-join' || btn.dataset.action === 'copy-code') {
+        const prev = btn.textContent;
+        if (btn.tagName === 'BUTTON') {
+          btn.textContent = '已复制';
+          setTimeout(() => {
+            btn.textContent = prev;
+          }, 1200);
+        }
+      }
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // New-session form (dynamic drawer)
+  // ─────────────────────────────────────────────────────────────
+
+  openFleetNewSessionForm() {
+    const dash = document.getElementById('fleet-dashboard');
+    if (!dash || !this._fleetState) return;
+    let drawer = document.getElementById('fleet-session-drawer');
+    if (!drawer) {
+      drawer = document.createElement('div');
+      drawer.id = 'fleet-session-drawer';
+      drawer.className = 'fleet-drawer';
+      dash.appendChild(drawer);
+      drawer.addEventListener('click', (e) => this._onFleetSessionDrawerClick(e));
+      drawer.addEventListener('submit', (e) => this._onFleetSessionSubmit(e));
+    }
+    const devices = this._fleetState.devices || [];
+    const options = devices
+      .map((d) => {
+        const off = d.status !== 'online';
+        const selected = !off && d.id === this._fleetSelectedDeviceId ? ' selected' : '';
+        const label = escapeHtml((d.name || d.hostname || d.id) + (off ? ' (离线)' : ''));
+        return `<option value="${escapeHtml(d.id)}"${off ? ' disabled' : ''}${selected}>${label}</option>`;
+      })
+      .join('');
+    const modes = ['claude', 'codex', 'shell', 'gemini', 'opencode'];
+    const modeBtns = modes
+      .map(
+        (m) =>
+          `<button type="button" class="fleet-mode-btn${m === 'shell' ? ' active' : ''}" data-mode="${m}">${m}</button>`
+      )
+      .join('');
+    drawer.classList.remove('hidden');
+    drawer.innerHTML = `<form class="fleet-drawer-body" id="fleet-session-form">
+      <div class="fleet-drawer-head"><span>新建会话</span><button type="button" data-action="close-session-drawer" aria-label="关闭">×</button></div>
+      <label class="fleet-form-label">设备</label>
+      <select class="fleet-form-select" name="deviceId">${options}</select>
+      <label class="fleet-form-label">工作目录</label>
+      <input class="fleet-form-input" name="workingDir" type="text" placeholder="/absolute/path" required autocomplete="off" spellcheck="false" />
+      <label class="fleet-form-label">模式</label>
+      <div class="fleet-mode-seg" data-mode-value="shell">${modeBtns}</div>
+      <div class="fleet-form-error" id="fleet-session-error"></div>
+      <div class="fleet-form-actions"><button type="submit" class="fleet-form-submit">创建</button></div>
+    </form>`;
+  },
+
+  _onFleetSessionDrawerClick(e) {
+    const closeBtn = e.target.closest('[data-action="close-session-drawer"]');
+    if (closeBtn) {
+      const drawer = document.getElementById('fleet-session-drawer');
+      if (drawer) drawer.classList.add('hidden');
+      return;
+    }
+    const modeBtn = e.target.closest('.fleet-mode-btn');
+    if (modeBtn) {
+      const seg = modeBtn.closest('.fleet-mode-seg');
+      if (!seg) return;
+      seg.querySelectorAll('.fleet-mode-btn').forEach((b) => b.classList.remove('active'));
+      modeBtn.classList.add('active');
+      seg.setAttribute('data-mode-value', modeBtn.dataset.mode || 'shell');
+    }
+  },
+
+  async _onFleetSessionSubmit(e) {
+    e.preventDefault();
+    const form = e.target;
+    if (!form || form.id !== 'fleet-session-form') return;
+    const deviceId = form.deviceId.value;
+    const workingDir = form.workingDir.value.trim();
+    const seg = form.querySelector('.fleet-mode-seg');
+    const mode = (seg && seg.getAttribute('data-mode-value')) || 'shell';
+    const errEl = form.querySelector('#fleet-session-error');
+    if (!deviceId) {
+      if (errEl) errEl.textContent = '请选择在线设备';
+      return;
+    }
+    if (!workingDir) {
+      if (errEl) errEl.textContent = '工作目录必填';
+      return;
+    }
+    if (errEl) errEl.textContent = '';
+    const submit = form.querySelector('.fleet-form-submit');
+    if (submit) submit.disabled = true;
+    const created = await this.fleetCreateSession(deviceId, { workingDir, mode });
+    if (submit) submit.disabled = false;
+    if (!created) {
+      if (errEl) errEl.textContent = '创建失败(设备离线或参数无效)';
+      return;
+    }
+    const drawer = document.getElementById('fleet-session-drawer');
+    if (drawer) drawer.classList.add('hidden');
+    await this.refreshFleetState();
+    const newId = created.id || (created.session && created.session.id);
+    if (newId) {
+      const key = `${deviceId}:${newId}`;
+      this._fleetHiddenTabKeys.delete(key);
+      this.selectFleetTab(key);
+    }
+  },
+});

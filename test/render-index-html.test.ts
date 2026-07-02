@@ -36,9 +36,12 @@ function makeServer(settings: Record<string, unknown> = {}) {
 const render = (server: WebServer, solo?: string): Promise<string> => (server as any).renderIndexHtml(solo);
 
 const ORIG_GESTURE = process.env.CODEMAN_GESTURE;
+const ORIG_FLEET = process.env.CODEMAN_FLEET_DASHBOARD;
 afterEach(() => {
   if (ORIG_GESTURE === undefined) delete process.env.CODEMAN_GESTURE;
   else process.env.CODEMAN_GESTURE = ORIG_GESTURE;
+  if (ORIG_FLEET === undefined) delete process.env.CODEMAN_FLEET_DASHBOARD;
+  else process.env.CODEMAN_FLEET_DASHBOARD = ORIG_FLEET;
 });
 
 describe('WebServer.renderIndexHtml', () => {
@@ -92,5 +95,22 @@ describe('WebServer.renderIndexHtml', () => {
     const html = await render(server);
     expect(html).not.toContain('__codemanGestureAvailable');
     expect(html).not.toContain('gesture-codeman.js');
+  });
+
+  it('injects the fleet dashboard flag only when CODEMAN_FLEET_DASHBOARD=1', async () => {
+    process.env.CODEMAN_FLEET_DASHBOARD = '1';
+    let { server } = makeServer({});
+    let html = await render(server);
+    expect(html).toContain('window.__CODEMAN_FLEET_DASHBOARD__=true');
+
+    // Not injected into solo popups (dashboard-only, like the gesture flag).
+    ({ server } = makeServer({}));
+    html = await render(server, 'sess-123');
+    expect(html).not.toContain('__CODEMAN_FLEET_DASHBOARD__');
+
+    delete process.env.CODEMAN_FLEET_DASHBOARD;
+    ({ server } = makeServer({}));
+    html = await render(server);
+    expect(html).not.toContain('__CODEMAN_FLEET_DASHBOARD__');
   });
 });

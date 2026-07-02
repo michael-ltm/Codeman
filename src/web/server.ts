@@ -1264,6 +1264,13 @@ export class WebServer extends EventEmitter {
         );
       }
     }
+    // Fleet Dashboard (multi-device view): `CODEMAN_FLEET_DASHBOARD=1` makes the
+    // dashboard own the first screen even on an instance with no remote devices
+    // yet (otherwise the client only auto-shows it once a remote device joins).
+    // Dashboard-only (not solo popups), mirroring the gesture flag above.
+    if (!soloSessionId && process.env.CODEMAN_FLEET_DASHBOARD === '1') {
+      html = html.replace('</head>', `<script>window.__CODEMAN_FLEET_DASHBOARD__=true;</script>\n</head>`);
+    }
     return html;
   }
 
