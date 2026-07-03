@@ -244,11 +244,15 @@ Object.assign(CodemanApp.prototype, {
   async stopFleetSession(key) {
     const f = this._fleetTarget(key);
     if (!f) return;
+    const tab = this.fleetTabs?.get(key);
+    const adopted = tab?.adopted ?? false;
     try {
       await this.fleetStopSession(f.deviceId, f.sessionId);
-      this.showToast?.('Remote session stopped', 'success');
+      const msg = adopted ? '已从 Codeman 移除(tmux 会话未受影响)' : 'Remote session stopped';
+      this.showToast?.(msg, 'success');
     } catch {
-      this.showToast?.('Failed to stop remote session', 'error');
+      const msg = adopted ? '移除失败' : 'Failed to stop remote session';
+      this.showToast?.(msg, 'error');
     }
   },
 

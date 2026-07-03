@@ -655,8 +655,10 @@ Object.assign(CodemanApp.prototype, {
         ? '仅从 Codeman 移除,不会关闭你的 tmux 会话。'
         : '将在远端设备上终止该会话,操作不可撤销。';
     }
-    const titleEl = this.$('fleetStopConfirmTitle');
-    if (titleEl) titleEl.textContent = this._fleetStopPending.adopted ? '移除会话' : '停止会话';
+    const titleEl = this.$('fleetStopTitle');
+    if (titleEl) titleEl.textContent = this._fleetStopPending.adopted ? '移除收编会话' : '停止远程会话';
+    const titleEl2 = this.$('fleetStopConfirmTitle');
+    if (titleEl2) titleEl2.textContent = this._fleetStopPending.adopted ? '移除会话' : '停止会话';
     const descEl = this.$('fleetStopConfirmDesc');
     if (descEl) {
       descEl.textContent = this._fleetStopPending.adopted
@@ -690,9 +692,11 @@ Object.assign(CodemanApp.prototype, {
       const [deviceId, sessionId] = String(pending.key).split(':');
       try {
         await this.fleetStopSession(deviceId, sessionId);
-        this.showToast('Remote session stopped', 'success');
+        const msg = pending.adopted ? '已从 Codeman 移除(tmux 会话未受影响)' : 'Remote session stopped';
+        this.showToast(msg, 'success');
       } catch {
-        this.showToast('Failed to stop remote session', 'error');
+        const msg = pending.adopted ? '移除失败' : 'Failed to stop remote session';
+        this.showToast(msg, 'error');
       }
     }
     this.refreshFleetState();
