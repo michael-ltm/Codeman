@@ -52,6 +52,11 @@
   --glass-border: rgba(255, 255, 255, 0.08);
   --subtle-shadow: 0 -1px 3px rgba(0, 0, 0, 0.3), 0 -4px 16px rgba(0, 0, 0, 0.15);
   --btn-radius: 6px;
+  /* Card/surface design tokens (additive) — converge the radius/shadow used by
+     sibling card surfaces (welcome buttons, resume cards, search box) so they
+     read as one system. Theme-aware: overridden in the light skin block. */
+  --radius-card: 10px;
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.2);
   --transition-smooth: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Session color palette — retoned toward the Daylight system */
@@ -159,6 +164,7 @@ html[data-skin="light"] {
   --term-bg: #fbfcfd;
   --green: #1a7f37; --yellow: #9a6700; --red: #cf222e;
   --glass-bg: rgba(255, 255, 255, 0.9); --glass-border: rgba(15, 23, 42, 0.1);
+  --shadow-card: 0 2px 8px rgba(15, 23, 42, 0.1);
   --accent-d: #0a4fa8; --emerald: #218bff; --teal: #0969da;
   --accent-soft: #1a7f37; --accent-ink: #ffffff;
   --accent-rgb: 9, 105, 218;
@@ -2379,6 +2385,13 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
 }
 
 .welcome-content {
+  /* Additive spacing scale — scoped to the welcome column only so the vertical
+     rhythm (title → device row → buttons → search → resume) is consistent
+     without disturbing global spacing. */
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
   text-align: center;
   max-width: 520px;
   padding: 2rem;
@@ -2391,7 +2404,7 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  margin-bottom: 1rem;
+  margin-bottom: var(--sp-4, 1rem);
   letter-spacing: -0.04em;
 }
 
@@ -2399,7 +2412,7 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   color: var(--text-dim);
   font-size: 0.9rem;
   line-height: 1.6;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--sp-2, 0.5rem);
 }
 
 /* Homepage device selector (Task 2) — additive device row; hidden unless a
@@ -2410,7 +2423,7 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.4rem;
-  margin-top: 1.25rem;
+  margin-top: var(--sp-4, 1.25rem);
 }
 
 .welcome-device-pill {
@@ -2495,23 +2508,26 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   pointer-events: none;
 }
 
+/* Even 2×2 grid: equal cells → equal-width, edge-aligned run buttons (was a
+   flex-wrap that wrapped to ragged, unequal widths). Order is preserved, so
+   Claude/Tunnel sit on row 1 and OpenCode/Gemini on row 2, as before. */
 .welcome-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-top: 2rem;
-  margin-bottom: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3, 0.75rem);
+  max-width: 440px;
+  margin: var(--sp-6, 2rem) auto var(--sp-4, 1.5rem);
 }
 
 .welcome-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
   padding: 0.7rem 1.3rem;
   font-size: 0.85rem;
   font-weight: 600;
-  border-radius: 10px;
+  border-radius: var(--radius-card, 10px);
   border: 1px solid transparent;
   cursor: pointer;
   transition: all var(--transition-smooth);
@@ -2662,7 +2678,7 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
 
 /* History sessions panel (welcome overlay) */
 .history-sessions {
-  margin-top: 1.5rem;
+  margin-top: var(--sp-6, 1.5rem);
   width: 100%;
   max-width: 560px;
 }
@@ -2689,7 +2705,7 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   color: var(--text);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border-radius: var(--radius-card, 8px);
   outline: none;
   transition: border-color var(--transition-smooth), background var(--transition-smooth);
 }
@@ -2946,7 +2962,7 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   flex-direction: column;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
+  border-radius: var(--radius-card, 8px);
   transition: all var(--transition-smooth);
   text-align: left;
 }
@@ -2954,7 +2970,7 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
 .history-item:hover {
   border-color: rgba(59, 130, 246, 0.3);
   background: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-card, 0 2px 8px rgba(0, 0, 0, 0.2));
 }
 
 .history-item.expanded {
@@ -2968,7 +2984,7 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   gap: 0.6rem;
   padding: 0.55rem 0.8rem;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: var(--radius-card, 8px);
 }
 
 .history-item-text {

@@ -1315,7 +1315,7 @@ html.mobile-init .file-browser-panel {
   }
 
   .welcome-actions {
-    flex-direction: column;
+    grid-template-columns: 1fr;
     gap: 0.5rem;
     margin-top: 1rem;
   }

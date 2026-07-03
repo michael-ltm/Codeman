@@ -30,12 +30,15 @@ export function renderLoginHtml(): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Codeman — Sign in</title>
-<script>try{var s=localStorage.getItem('codeman:skin');if(s!=='og'&&s!=='daylight-green'&&s!=='daylight-blue')s='daylight-blue';document.documentElement.dataset.skin=s;}catch(e){document.documentElement.dataset.skin='daylight-blue';}</script>
+<script>try{var s=localStorage.getItem('codeman:skin');if(s!=='og'&&s!=='daylight-green'&&s!=='daylight-blue'&&s!=='light')s='daylight-blue';document.documentElement.dataset.skin=s;}catch(e){document.documentElement.dataset.skin='daylight-blue';}</script>
 <style>
 :root{--bg-dark:#11151c;--bg-card:#1b222c;--bg-input:#202833;--border:#2b333f;--border-light:#3a4350;--text:#f3f6fa;--text-dim:#98a2b1;--text-muted:#717b8c;--accent:#38b6f0;--accent-hover:#3ec8ee;--accent-ink:#04223a;--danger:#f0616d;}
 html[data-skin="daylight-blue"]{--bg-dark:#11151c;--bg-card:#1b222c;--bg-input:#202833;--border:#2b333f;--border-light:#3a4350;--text:#f3f6fa;--text-dim:#98a2b1;--text-muted:#717b8c;--accent:#38b6f0;--accent-hover:#3ec8ee;--accent-ink:#04223a;}
 html[data-skin="daylight-green"]{--bg-dark:#11151c;--bg-card:#1b222c;--bg-input:#202833;--border:#2b333f;--border-light:#3a4350;--text:#f3f6fa;--text-dim:#98a2b1;--text-muted:#717b8c;--accent:#2fd3aa;--accent-hover:#34d8a0;--accent-ink:#062019;}
 html[data-skin="og"]{--bg-dark:#09090b;--bg-card:#131316;--bg-input:#1a1a1f;--border:#232329;--border-light:#2e2e38;--text:#ececf0;--text-dim:#8b8b97;--text-muted:#52525e;--accent:#3b82f6;--accent-hover:#60a5fa;--accent-ink:#0b1220;}
+html[data-skin="light"]{--bg-dark:#f5f6f8;--bg-card:#ffffff;--bg-input:#f0f2f5;--border:#e2e5ea;--border-light:#d5d9e0;--text:#1f2328;--text-dim:#57606a;--text-muted:#6e7781;--accent:#0969da;--accent-hover:#0860c9;--accent-ink:#ffffff;--danger:#cf222e;}
+html[data-skin="light"] .card{box-shadow:0 12px 40px rgba(15,23,42,.16),0 2px 8px rgba(15,23,42,.08)}
+html[data-skin="light"] input:focus{box-shadow:0 0 0 3px rgba(9,105,218,.15)}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
 body{background:var(--bg-dark);color:var(--text);font-family:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px;min-height:100dvh}
