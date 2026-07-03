@@ -790,3 +790,26 @@ export const SearchQuerySchema = z.object({
     ),
   limit: z.coerce.number().int().min(1).max(60).optional(),
 });
+
+// ========== Custom Login / Password Management ==========
+
+/**
+ * POST /api/auth/login body. Both fields are required strings with generous
+ * upper bounds (defense against oversized-payload abuse; the credential store
+ * does the actual verification). A blank username/password is rejected here so
+ * the login route never runs `verifyCredentials` on empty input.
+ */
+export const AuthLoginSchema = z.object({
+  username: z.string().min(1).max(256),
+  password: z.string().min(1).max(1024),
+});
+
+/**
+ * POST /api/auth/change-password body. `newPassword` length policy (>= 8) is
+ * enforced in the route handler so it can return the specific "New password too
+ * short" message; the schema only bounds shapes/sizes.
+ */
+export const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(1024),
+  newPassword: z.string().min(1).max(1024),
+});

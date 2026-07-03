@@ -640,13 +640,21 @@ describe('QR SVG Endpoint (GET /api/tunnel/qr)', () => {
   it('should return SVG with authEnabled=false when tunnel running + no auth', async () => {
     const tm = getTunnelManager();
     simulateTunnelRunning(tm);
+    // Acquire a session cookie WHILE the password is set. Credentials are now
+    // verified per-request (auth-store, fresh env read) — that's what makes live
+    // password changes take effect — so a Basic header stops matching the moment
+    // the env password is deleted below. The cookie lives in authSessions and is
+    // env-independent, so it keeps the request authenticated while the route sees
+    // no password → the no-auth code path (authEnabled=false).
+    const authRes = await fetch(`${baseUrl}/api/status`, {
+      headers: { Authorization: basicAuthHeader(TEST_USER, TEST_PASS) },
+    });
+    const cookie = `codeman_session=${authRes.headers.get('set-cookie')!.match(/codeman_session=([^;]+)/)![1]}`;
     const savedPass = process.env.CODEMAN_PASSWORD;
     delete process.env.CODEMAN_PASSWORD;
     try {
-      // Auth middleware was initialized with password (closure), so still need headers.
-      // But route handler checks env var on each request — sees no password → no-auth path.
       const res = await fetch(`${baseUrl}/api/tunnel/qr`, {
-        headers: { Authorization: basicAuthHeader(TEST_USER, savedPass!) },
+        headers: { Cookie: cookie },
       });
       expect(res.status).toBe(200);
       const data = await res.json();
@@ -698,11 +706,17 @@ describe('QR SVG Endpoint (GET /api/tunnel/qr)', () => {
     const tm = getTunnelManager();
     const tunnelUrl = 'https://raw-url-test.trycloudflare.com';
     simulateTunnelRunning(tm, tunnelUrl);
+    // Cookie acquired while the password is set survives its deletion (see the
+    // authEnabled=false test above) — credentials are verified per-request now.
+    const authRes = await fetch(`${baseUrl}/api/status`, {
+      headers: { Authorization: basicAuthHeader(TEST_USER, TEST_PASS) },
+    });
+    const cookie = `codeman_session=${authRes.headers.get('set-cookie')!.match(/codeman_session=([^;]+)/)![1]}`;
     const savedPass = process.env.CODEMAN_PASSWORD;
     delete process.env.CODEMAN_PASSWORD;
     try {
       const res = await fetch(`${baseUrl}/api/tunnel/qr`, {
-        headers: { Authorization: basicAuthHeader(TEST_USER, savedPass!) },
+        headers: { Cookie: cookie },
       });
       expect(res.status).toBe(200);
       const data = await res.json();

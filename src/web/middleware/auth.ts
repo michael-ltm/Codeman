@@ -8,7 +8,7 @@
  * - CORS (localhost only)
  */
 
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { StaleExpirationMap } from '../../utils/index.js';
 import type { AuthSessionRecord } from '../ports/auth-port.js';
@@ -22,6 +22,35 @@ import {
   FLEET_PAIR_RATE_LIMIT_WINDOW_MS,
 } from '../../config/auth-config.js';
 import { getHookSecret, HOOK_SECRET_HEADER } from '../../config/hook-secret.js';
+import {
+  verifyCredentials,
+  isPasswordConfigured,
+  getConfiguredUsername,
+  setPassword,
+} from '../../config/auth-store.js';
+import { renderLoginHtml } from '../login-page.js';
+import { AuthLoginSchema, ChangePasswordSchema } from '../schemas.js';
+import { createErrorResponse, ApiErrorCode } from '../../types/api.js';
+
+/** Static-asset file extensions that should get a 401 (never the login page). */
+const ASSET_EXT_RE =
+  /\.(?:js|mjs|css|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|otf|eot|wasm|task|json|txt|xml|webmanifest)$/i;
+
+/**
+ * Is this a top-level browser PAGE navigation (→ serve the login page) rather
+ * than an `/api/*` call or a static-asset fetch (→ 401 JSON)? A navigation is a
+ * GET whose `Accept` includes `text/html`, whose path is not under `/api/`, and
+ * whose path does not end in a known asset extension. Non-browser clients (curl,
+ * which sends a wildcard Accept) fall through to the 401 JSON branch.
+ */
+function isPageNavigationRequest(req: FastifyRequest): boolean {
+  if (req.method !== 'GET') return false;
+  const path = (req.url.split('?')[0] || '').toLowerCase();
+  if (path.startsWith('/api/')) return false;
+  if (ASSET_EXT_RE.test(path)) return false;
+  const accept = req.headers.accept ?? '';
+  return accept.includes('text/html');
+}
 
 // Auth session cookie name
 export const AUTH_COOKIE_NAME = 'codeman_session';
@@ -53,11 +82,12 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
     fleetPairAttempts: null,
   };
 
-  const authPassword = process.env.CODEMAN_PASSWORD;
-  if (!authPassword) return state;
-
-  const authUsername = process.env.CODEMAN_USERNAME || 'admin';
-  const expectedHeader = 'Basic ' + Buffer.from(`${authUsername}:${authPassword}`).toString('base64');
+  // Auth activates when a password is configured EITHER via `auth.json` (the
+  // custom-login credential store) OR the legacy `CODEMAN_PASSWORD` env var. A
+  // passwordless loopback node has neither → early-return (no gate, no login
+  // page) exactly as before. Credential verification below is delegated to
+  // `auth-store.verifyCredentials` (auth.json wins over env, constant-time).
+  if (!isPasswordConfigured()) return state;
 
   // Session token store — active sessions extend TTL on access
   state.authSessions = new StaleExpirationMap<string, AuthSessionRecord>({
@@ -110,6 +140,33 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
     const retryAfterSeconds = Math.max(1, Math.ceil(remainingMs / 1000));
     reply.header('Retry-After', String(retryAfterSeconds));
     reply.code(429).send('Too Many Requests — try again later');
+  }
+
+  /**
+   * Issue a fresh session-token cookie. Single source of the cookie-issuing
+   * logic, reused by the Basic-Auth success path AND the POST /api/auth/login
+   * route so both mint identical 24h cookies. Evicts the oldest session when at
+   * capacity to keep the store bounded.
+   */
+  function issueSessionCookie(req: FastifyRequest, reply: FastifyReply, method: AuthSessionRecord['method']): void {
+    const token = randomBytes(32).toString('hex');
+    if (authSessions.size >= MAX_AUTH_SESSIONS) {
+      const oldestKey = authSessions.keys().next().value;
+      if (oldestKey !== undefined) authSessions.delete(oldestKey);
+    }
+    authSessions.set(token, {
+      ip: req.ip,
+      ua: req.headers['user-agent'] ?? '',
+      createdAt: Date.now(),
+      method,
+    });
+    reply.setCookie(AUTH_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: https,
+      sameSite: 'lax',
+      maxAge: AUTH_SESSION_TTL_MS / 1000, // seconds
+      path: '/',
+    });
   }
 
   app.addHook('onRequest', (req, reply, done) => {
@@ -188,6 +245,17 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
       return;
     }
 
+    // Custom login-page endpoint — auth-EXEMPT (it ESTABLISHES a session). The
+    // route handler below runs verifyCredentials + the SAME per-IP failure
+    // limiter as the Basic path, so brute force is throttled identically. Only
+    // /api/auth/login is exempt here: /api/auth/change-password MUST be
+    // authenticated and so is deliberately NOT bypassed (it flows through the
+    // gate below like any other route).
+    if (req.url === '/api/auth/login' && req.method === 'POST') {
+      done();
+      return;
+    }
+
     const clientIp = req.ip;
 
     // Check session cookie first (avoids re-sending credentials on every request)
@@ -198,53 +266,104 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
       return;
     }
 
-    // Check Basic Auth header (timing-safe comparison to prevent side-channel attacks)
+    // Check Basic Auth header. Decode `Basic <base64(user:pass)>` and verify via
+    // the credential store (auth.json wins over env; the compare is constant-time
+    // by construction inside auth-store). curl -u and Claude Code hooks keep
+    // working — they send the header proactively and never relied on the removed
+    // WWW-Authenticate challenge.
     const auth = req.headers.authorization;
-    const authBuf = Buffer.from(auth ?? '');
-    const expectedBuf = Buffer.from(expectedHeader);
-    if (authBuf.length === expectedBuf.length && timingSafeEqual(authBuf, expectedBuf)) {
-      // Issue session token cookie so browser doesn't need to re-send credentials
-      const token = randomBytes(32).toString('hex');
-
-      // Evict oldest if at capacity (prevent unbounded growth)
-      if (authSessions.size >= MAX_AUTH_SESSIONS) {
-        const oldestKey = authSessions.keys().next().value;
-        if (oldestKey !== undefined) authSessions.delete(oldestKey);
+    const hadBasicCredentials = typeof auth === 'string' && auth.startsWith('Basic ');
+    if (hadBasicCredentials) {
+      const decoded = Buffer.from(auth.slice(6), 'base64').toString('utf8');
+      const sep = decoded.indexOf(':');
+      const user = sep === -1 ? decoded : decoded.slice(0, sep);
+      const pass = sep === -1 ? '' : decoded.slice(sep + 1);
+      if (verifyCredentials(user, pass)) {
+        issueSessionCookie(req, reply, 'basic');
+        authFailures.delete(clientIp); // reset failure count on success
+        done();
+        return;
       }
-
-      authSessions.set(token, {
-        ip: clientIp,
-        ua: req.headers['user-agent'] ?? '',
-        createdAt: Date.now(),
-        method: 'basic',
-      });
-
-      // Reset failure count on successful auth
-      authFailures.delete(clientIp);
-
-      reply.setCookie(AUTH_COOKIE_NAME, token, {
-        httpOnly: true,
-        secure: https,
-        sameSite: 'lax',
-        maxAge: AUTH_SESSION_TTL_MS / 1000, // seconds
-        path: '/',
-      });
-      done();
-      return;
     }
 
-    // Rate limit only requests that failed to authenticate on this attempt.
+    // Not authenticated. Rate-limit ONLY when a credential was PRESENTED and
+    // rejected (a brute-force vector). A plain unauthenticated navigation (no
+    // cookie, no Basic header) must NOT count — otherwise repeatedly loading the
+    // login page would self-lock the IP before the user ever submits.
+    if (hadBasicCredentials) {
+      const failures = authFailures.get(clientIp) ?? 0;
+      if (failures >= AUTH_FAILURE_MAX) {
+        sendAuthRateLimit(reply, clientIp);
+        return;
+      }
+      authFailures.set(clientIp, failures + 1);
+    }
+
+    // Unauthenticated request routing (NO WWW-Authenticate → no native browser
+    // prompt): a browser PAGE navigation gets the self-contained login page
+    // (200); an /api/* call or asset fetch gets a 401 JSON envelope so the
+    // frontend can react without navigating.
+    if (isPageNavigationRequest(req)) {
+      reply
+        .code(200)
+        .header('Cache-Control', 'no-cache')
+        .header('X-Frame-Options', 'SAMEORIGIN')
+        .header('X-Content-Type-Options', 'nosniff')
+        .type('text/html; charset=utf-8')
+        .send(renderLoginHtml());
+      return;
+    }
+    reply.code(401).send(createErrorResponse(ApiErrorCode.UNAUTHORIZED, 'Unauthorized'));
+  });
+
+  // ── Custom login-page auth routes ─────────────────────────────────────────
+  // Registered here (not in a route module) so they reuse the private
+  // authSessions/authFailures maps + issueSessionCookie/sendAuthRateLimit
+  // helpers directly — no duplication, no extra port plumbing. Only reachable
+  // when auth is active (we return early above when no password is configured).
+
+  // POST /api/auth/login — auth-exempt (bypassed in the onRequest hook above).
+  app.post('/api/auth/login', (req, reply) => {
+    const clientIp = req.ip;
+    // Same per-IP lockout the Basic path uses (shared authFailures bucket).
     const failures = authFailures.get(clientIp) ?? 0;
     if (failures >= AUTH_FAILURE_MAX) {
       sendAuthRateLimit(reply, clientIp);
       return;
     }
+    const parsed = AuthLoginSchema.safeParse(req.body);
+    const ok = parsed.success && verifyCredentials(parsed.data.username, parsed.data.password);
+    if (!ok) {
+      authFailures.set(clientIp, failures + 1);
+      reply.code(401).send(createErrorResponse(ApiErrorCode.UNAUTHORIZED, 'Invalid credentials'));
+      return;
+    }
+    issueSessionCookie(req, reply, 'login');
+    authFailures.delete(clientIp); // reset on success
+    reply.send({ success: true });
+  });
 
-    // Auth failed — track failure count
-    authFailures.set(clientIp, failures + 1);
-
-    reply.header('WWW-Authenticate', 'Basic realm="Codeman"');
-    reply.code(401).send('Unauthorized');
+  // POST /api/auth/change-password — NOT auth-exempt: reaches here only once the
+  // middleware gate above has authenticated the caller. Re-verifies the current
+  // password (getConfiguredUsername gives the active user) before rotating.
+  app.post('/api/auth/change-password', (req, reply) => {
+    const parsed = ChangePasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      reply.code(400).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Invalid request'));
+      return;
+    }
+    const { currentPassword, newPassword } = parsed.data;
+    if (newPassword.length < 8) {
+      reply.code(400).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'New password too short'));
+      return;
+    }
+    const username = getConfiguredUsername();
+    if (!verifyCredentials(username, currentPassword)) {
+      reply.code(400).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Current password incorrect'));
+      return;
+    }
+    setPassword(username, newPassword);
+    reply.send({ success: true });
   });
 
   return state;

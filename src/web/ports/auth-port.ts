@@ -10,7 +10,7 @@ export interface AuthSessionRecord {
   ip: string;
   ua: string;
   createdAt: number;
-  method: 'qr' | 'basic';
+  method: 'qr' | 'basic' | 'login';
 }
 
 export interface AuthPort {
