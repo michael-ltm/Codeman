@@ -189,6 +189,19 @@ const TMUX_DISPLAY_TIMEOUT_MS = 2000;
  * Argv form (execFileSync, not execSync) keeps `muxName` out of any shell so
  * a hostile session name can't inject options.
  */
+/**
+ * Build the `tmux [-L <socket>] attach-session -t <session>` argv used to adopt
+ * a FOREIGN (user-owned) tmux session (Rev5 §13.2 / Task 28). Mirrors
+ * TmuxManager.getAttachArgs but is socket-parameterized: `socket === ''` targets
+ * the user's DEFAULT tmux server (no `-L`, never Codeman's own dedicated socket).
+ *
+ * argv form (no shell) — the session/socket names are single argv elements, so a
+ * hostile `#{session_name}` can't inject options or shell metacharacters.
+ */
+export function buildExternalAttachArgs(socket: string, tmuxSession: string): string[] {
+  return socket ? ['-L', socket, 'attach-session', '-t', tmuxSession] : ['attach-session', '-t', tmuxSession];
+}
+
 export function queryTmuxWindowSize(muxName: string, socket: string): { cols: number; rows: number } {
   try {
     const sizeStr = execFileSync(
@@ -341,6 +354,10 @@ export class Session extends EventEmitter {
   private _mux: TerminalMultiplexer | null = null;
   private _muxSession: MuxSession | null = null;
   private _useMux: boolean = false;
+  // Adopted foreign-tmux host (Rev5 §13.2). When set, this session ATTACHES to a
+  // user-owned tmux session and is detach-only — it never owns a Codeman mux
+  // session, is never killed/respawned, and skips all Claude-specific automation.
+  private _externalHost: { socket: string; tmuxSession: string } | null = null;
   // Flag to prevent new timers after session is stopped
   private _isStopped: boolean = false;
 
@@ -456,6 +473,14 @@ export class Session extends EventEmitter {
       tmuxHistoryLimit?: number;
       /** Restored per-session attachment history. May include server-private external paths. */
       attachmentHistory?: SessionAttachmentHistoryItem[];
+      /**
+       * ADOPT a FOREIGN (user-owned) tmux session instead of spawning our own
+       * (Rev5 §13.2 / Task 28). When set, the session attaches a PTY to
+       * `tmux [-L socket] attach-session -t <tmuxSession>` and is DETACH-ONLY:
+       * it never creates/kills a Codeman mux session and is exempt from all
+       * Claude-specific automation. `socket === ''` = the user's default server.
+       */
+      externalHost?: { socket: string; tmuxSession: string };
     }
   ) {
     super();
@@ -477,7 +502,10 @@ export class Session extends EventEmitter {
     // Set claudeSessionId — when resuming, the Claude conversation ID is the resumed one.
     this._claudeSessionId = config.resumeSessionId || this.id;
     this._mux = config.mux || null;
-    this._useMux = config.useMux ?? (this._mux !== null && this._mux.isAvailable());
+    this._externalHost = config.externalHost ?? null;
+    // Adopted (foreign-tmux) sessions NEVER wrap a Codeman mux session — they
+    // attach directly to the user's server, so mux-creation/kill paths are off.
+    this._useMux = this._externalHost ? false : (config.useMux ?? (this._mux !== null && this._mux.isAvailable()));
     this._muxSession = config.muxSession || null;
 
     // Apply Nice priority configuration if provided
@@ -641,6 +669,16 @@ export class Session extends EventEmitter {
   /** The tmux session name, if the session is running inside a mux */
   get muxName(): string | null {
     return this._muxSession?.muxName ?? null;
+  }
+
+  /**
+   * True when this session ADOPTED a foreign (user-owned) tmux session (Rev5
+   * §13.2). Adopted sessions are detach-only: every kill/cleanup path must be
+   * inert or detach-only for them (never `mux.killSession`, never touch the
+   * foreign workspace) and they are exempt from Claude-specific automation.
+   */
+  get isAdopted(): boolean {
+    return this._externalHost !== null;
   }
 
   get totalCost(): number {
@@ -1022,6 +1060,7 @@ export class Session extends EventEmitter {
       resumeSessionId: this._resumeSessionId,
       effort: this._effort,
       attachmentHistory: this.attachmentHistory.length > 0 ? this.attachmentHistory : undefined,
+      adopted: this._externalHost ? true : undefined,
       // envOverrides intentionally NOT on the public SessionState type — they must not
       // leak into SSE / GET /api/sessions broadcasts (schema allows OPENCODE_*, which
       // can carry secrets). For disk persistence, session-manager calls
@@ -1183,6 +1222,75 @@ export class Session extends EventEmitter {
     return { isRestored };
   }
 
+  /**
+   * Attach a PTY to a FOREIGN (user-owned) tmux session (Rev5 §13.2 / Task 28).
+   *
+   * This is the whole lifecycle of an ADOPTED session: it spawns
+   * `tmux [-L socket] attach-session -t <session>` as a plain attach client and
+   * wires a MINIMAL data/exit pipeline — terminal buffer + `terminal` event only.
+   * It deliberately does NOT run any of the shared Claude automation the mux
+   * path does (trust-dialog auto-accept, ❯/spinner idle detection, expensive
+   * parsers), matching the isExternalCliMode exemption precedent.
+   *
+   * SAFETY: killing this attach client (on stop/cleanup) only DETACHES — a tmux
+   * `attach` client is a separate process from the pre-existing foreign server,
+   * so the user's session keeps running. We never `tmux kill-session` it, never
+   * `setenv` into it, and (deliberately) never `setManualWindowSize` it — its
+   * window sizing stays under the user's own tmux `window-size` arbitration.
+   */
+  private async _attachExternalHost(): Promise<void> {
+    const { socket, tmuxSession } = this._externalHost!;
+    const args = buildExternalAttachArgs(socket, tmuxSession);
+    try {
+      // Spawn at the default geometry; the client's first accepted resize (from
+      // the browser terminal) corrects it. We can't reliably query the foreign
+      // window size for the default (no-`-L`) server, so don't try.
+      this.ptyProcess = pty.spawn('tmux', args, {
+        name: 'xterm-256color',
+        cols: DEFAULT_PTY_COLS,
+        rows: DEFAULT_PTY_ROWS,
+        cwd: this.workingDir,
+        env: buildMuxAttachEnv(),
+      });
+    } catch (spawnErr) {
+      console.error('[Session] Failed to attach to external tmux session:', spawnErr);
+      this.emit('error', `Failed to attach to external tmux session: ${spawnErr}`);
+      throw spawnErr;
+    }
+
+    this._pid = this.ptyProcess.pid;
+    this._status = 'idle';
+    console.log(`[Session] Adopted external tmux session '${tmuxSession}' (socket='${socket}'), PID:`, this._pid);
+
+    this.ptyProcess.onData((rawData: string) => {
+      // Same minimal filtering the shared onData applies, then straight into the
+      // terminal buffer — no automation, no parsers.
+      const data = rawData.replace(FOCUS_ESCAPE_FILTER, '').replace(CTRL_L_PATTERN, '');
+      if (!data) return;
+      this._handleTerminalOutput(data);
+    });
+
+    this.ptyProcess.onExit(({ exitCode }) => {
+      console.log('[Session] Adopted attach client exited (detached) with code:', exitCode);
+      this.ptyProcess = null;
+      this._pid = null;
+      this._status = 'idle';
+      if (this._promptCheckTimeout) {
+        clearTimeout(this._promptCheckTimeout);
+        this._promptCheckTimeout = null;
+      }
+      this.emit('exit', exitCode);
+    });
+
+    // Nudge the client to fetch the full buffer once the attach has painted the
+    // foreign session's current screen.
+    this._promptCheckTimeout = setTimeout(() => {
+      this._promptCheckTimeout = null;
+      if (this._isStopped) return;
+      this.emit('needsRefresh');
+    }, 800);
+  }
+
   private _handleTerminalOutput(data: string): void {
     // Codex AND Claude Code emit sequences that wipe xterm.js scrollback, plus
     // mouse-tracking enables that hijack the scroll wheel so the user can't reach
@@ -1257,6 +1365,13 @@ export class Session extends EventEmitter {
     }
 
     this._resetBuffers();
+
+    // Adopted (foreign-tmux) session: attach to the user's server and return.
+    // No mux creation, no Claude automation — see _attachExternalHost.
+    if (this._externalHost) {
+      await this._attachExternalHost();
+      return;
+    }
 
     const modeLabel = getModeLabel(this.mode);
     console.log(
@@ -1535,7 +1650,10 @@ export class Session extends EventEmitter {
   private _processExpensiveParsers(rawData: string): void {
     // Skip Claude-specific parsers for external CLI sessions (Ralph tracker,
     // BashToolParser, token + CLI-info parsing all depend on Claude's output format).
-    if (isExternalCliMode(this.mode)) return;
+    // Adopted (foreign-tmux) sessions are likewise exempt from all Claude
+    // automation regardless of their mode — defensive, since their dedicated
+    // attach onData never reaches this path.
+    if (isExternalCliMode(this.mode) || this._externalHost) return;
 
     // Lazy ANSI strip: only compute cleanData when a consumer actually needs it.
     let _cleanData: string | null = null;
@@ -2531,7 +2649,11 @@ export class Session extends EventEmitter {
     this.cleanupTrackerListeners();
 
     if (this.ptyProcess) {
-      if (killMux) {
+      // Adopted (foreign-tmux) sessions ALWAYS kill only their attach client
+      // here — that DETACHES from the user's server (the foreign tmux session
+      // keeps running) regardless of the killMux arg. Killing the client (and
+      // its process group) never signals the pre-existing foreign server.
+      if (killMux || this._externalHost) {
         // Full kill: SIGTERM → wait → SIGKILL the PTY and its children
         const pid = this.ptyProcess.pid;
 
@@ -2577,8 +2699,10 @@ export class Session extends EventEmitter {
     this._taskCache.clear();
     this._childAgentIds = [];
 
-    // Kill the associated mux session if requested
-    if (killMux && this._mux) {
+    // Kill the associated mux session if requested — NEVER for an adopted
+    // (foreign-tmux) session: we do not own its lifecycle, so killSession must
+    // be unreachable for it (belt-and-suspenders: _mux is null for adopted).
+    if (killMux && this._mux && !this._externalHost) {
       // Try to kill mux session even if _muxSession is not set (e.g., restored sessions)
       try {
         const killed = await this._mux.killSession(this.id);

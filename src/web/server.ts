@@ -899,7 +899,11 @@ export class WebServer extends EventEmitter {
           version: APP_VERSION,
           capabilities: collectDeviceJoinInfo().capabilities,
         },
-        createLocalSessionOps('local', ctx)
+        createLocalSessionOps('local', ctx, {
+          // Validate adopt requests against this machine's own scanner cache.
+          // Read lazily — the scanner is created later in start().
+          getExternalCandidates: () => this.localExternalScanner?.getCandidates() ?? [],
+        })
       )
     );
     registerPushRoutes(this.app, ctx);
@@ -1006,6 +1010,11 @@ export class WebServer extends EventEmitter {
 
   /** Persists full session state including respawn config to state.json */
   private _persistSessionStateNow(session: Session): void {
+    // Adopted (foreign-tmux) sessions are NEVER persisted (Rev5 §13.2): on
+    // restart, discovery re-finds the foreign session and the panel re-adopts it
+    // with one click. A persisted adopted session would wrongly try to restore
+    // as a Codeman-owned mux session. Guarding here covers every persist path.
+    if (session.isAdopted) return;
     // See session-manager.updateSessionState: __envOverrides is an internal disk-only
     // field kept off SessionState to avoid leaking via API broadcasts.
     const base = session.toState();
@@ -1077,8 +1086,10 @@ export class WebServer extends EventEmitter {
       session.ralphTracker.stopWatchingFixPlan();
     }
 
-    // Kill all subagents spawned by this session (scoped to sessionId to avoid cross-session kills)
-    if (session && killMux) {
+    // Kill all subagents spawned by this session (scoped to sessionId to avoid cross-session kills).
+    // Skipped for adopted (foreign-tmux) sessions — we must not run process kills
+    // scoped to a workspace we don't own.
+    if (session && killMux && !session.isAdopted) {
       try {
         await subagentWatcher.killSubagentsForSession(session.workingDir, sessionId);
       } catch (err) {
@@ -1194,8 +1205,10 @@ export class WebServer extends EventEmitter {
       attachmentRegistry.clearSession(sessionId);
       // Stop watching for images in this session's directory
       imageWatcher.unwatchSession(sessionId);
-      // Clean up pasted images directory for this session
-      if (killMux && session.workingDir) {
+      // Clean up pasted images directory for this session. NEVER for an adopted
+      // (foreign-tmux) session — its workingDir is the user's own workspace and
+      // Codeman must not delete files there.
+      if (killMux && session.workingDir && !session.isAdopted) {
         const pasteImageDir = join(session.workingDir, '.claude-images');
         try {
           rmSync(pasteImageDir, { recursive: true, force: true });

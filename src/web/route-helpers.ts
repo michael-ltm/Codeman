@@ -527,10 +527,17 @@ export async function createSessionCore(
  * Reused by DELETE /api/sessions/:id and fleet's device adapter.
  */
 export async function deleteSessionCore(ctx: SessionPort, sessionId: string, killMux: boolean = true): Promise<void> {
-  if (!ctx.sessions.has(sessionId)) {
+  const session = ctx.sessions.get(sessionId);
+  if (!session) {
     throwApiError(ApiErrorCode.NOT_FOUND, 'Session not found');
   }
-  await ctx.cleanupSession(sessionId, killMux, 'user_delete');
+  // Adopted (foreign-tmux) sessions are DETACH-ONLY (Rev5 §13.2): force
+  // killMux=false so cleanupSession never kills the foreign session, never
+  // touches its workspace, and never removes persisted state — it just detaches
+  // the attach PTY (Session.stop still kills the attach client for adopted
+  // sessions regardless of killMux) and drops the session from ctx.sessions.
+  const effectiveKillMux = session.isAdopted ? false : killMux;
+  await ctx.cleanupSession(sessionId, effectiveKillMux, session.isAdopted ? 'user_detach' : 'user_delete');
 }
 
 /**

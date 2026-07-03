@@ -234,6 +234,13 @@ export interface SessionState {
   effort?: EffortLevel;
   /** Sanitized per-session attachment history. */
   attachmentHistory?: SessionAttachmentHistoryItem[];
+  /**
+   * True when this session ADOPTED a foreign (user-owned) tmux session rather
+   * than one Codeman created (Rev5 §13.2). Codeman only ATTACHES to it — closing
+   * the tab detaches; it must never be killed/respawned. UIs surface this to
+   * mark the tab and suppress stop affordances.
+   */
+  adopted?: boolean;
 }
 
 /**

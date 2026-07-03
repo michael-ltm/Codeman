@@ -79,6 +79,12 @@ export interface FleetSessionSummary {
   pid: number | null;
   createdAt: number;
   lastActivityAt: number;
+  /**
+   * True when this session ADOPTED a foreign (user-owned) tmux session (Rev5
+   * §13.2 / Task 28). Codeman only attaches to it — the tab is detach-only and
+   * must never expose a stop/kill affordance. Absent/false for normal sessions.
+   */
+  adopted?: boolean;
 }
 
 /** Derived UI tab for a device+session pair, used to key/label a split-grid terminal. */
@@ -169,7 +175,8 @@ export type CentralToNodeFrame =
   | { t: 'terminal:subscribe'; requestId: string; sessionId: string }
   | { t: 'terminal:unsubscribe'; requestId: string; sessionId: string }
   | { t: 'terminal:input'; sessionId: string; data: string; seq?: number; cid?: string }
-  | { t: 'terminal:resize'; sessionId: string; cols: number; rows: number; viewportType?: string; force?: boolean };
+  | { t: 'terminal:resize'; sessionId: string; cols: number; rows: number; viewportType?: string; force?: boolean }
+  | { t: 'adopt-session'; requestId: string; candidate: ExternalSessionCandidate };
 
 // ========== zod schemas ==========
 
@@ -221,6 +228,7 @@ const FleetSessionSummarySchema: z.ZodType<FleetSessionSummary> = z.object({
   pid: z.number().nullable(),
   createdAt: z.number(),
   lastActivityAt: z.number(),
+  adopted: z.boolean().optional(),
 });
 
 export const CreateFleetSessionRequestSchema: z.ZodType<CreateFleetSessionRequest> = z.object({
@@ -344,6 +352,11 @@ export const CentralToNodeFrameSchema = z.discriminatedUnion('t', [
     rows: z.number(),
     viewportType: z.string().optional(),
     force: z.boolean().optional(),
+  }),
+  z.object({
+    t: z.literal('adopt-session'),
+    requestId: z.string(),
+    candidate: ExternalSessionCandidateSchema,
   }),
 ]);
 

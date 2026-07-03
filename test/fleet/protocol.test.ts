@@ -59,6 +59,26 @@ describe('fleet protocol', () => {
     ); // workingDir 必填
   });
 
+  it('round-trips an adopt-session frame and rejects a malformed candidate', () => {
+    const frame = {
+      t: 'adopt-session',
+      requestId: 'r9',
+      candidate: { socket: '', tmuxSession: 'work', mode: 'codex', workingDir: '/home/ming/proj', firstSeenAt: 42 },
+    };
+    expect(parseCentralToNodeFrame(JSON.stringify(frame))).toEqual(frame);
+
+    // requestId is required
+    expect(CentralToNodeFrameSchema.safeParse({ t: 'adopt-session', candidate: frame.candidate }).success).toBe(false);
+    // candidate must be a full ExternalSessionCandidate (mode enum enforced)
+    expect(
+      CentralToNodeFrameSchema.safeParse({
+        t: 'adopt-session',
+        requestId: 'r9',
+        candidate: { socket: '', tmuxSession: 'work', mode: 'bogus', workingDir: '/p', firstSeenAt: 1 },
+      }).success
+    ).toBe(false);
+  });
+
   it('round-trips the list-resume-candidates and list-dirs frames', () => {
     const rc = { t: 'list-resume-candidates', requestId: 'r1' };
     expect(parseCentralToNodeFrame(JSON.stringify(rc))).toEqual(rc);

@@ -19,6 +19,7 @@
 import { arch, hostname, platform, userInfo } from 'node:os';
 import type {
   CreateFleetSessionRequest,
+  ExternalSessionCandidate,
   FleetCapabilities,
   FleetDeviceSummary,
   FleetSessionSummary,
@@ -36,6 +37,8 @@ export interface FleetDeviceHandle {
   summary(): FleetDeviceSummary;
   listSessions(): Promise<FleetSessionSummary[]>;
   createSession(input: CreateFleetSessionRequest): Promise<FleetSessionSummary>;
+  /** Adopt a discovered foreign-tmux session on this device (Rev5 §13.2). */
+  adoptSession(candidate: ExternalSessionCandidate): Promise<FleetSessionSummary>;
   stopSession(sessionId: string): Promise<void>;
   writeInput(sessionId: string, data: string, seq?: number, cid?: string): void;
   resize(sessionId: string, cols: number, rows: number, opts?: { viewportType?: string; force?: boolean }): void;
@@ -83,6 +86,10 @@ export class LocalDeviceAdapter implements FleetDeviceHandle {
 
   createSession(input: CreateFleetSessionRequest): Promise<FleetSessionSummary> {
     return this.ops.createSession(input);
+  }
+
+  adoptSession(candidate: ExternalSessionCandidate): Promise<FleetSessionSummary> {
+    return this.ops.adoptSession(candidate);
   }
 
   stopSession(sessionId: string): Promise<void> {

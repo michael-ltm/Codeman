@@ -44,12 +44,12 @@ export function registerRalphRoutes(
       };
     const session = findSessionOrFail(ctx, id);
 
-    // Ralph tracker is not supported for external-CLI sessions (opencode/codex)
-    if (isExternalCliMode(session.mode)) {
-      return createErrorResponse(
-        ApiErrorCode.INVALID_INPUT,
-        `Ralph tracker is not supported for ${session.mode} sessions`
-      );
+    // Ralph tracker is not supported for external-CLI sessions (opencode/codex) or
+    // for ADOPTED foreign-tmux sessions (Rev5 §13.2) — Codeman must not run
+    // Claude-specific automation against a session it doesn't own.
+    if (isExternalCliMode(session.mode) || session.isAdopted) {
+      const why = session.isAdopted ? 'adopted (external tmux)' : session.mode;
+      return createErrorResponse(ApiErrorCode.INVALID_INPUT, `Ralph tracker is not supported for ${why} sessions`);
     }
 
     // Handle reset first (before other config)

@@ -327,6 +327,15 @@ export class FleetNodeAgent {
         }
         break;
 
+      case 'adopt-session':
+        try {
+          const data = await this.ops.adoptSession(frame.candidate);
+          this.send({ t: 'ack', requestId: frame.requestId, data });
+        } catch (err) {
+          this.send({ t: 'error', requestId: frame.requestId, message: getErrorMessage(err) });
+        }
+        break;
+
       case 'stop-session':
         try {
           await this.ops.stopSession(frame.sessionId);
@@ -554,8 +563,14 @@ export function startFleetNodeAgentIfConfigured(ctx: SessionCoreCtx): FleetNodeA
     capabilities: info.capabilities,
   };
 
-  const ops = createLocalSessionOps(config.deviceId, ctx);
-  const agent = new FleetNodeAgent({ config, ops, device });
+  // Build ONE scanner and share it between the ops (adopt-candidate validation)
+  // and the agent (external-session discovery), so a node validates adopt
+  // requests against the very candidates it reported.
+  const scanner = new ExternalSessionScanner({ ownSocket: resolveConfiguredTmuxSocket() });
+  const ops = createLocalSessionOps(config.deviceId, ctx, {
+    getExternalCandidates: () => scanner.getCandidates(),
+  });
+  const agent = new FleetNodeAgent({ config, ops, device, scanner });
   agent.start();
   return agent;
 }

@@ -7,6 +7,7 @@ function makeOps(overrides: Partial<LocalSessionOps> = {}): LocalSessionOps {
   return {
     listSessions: vi.fn(() => []),
     createSession: vi.fn(async () => ({}) as FleetSessionSummary),
+    adoptSession: vi.fn(async () => ({}) as FleetSessionSummary),
     stopSession: vi.fn(async () => {}),
     writeInput: vi.fn(),
     resize: vi.fn(),

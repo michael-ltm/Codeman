@@ -89,9 +89,12 @@ export function registerRespawnRoutes(
     }
     const session = findSessionOrFail(ctx, id);
 
-    // Respawn is not supported for external-CLI sessions (opencode/codex)
-    if (isExternalCliMode(session.mode)) {
-      return createErrorResponse(ApiErrorCode.INVALID_INPUT, `Respawn is not supported for ${session.mode} sessions`);
+    // Respawn is not supported for external-CLI sessions (opencode/codex) or for
+    // ADOPTED foreign-tmux sessions (Rev5 §13.2) — Codeman must not drive
+    // /clear+/init cycling into a session whose lifecycle it doesn't own.
+    if (isExternalCliMode(session.mode) || session.isAdopted) {
+      const why = session.isAdopted ? 'adopted (external tmux)' : session.mode;
+      return createErrorResponse(ApiErrorCode.INVALID_INPUT, `Respawn is not supported for ${why} sessions`);
     }
 
     // Create or get existing controller
@@ -232,9 +235,12 @@ export function registerRespawnRoutes(
       return createErrorResponse(ApiErrorCode.SESSION_BUSY, 'Session is busy');
     }
 
-    // Respawn is not supported for external-CLI sessions (opencode/codex)
-    if (isExternalCliMode(session.mode)) {
-      return createErrorResponse(ApiErrorCode.INVALID_INPUT, `Respawn is not supported for ${session.mode} sessions`);
+    // Respawn is not supported for external-CLI sessions (opencode/codex) or for
+    // ADOPTED foreign-tmux sessions (Rev5 §13.2) — Codeman must not drive
+    // /clear+/init cycling into a session whose lifecycle it doesn't own.
+    if (isExternalCliMode(session.mode) || session.isAdopted) {
+      const why = session.isAdopted ? 'adopted (external tmux)' : session.mode;
+      return createErrorResponse(ApiErrorCode.INVALID_INPUT, `Respawn is not supported for ${why} sessions`);
     }
 
     try {
@@ -297,9 +303,12 @@ export function registerRespawnRoutes(
     const body = reResult.data as { config?: Partial<RespawnConfig>; durationMinutes?: number };
     const session = findSessionOrFail(ctx, id);
 
-    // Respawn is not supported for external-CLI sessions (opencode/codex)
-    if (isExternalCliMode(session.mode)) {
-      return createErrorResponse(ApiErrorCode.INVALID_INPUT, `Respawn is not supported for ${session.mode} sessions`);
+    // Respawn is not supported for external-CLI sessions (opencode/codex) or for
+    // ADOPTED foreign-tmux sessions (Rev5 §13.2) — Codeman must not drive
+    // /clear+/init cycling into a session whose lifecycle it doesn't own.
+    if (isExternalCliMode(session.mode) || session.isAdopted) {
+      const why = session.isAdopted ? 'adopted (external tmux)' : session.mode;
+      return createErrorResponse(ApiErrorCode.INVALID_INPUT, `Respawn is not supported for ${why} sessions`);
     }
 
     // Check if session is running (has a PID)

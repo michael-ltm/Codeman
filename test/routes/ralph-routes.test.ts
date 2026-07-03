@@ -506,4 +506,24 @@ describe('ralph-routes', () => {
       expect(body.success).toBe(false);
     });
   });
+
+  // ========== Adopted (foreign-tmux) sessions are automation-exempt (Rev5 §13.2) ==========
+
+  // Returns createErrorResponse (not throw); this generic harness lacks the
+  // errorCode→HTTP-status hook, so assert on the body (statusCode stays 200 here).
+  describe('adopted sessions reject ralph-config (even claude-mode)', () => {
+    it('POST /ralph-config refuses an adopted session', async () => {
+      harness.ctx._session.isAdopted = true;
+      harness.ctx._session.mode = 'claude'; // claude-mode adopted session slips past the external-CLI gate
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: `/api/sessions/${harness.ctx._sessionId}/ralph-config`,
+        payload: { enabled: true, completionPhrase: 'DONE' },
+      });
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(false);
+      expect(body.errorCode).toBe('INVALID_INPUT');
+      expect(body.error).toContain('adopted');
+    });
+  });
 });

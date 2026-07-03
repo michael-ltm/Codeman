@@ -188,6 +188,9 @@ export class MockSession extends EventEmitter {
   /** CLI mode */
   mode: string = 'claude';
 
+  /** Adopted foreign-tmux session (Rev5 §13.2) — detach-only, automation-exempt. */
+  isAdopted: boolean = false;
+
   /** Text output buffer (stripped of ANSI) */
   textOutput: string = '';
 

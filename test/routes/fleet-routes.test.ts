@@ -81,6 +81,7 @@ function makeHandle(overrides: Partial<FleetDeviceHandle> = {}): FleetDeviceHand
     createSession: vi.fn(async (input: CreateFleetSessionRequest) =>
       makeSession({ workingDir: input.workingDir, name: input.name })
     ),
+    adoptSession: vi.fn(async () => makeSession({ id: 'adopted_1', adopted: true })),
     stopSession: vi.fn(async () => {}),
     writeInput: vi.fn(),
     resize: vi.fn(),
@@ -99,6 +100,7 @@ class MockController {
   isOnline = vi.fn((_deviceId: string): boolean => false);
   hasSession = vi.fn((_deviceId: string, _sessionId: string): boolean => true);
   getExternalSessions = vi.fn((): Record<string, unknown[]> => ({}));
+  findExternalSession = vi.fn((_deviceId: string, _socket: string, _tmuxSession: string): unknown => null);
 }
 
 /** Mock DeviceRegistry — only the methods fleet-routes.ts calls directly. */
@@ -516,6 +518,68 @@ describe('fleet-routes', () => {
   });
 
   // ========== DELETE /api/fleet/devices/:deviceId/sessions/:sessionId ==========
+
+  // ========== POST /api/fleet/devices/:deviceId/adopt-session ==========
+
+  describe('POST /api/fleet/devices/:deviceId/adopt-session', () => {
+    const candidate = { socket: '', tmuxSession: 'work', mode: 'codex', workingDir: '/home/ming/proj', firstSeenAt: 1 };
+
+    it('resolves the candidate from the central cache and adopts it', async () => {
+      const handle = makeHandle();
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+      harness.controller.findExternalSession.mockReturnValueOnce(candidate);
+
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/fleet/devices/dev_1/adopt-session',
+        payload: { socket: '', tmuxSession: 'work' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(harness.controller.findExternalSession).toHaveBeenCalledWith('dev_1', '', 'work');
+      expect(handle.adoptSession).toHaveBeenCalledWith(candidate);
+      expect(res.json().data).toMatchObject({ id: 'adopted_1', adopted: true });
+    });
+
+    it('404s when the candidate is no longer in the central cache', async () => {
+      const handle = makeHandle();
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+      harness.controller.findExternalSession.mockReturnValueOnce(null);
+
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/fleet/devices/dev_1/adopt-session',
+        payload: { socket: '', tmuxSession: 'gone' },
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(handle.adoptSession).not.toHaveBeenCalled();
+    });
+
+    it('409s when the device is offline', async () => {
+      harness.controller.getHandle.mockReturnValueOnce(null);
+      harness.controller.isOnline.mockReturnValueOnce(false);
+
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/fleet/devices/dev_1/adopt-session',
+        payload: { socket: '', tmuxSession: 'work' },
+      });
+
+      expect(res.statusCode).toBe(409);
+    });
+
+    it('400s on a missing tmuxSession', async () => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/fleet/devices/dev_1/adopt-session',
+        payload: { socket: '' },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+  });
 
   describe('DELETE /api/fleet/devices/:deviceId/sessions/:sessionId', () => {
     it('calls handle.stopSession and returns { ok: true }', async () => {

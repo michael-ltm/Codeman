@@ -236,4 +236,39 @@ describe('respawn-routes', () => {
       expect(res.statusCode).toBe(404);
     });
   });
+
+  // ========== Adopted (foreign-tmux) sessions are automation-exempt (Rev5 §13.2) ==========
+
+  // NOTE: these routes RETURN createErrorResponse (not throw), and this generic
+  // harness lacks the errorCode→HTTP-status onSend hook that production installs,
+  // so the body is the source of truth (statusCode stays 200 here). The red line
+  // being proven: no respawn controller is ever created for an adopted session.
+  describe('adopted sessions reject respawn (even claude-mode)', () => {
+    it('POST /respawn/start refuses an adopted session and creates no controller', async () => {
+      harness.ctx._session.isAdopted = true;
+      harness.ctx._session.mode = 'claude'; // a claude-mode adopted session slips past the external-CLI gate
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: `/api/sessions/${harness.ctx._sessionId}/respawn/start`,
+        payload: { idleTimeoutMs: 5000 },
+      });
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(false);
+      expect(body.errorCode).toBe('INVALID_INPUT');
+      expect(body.error).toContain('adopted');
+      expect(harness.ctx.respawnControllers.has(harness.ctx._sessionId)).toBe(false);
+    });
+
+    it('POST /respawn/enable refuses an adopted session and creates no controller', async () => {
+      harness.ctx._session.isAdopted = true;
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: `/api/sessions/${harness.ctx._sessionId}/respawn/enable`,
+      });
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(false);
+      expect(body.errorCode).toBe('INVALID_INPUT');
+      expect(harness.ctx.respawnControllers.has(harness.ctx._sessionId)).toBe(false);
+    });
+  });
 });

@@ -70,6 +70,18 @@ const FleetDirsQuerySchema = z.object({
   path: z.string().max(4096).optional(),
 });
 
+/**
+ * Body for adopting a discovered external tmux session (Task 28). Only the
+ * lookup key (socket + tmuxSession) crosses the wire; the server resolves it
+ * against the central's per-device external-session cache so the browser never
+ * supplies an arbitrary workingDir/mode (those come from the trusted candidate).
+ * `socket === ''` is valid (the user's default tmux server).
+ */
+const FleetAdoptSessionSchema = z.object({
+  socket: z.string().max(256),
+  tmuxSession: z.string().min(1).max(256),
+});
+
 const DEVICE_OFFLINE_MESSAGE = 'Device is offline';
 const NODE_TIMEOUT_MESSAGE = 'Fleet node request timed out';
 const UNKNOWN_SESSION_MESSAGE = 'Unknown session';
@@ -150,6 +162,37 @@ export function registerFleetRoutes(
       }
       if (/unavailable/i.test(message)) {
         throwFleetError(422, ApiErrorCode.OPERATION_FAILED, message);
+      }
+      throw err;
+    }
+  });
+
+  // Adopt a discovered external (foreign-tmux) session as a first-class fleet
+  // session (Task 28 / §13.2). The candidate is resolved server-side from the
+  // central's per-device cache (populated by the node's `external-sessions`
+  // frames / the central's own scanner): unknown/vanished → 404, offline → 409.
+  // The resulting session is DETACH-ONLY — closing it never kills the foreign
+  // tmux session (enforced by Session.externalHost + deleteSessionCore).
+  app.post<{ Params: { deviceId: string } }>('/api/fleet/devices/:deviceId/adopt-session', async (req) => {
+    const { deviceId } = req.params;
+    const { socket, tmuxSession } = parseBody(FleetAdoptSessionSchema, req.body);
+    const handle = controller.getHandle(deviceId);
+    if (!handle || !controller.isOnline(deviceId)) {
+      throwFleetError(409, ApiErrorCode.CONFLICT, DEVICE_OFFLINE_MESSAGE);
+    }
+    const candidate = controller.findExternalSession(deviceId, socket, tmuxSession);
+    if (!candidate) {
+      throwFleetError(404, ApiErrorCode.NOT_FOUND, 'External tmux session not found');
+    }
+    try {
+      return await handle.adoptSession(candidate);
+    } catch (err) {
+      // A local device's adoptSessionCore already throws a structured
+      // {statusCode,body} error (e.g. 404 for a vanished candidate) — pass through.
+      if (err && typeof err === 'object' && 'statusCode' in err) throw err;
+      const message = getErrorMessage(err);
+      if (message === NODE_TIMEOUT_MESSAGE) {
+        throwFleetError(504, ApiErrorCode.OPERATION_FAILED, message);
       }
       throw err;
     }

@@ -515,4 +515,48 @@ describe('FleetCentralController', () => {
     controller.disconnectNode(deviceId);
     expect(controller.getExternalSessions()[deviceId]).toBeUndefined();
   });
+
+  it('17. RemoteDeviceHandle.adoptSession sends an adopt-session frame; the ack seeds the cache + resolves', async () => {
+    const reg = makeRegistry();
+    const deviceId = pairDevice(reg);
+    const controller = new FleetCentralController(reg);
+    const onBroadcast = vi.fn();
+    controller.on('broadcast', onBroadcast);
+    const socket = makeSocket();
+    controller.connectNode(deviceId, socket, helloFrame(deviceId));
+    const handle = controller.getHandle(deviceId)!;
+
+    const candidate = { socket: '', tmuxSession: 'work', mode: 'codex' as const, workingDir: '/proj', firstSeenAt: 1 };
+    const promise = handle.adoptSession(candidate);
+
+    const sent = framesSent(socket, 'adopt-session');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ candidate });
+    expect(typeof sent[0].requestId).toBe('string');
+
+    const adopted = makeSession({ deviceId, id: 'adopted-1', adopted: true });
+    controller.handleNodeFrame(deviceId, { t: 'ack', requestId: sent[0].requestId as string, data: adopted });
+
+    await expect(promise).resolves.toEqual(adopted);
+    // ack seeds the session cache immediately (no separate session:update) and
+    // broadcasts the sessions-updated so the adopted tab is routable at once.
+    expect(await handle.listSessions()).toContainEqual(adopted);
+    expect(onBroadcast).toHaveBeenCalledWith('fleet:sessions-updated', expect.objectContaining({ deviceId }));
+  });
+
+  it('18. findExternalSession returns a cached candidate by socket+session, else null', () => {
+    const reg = makeRegistry();
+    const deviceId = pairDevice(reg);
+    const controller = new FleetCentralController(reg);
+    controller.connectNode(deviceId, makeSocket(), helloFrame(deviceId));
+
+    const candidate = { socket: 'sk', tmuxSession: 'work', mode: 'claude' as const, workingDir: '/w', firstSeenAt: 1 };
+    controller.handleNodeFrame(deviceId, { t: 'external-sessions', candidates: [candidate] });
+
+    expect(controller.findExternalSession(deviceId, 'sk', 'work')).toEqual(candidate);
+    // wrong socket / wrong session / unknown device → null
+    expect(controller.findExternalSession(deviceId, '', 'work')).toBeNull();
+    expect(controller.findExternalSession(deviceId, 'sk', 'nope')).toBeNull();
+    expect(controller.findExternalSession('unknown-device', 'sk', 'work')).toBeNull();
+  });
 });

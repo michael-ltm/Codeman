@@ -25,8 +25,10 @@ import {
 } from '../web/route-helpers.js';
 import { listHistorySessions, type HistorySession } from '../web/history-sessions-core.js';
 import { listDirsSafe } from './dir-listing.js';
+import { adoptSessionCore } from './adopt-session.js';
 import type {
   CreateFleetSessionRequest,
+  ExternalSessionCandidate,
   FleetSessionMode,
   FleetSessionStatus,
   FleetSessionSummary,
@@ -51,6 +53,8 @@ const FLEET_SESSION_MODES: readonly FleetSessionMode[] = ['claude', 'shell', 'op
 export interface LocalSessionOps {
   listSessions(): FleetSessionSummary[];
   createSession(input: CreateFleetSessionRequest): Promise<FleetSessionSummary>;
+  /** Adopt a discovered foreign-tmux session (Rev5 §13.2). Detach-only lifecycle. */
+  adoptSession(candidate: ExternalSessionCandidate): Promise<FleetSessionSummary>;
   stopSession(sessionId: string): Promise<void>;
   /** Applies `data` to the session's PTY, deduping via `shouldApplyInput` when `seq`/`cid` are given (at-most-once). */
   writeInput(sessionId: string, data: string, seq?: number, cid?: string): void;
@@ -81,7 +85,15 @@ export function historySessionToResumeCandidate(h: HistorySession): ResumeCandid
  * `deviceId` is stamped onto every FleetSessionSummary so callers can treat
  * local and remote sessions uniformly once aggregated by the central controller.
  */
-export function createLocalSessionOps(deviceId: string, ctx: SessionCoreCtx): LocalSessionOps {
+export function createLocalSessionOps(
+  deviceId: string,
+  ctx: SessionCoreCtx,
+  opts?: {
+    /** This device's current external-session candidates (scanner cache), used
+     *  to reject an adopt request for a candidate that has since vanished. */
+    getExternalCandidates?: () => ExternalSessionCandidate[];
+  }
+): LocalSessionOps {
   const toSummary = (s: Session): FleetSessionSummary => ({
     deviceId,
     id: s.id,
@@ -92,6 +104,7 @@ export function createLocalSessionOps(deviceId: string, ctx: SessionCoreCtx): Lo
     pid: s.pid ?? null,
     createdAt: s.createdAt,
     lastActivityAt: s.lastActivityAt,
+    adopted: s.isAdopted || undefined,
   });
 
   return {
@@ -114,6 +127,17 @@ export function createLocalSessionOps(deviceId: string, ctx: SessionCoreCtx): Lo
       return toSummary(session);
     },
 
+    adoptSession: async (candidate) => {
+      const session = await adoptSessionCore(
+        ctx,
+        candidate,
+        opts?.getExternalCandidates ? { listCandidates: opts.getExternalCandidates } : {}
+      );
+      return toSummary(session);
+    },
+
+    // deleteSessionCore internally translates an adopted session to detach-only
+    // (never kills the foreign tmux session) — see route-helpers.ts.
     stopSession: (id) => deleteSessionCore(ctx, id, true),
 
     writeInput: (id, data, seq, cid) => {

@@ -112,6 +112,7 @@ function makeOps(): MockOps {
   const ops = {
     listSessions: vi.fn<() => FleetSessionSummary[]>(() => []),
     createSession: vi.fn(async (input) => makeSession({ id: 'created', workingDir: input.workingDir })),
+    adoptSession: vi.fn(async (c) => makeSession({ id: 'adopted', workingDir: c.workingDir, adopted: true })),
     stopSession: vi.fn(async () => {}),
     writeInput: vi.fn(),
     resize: vi.fn(),
@@ -241,6 +242,38 @@ describe('FleetNodeAgent', () => {
     const ack = framesOfType(central, 'ack').find((f) => f.requestId === 'req-1')!;
     expect(ops.createSession).toHaveBeenCalledWith({ workingDir: '/work' });
     expect(ack.data).toMatchObject({ id: 'created', workingDir: '/work' });
+  });
+
+  // 2b. adopt-session -> ack with the adopted FleetSessionSummary
+  it('replies with an ack carrying ops.adoptSession result', async () => {
+    agent = newAgent();
+    agent.start();
+    await waitFor(() => expect(central.serverSocket).not.toBeNull());
+
+    const candidate = { socket: '', tmuxSession: 'work', mode: 'codex', workingDir: '/work', firstSeenAt: 1 };
+    sendToAgent(central, { t: 'adopt-session', requestId: 'req-adopt', candidate });
+
+    await waitFor(() => expect(framesOfType(central, 'ack').some((f) => f.requestId === 'req-adopt')).toBe(true));
+    const ack = framesOfType(central, 'ack').find((f) => f.requestId === 'req-adopt')!;
+    expect(ops.adoptSession).toHaveBeenCalledWith(candidate);
+    expect(ack.data).toMatchObject({ id: 'adopted', workingDir: '/work', adopted: true });
+  });
+
+  // 2c. adopt-session throws -> error{requestId, message}
+  it('replies with an error frame when ops.adoptSession throws', async () => {
+    ops.adoptSession = vi.fn(async () => {
+      throw new Error('boom-adopt');
+    }) as unknown as MockOps['adoptSession'];
+    agent = newAgent();
+    agent.start();
+    await waitFor(() => expect(central.serverSocket).not.toBeNull());
+
+    const candidate = { socket: '', tmuxSession: 'gone', mode: 'codex', workingDir: '/w', firstSeenAt: 1 };
+    sendToAgent(central, { t: 'adopt-session', requestId: 'req-adopt-err', candidate });
+
+    await waitFor(() => expect(framesOfType(central, 'error').some((f) => f.requestId === 'req-adopt-err')).toBe(true));
+    const err = framesOfType(central, 'error').find((f) => f.requestId === 'req-adopt-err')!;
+    expect(err.message).toContain('boom-adopt');
   });
 
   // 3. create-session throws -> error{requestId, message}

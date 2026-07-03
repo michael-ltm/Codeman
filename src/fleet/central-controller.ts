@@ -139,6 +139,20 @@ class RemoteDeviceHandle implements FleetDeviceHandle {
     return data as FleetSessionSummary;
   }
 
+  async adoptSession(candidate: ExternalSessionCandidate): Promise<FleetSessionSummary> {
+    // Seed the cache from the ack (the node sends no separate session:update for
+    // an adopt), so the adopted tab is immediately routable — same reasoning as
+    // createSession above (avoids racing the ≤10s heartbeat / 4004 readiness gate).
+    const data = await this.request(
+      (requestId) => ({ t: 'adopt-session', requestId, candidate }),
+      (result) => {
+        this.upsertSession(result as FleetSessionSummary);
+        this.onSessionsChanged();
+      }
+    );
+    return data as FleetSessionSummary;
+  }
+
   async stopSession(sessionId: string): Promise<void> {
     await this.request((requestId) => ({ t: 'stop-session', requestId, sessionId }));
   }
@@ -430,6 +444,18 @@ export class FleetCentralController extends EventEmitter {
     const out: Record<string, ExternalSessionCandidate[]> = {};
     for (const [deviceId, candidates] of this.externalSessions) out[deviceId] = candidates;
     return out;
+  }
+
+  /**
+   * Look up a single external-session candidate in the central cache by
+   * device + socket + tmuxSession (Task 28's adopt REST path). Returns null when
+   * the device has no cache or the candidate is gone (→ the route 404s), so the
+   * node is never asked to adopt a session the fleet no longer sees.
+   */
+  findExternalSession(deviceId: string, socket: string, tmuxSession: string): ExternalSessionCandidate | null {
+    const candidates = this.externalSessions.get(deviceId);
+    if (!candidates) return null;
+    return candidates.find((c) => c.socket === socket && c.tmuxSession === tmuxSession) ?? null;
   }
 
   /** Cache a device's external candidates and broadcast the update to the dashboard. */
