@@ -548,4 +548,5 @@ export const SseEvent = {
   FleetDeviceOnline,
   FleetDeviceOffline,
   FleetSessionsUpdated,
+  FleetExternalSessionsUpdated,
 } as const;

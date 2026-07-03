@@ -243,4 +243,34 @@ describe('ExternalSessionScanner', () => {
       expect(c.args).toContain('-a');
     }
   });
+
+  it('skips applying results if ps snapshot returns empty (transient failure)', async () => {
+    // First scan is normal: finds a candidate.
+    let psOutput = PS_SNAPSHOT;
+    const exec = (file: string, args: readonly string[]): Promise<string> => {
+      if (file === 'ps') return Promise.resolve(psOutput);
+      const i = args.indexOf('-L');
+      const socket = i >= 0 ? String(args[i + 1]) : '';
+      if (socket === '') return Promise.resolve(paneLine('work', 500, '/home/ming/work'));
+      return Promise.reject(new Error('no server'));
+    };
+    const scanner = new ExternalSessionScanner({ ownSocket: OWN_SOCKET, execImpl: exec });
+    const onChanged = vi.fn();
+    scanner.on('changed', onChanged);
+
+    // First scan: normal ps output -> finds candidate
+    await scanner.scanNow();
+    expect(scanner.getCandidates()).toHaveLength(1);
+    expect(scanner.getCandidates()[0]).toMatchObject({ tmuxSession: 'work', mode: 'claude' });
+    expect(onChanged).toHaveBeenCalledTimes(1);
+
+    // Second scan: ps returns empty string (transient failure)
+    psOutput = '';
+    await scanner.scanNow();
+    // Candidates should remain unchanged (not wiped)
+    expect(scanner.getCandidates()).toHaveLength(1);
+    expect(scanner.getCandidates()[0]).toMatchObject({ tmuxSession: 'work', mode: 'claude' });
+    // No new 'changed' emit for the empty result
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
 });
