@@ -1462,3 +1462,38 @@ Task 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10(此时命令行可
 - [ ] 回归红线:本地会话 tab 行为与原版一致(开/关/切/终端)。
 - [ ] 全量门禁:`npm run typecheck && npm run lint && npm run test:ci`(基线 flaky 除外)。
 - [ ] 部署:push → mini `git pull + build + kickstart` → macbook `git pull + build + launchctl kickstart gui/$(id -u)/com.codeman.node` → 真机验收 dashboard。
+
+---
+
+# Rev 4 追加:跨设备 Resume + 左侧会话列表 + 目录选择(2026-07-03 用户反馈)
+
+> 以 spec §12 为准。三个需求:①欢迎页 Resume Conversation 只有中央本机历史 → 完整跨设备恢复;②tab 仅顶部 → 设置项切换左侧竖排(桌面);③新建会话 workingDir 纯手输 → 智能下拉 + 目录浏览模态。
+
+### Task 22: 后端 — 协议扩展 + 节点/本地实现 + REST
+
+**Files:** Modify `src/fleet/protocol.ts`(frames + ResumeCandidate 类型 + zod)、`src/fleet/node-agent.ts`(两个新 RPC handler)、`src/fleet/local-session-ops.ts` + `src/fleet/device-adapter.ts` + `src/fleet/central-controller.ts`(FleetDeviceHandle 增 `listResumeCandidates()` 与 `listDirs(path)`,Local/Remote 双实现)、`src/web/routes/fleet-routes.ts`(两个 GET 端点 + create 接受 resumeSessionId);Create `src/fleet/dir-listing.ts`(纯函数:$HOME 约束 + realpath 校验 + 目录 only + 一层 + ≤200 + 排除隐藏;单测重点)。
+**锚点:** 本地 resume 候选核心 = `/api/history/sessions` 的 handler(terminal-ui.js:1033 消费;先定位其路由文件),照 Task 6 模式抽取核心函数供 REST 与 fleet 共用。`createSessionCore` 已支持 resumeSessionId 输入(Task 6 的 CreateSessionCoreInput)。
+**TDD:** protocol 往返;dir-listing 逃逸攻击用例(`../`、绝对路径越界、symlink 指向 /etc、隐藏目录、>200 截断);fleet-routes 新端点(离线 409/path 校验/candidates 透传);node-agent 新帧 ack/error。
+**Gates:** typecheck/lint + 相关测试文件;commit `feat: add cross-device resume and dir-listing RPCs`。
+
+### Task 23: 跨设备 Resume UI
+
+**Files:** Modify `src/web/public/terminal-ui.js`(历史列表渲染/取数处,~:1028-1370)、`src/web/public/fleet-api.js`。
+**规格(spec §12.3):** 取数时并行拉各在线设备 `/resume-candidates`,与本地列表合并全局按 updatedAt 降序;远程条目带设备 chip(escapeHtml);点远程条目 → `fleetCreateSession(deviceId, {workingDir, mode:'claude', resumeSessionId})` → 刷新 fleet tabs 并选中新 tab;本地条目路径零改动(红线);失败 toast。搜索过滤行为对远程条目同样生效或明确豁免(执行者读现有搜索逻辑后定,报告说明)。
+**Gates:** frontend-syntax/public-assets/format + render-index-html 等;commit `feat: cross-device resume conversations`。
+
+### Task 24: 左侧会话列表布局
+
+**Files:** Modify `src/web/public/settings-ui.js`(Display 设置 + displayKeys)、`app.js`/`fleet-tabs.js`(渲染分支)、`styles.css`、`index.html`(左栏容器)。
+**规格(spec §12.4):** 设置 `sessionListPosition: 'top'|'left'`(默认 top,per-device);left 模式竖排列表复用与 tab 条完全相同的数据与顺序(本地+fleet),状态点/模式徽标/设备前缀,固定宽度可滚动,顶部 tab 条隐藏;切换即时生效;手机断点忽略;网格控件/设备按钮位置不受影响;全 CSS 变量。红线:top 模式(默认)渲染路径字节不变。
+**Gates:** 同上;commit `feat: optional left-side session list layout`。
+
+### Task 25: 工作目录选择器
+
+**Files:** Modify `src/web/public/fleet-panel.js`、`fleet-api.js`、`styles.css`。
+**规格(spec §12.5):** ①下拉:表单 workingDir 变为 input+datalist(或自绘下拉),候选 = 设备现有会话目录 ∪ resume 候选目录(fleet-api 拉取,去重降序),可手输;②"浏览…"按钮 → 应用模态框(仿现有 modal 结构):面包屑 + 目录列表(list-dirs 端点),点目录进入下一层,"选择此目录"回填表单;加载态/错误 toast;禁原生对话框;全部 escapeHtml。
+**Gates:** 同上;commit `feat: working-dir picker for remote session create`。
+
+### Task 26: 浏览器实测 + 部署
+
+隔离双实例拓扑;桌面:跨设备 resume 全流程(点远程历史条目 → 新 tab 活)、左侧布局切换往返、目录浏览模态逐级+回填、红线回归(本地 resume/顶部布局不变);移动 375px:布局设置被忽略、resume 列表可用;gates:typecheck/lint/test:ci(既有 flaky 除外);部署 mini+macbook 并真机验证。

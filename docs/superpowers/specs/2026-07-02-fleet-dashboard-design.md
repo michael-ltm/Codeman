@@ -225,3 +225,28 @@ const title = `${deviceName} / ${sessionLabel}`;
 - 设备自动发现(mDNS 等)。
 - 中央高可用/多中央。
 - 非 tmux 终端后端(`createMultiplexer()` 硬依赖 tmux,mux-factory.ts:15)。
+
+## 12. Rev 4 追加(2026-07-03 用户验收反馈):跨设备 Resume + 左侧会话列表 + 工作目录选择
+
+### 12.1 协议扩展
+- `CentralToNodeFrame` 新增:`{t:'list-resume-candidates', requestId}` → ack data `ResumeCandidate[]`(`{sessionId, workingDir, title, updatedAt, projectKey?}`,复用本地 `/api/history/sessions` 的同一核心逻辑);`{t:'list-dirs', requestId, path}` → ack data `{path, dirs: string[]}`。
+- `CreateFleetSessionRequest` 新增 `resumeSessionId?: string`(仅 claude 模式;透传至 `createSessionCore` 的既有 resumeSessionId 输入)。
+- **list-dirs 安全约束(节点端强制)**:realpath 解析后必须仍在 `$HOME` 内(拒绝符号链接逃逸);只返回目录名(绝不返回文件内容/文件名);单次一层;条目数上限 200;隐藏目录(`.` 开头)默认排除。中央 REST 面走正常浏览器认证,不豁免。
+
+### 12.2 REST
+- `GET /api/fleet/devices/:deviceId/resume-candidates` → `{ candidates }`(本地设备经 LocalSessionOps 直调同一核心)。
+- `GET /api/fleet/devices/:deviceId/dirs?path=` → `{ path, dirs }`(离线 409;path 缺省 = `$HOME`)。
+- `POST /api/fleet/devices/:deviceId/sessions` 接受 `resumeSessionId`。
+
+### 12.3 跨设备 Resume UI
+- 欢迎页 Resume Conversation 列表混排所有在线设备的候选,**条目带设备 chip**(`设备名`,本机不带或标"本机");按 updatedAt 全局降序。
+- 点远程条目 → 在对应设备以 claude 模式 + 该 workingDir + resumeSessionId 创建会话,自动出现在 tab 条并选中。
+- 本地条目的既有行为逐字节不变(红线);设备离线的候选不显示(或置灰)。
+
+### 12.4 左侧会话列表布局(桌面/平板;手机不变)
+- App Settings → Display 新增"会话列表位置:顶部 / 左侧"(加入 per-device displayKeys,不跨设备同步)。
+- 左侧模式:竖排会话列表(本地+fleet 同一数据源与顺序),显示状态点/模式徽标/设备名前缀,宽度固定可滚动;顶部 tab 条隐藏;终端区相应让位。切回顶部即还原。手机断点忽略该设置。
+
+### 12.5 工作目录选择(设备面板新建会话表单)
+- **智能下拉**:候选 = 该设备现有会话 workingDir ∪ resume 候选 workingDir,去重、按最近使用降序;仍可手输任意路径。
+- **目录浏览**:表单旁"浏览…"按钮 → 应用模态框逐级浏览(list-dirs 驱动,面包屑导航,选中即回填);本地设备走同一 UI(local handle 直调)。禁原生对话框。
