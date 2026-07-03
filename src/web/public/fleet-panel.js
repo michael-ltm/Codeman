@@ -20,12 +20,24 @@
  *     selection; offline devices disabled), required workingDir, a mode
  *     segmented control (claude/codex/shell/gemini/opencode) → POST via
  *     fleet-api, then refreshFleetState + toast.
+ *   - workingDir picker (Task 25, spec §12.5): the input carries a `<datalist>`
+ *     of recent candidates — the selected device's live session workingDirs ∪
+ *     its resume-candidate workingDirs (fetched lazily, cached per device for
+ *     the panel's lifetime), deduped and ranked by most-recent activity, capped
+ *     at 15. A "浏览…" button beside it opens `#fleetDirModal`, an app-modal
+ *     breadcrumb+list directory browser driven by `fleetListDirs()`
+ *     (GET .../dirs) that works identically for the local device and remotes.
+ *     Manual typing into the input is always allowed either way.
  *
  * Hard rules honored here:
  *   - NO native confirm/alert/prompt — the stop-session confirmation uses the
- *     app's own `#fleetStopModal` modal; everything else uses showToast.
+ *     app's own `#fleetStopModal` modal, the dir browser is `#fleetDirModal`;
+ *     everything else uses showToast.
  *   - Every device/session-sourced string flows through escapeHtml (device
- *     names/hostnames come from remote machines → untrusted).
+ *     names/hostnames come from remote machines → untrusted); every
+ *     server-sourced directory name/path (dir browser + datalist candidates)
+ *     likewise flows through escapeHtml — a remote node's filesystem is
+ *     equally untrusted input.
  *   - Only existing CSS variables (follows data-skin).
  *
  * SSE refresh: fleet:* events map to refreshFleetState (app.js), which caches
@@ -34,7 +46,8 @@
  *
  * @mixin Extends CodemanApp.prototype via Object.assign
  * @dependency app.js (CodemanApp, this.$, this._copyText, showToast),
- *   fleet-api.js (fleetCreatePairingCode/fleetCreateSession/fleetStopSession),
+ *   fleet-api.js (fleetCreatePairingCode/fleetCreateSession/fleetStopSession/
+ *   fleetResumeCandidates/fleetListDirs),
  *   fleet-tabs.js (refreshFleetState/stopFleetSession/isFleetKey),
  *   constants.js (escapeHtml)
  * @loadorder after fleet-tabs.js
@@ -119,6 +132,8 @@ Object.assign(CodemanApp.prototype, {
 
     this._renderFleetDeviceSelect(devices);
     this._renderFleetModeSeg();
+    const createSel = this.$('fleetCreateDevice');
+    this._refreshFleetDirCandidates(createSel && createSel.value);
   },
 
   /** One device row (+ its remote sessions when selected). All strings escaped. */
@@ -324,6 +339,75 @@ Object.assign(CodemanApp.prototype, {
     this.showToast(ok ? '配对命令已复制' : '复制失败', ok ? 'success' : 'error');
   },
 
+  // ─── workingDir smart dropdown (Task 25) ────────────────────────────────────
+
+  /** Create-form device <select> onchange — refresh the workingDir `<datalist>`. */
+  onFleetCreateDeviceChange() {
+    const sel = this.$('fleetCreateDevice');
+    this._refreshFleetDirCandidates(sel && sel.value);
+  },
+
+  /**
+   * (Re)build the workingDir `<datalist>` candidates for `deviceId`: that
+   * device's live session workingDirs (fresh off `this._fleetState` every
+   * call) ∪ its resume-candidate workingDirs (fetched once per device and
+   * cached in `this._fleetDirCandCache` for the panel's lifetime — switching
+   * devices back and forth doesn't refetch). Silent-fails to an empty resume
+   * set on any error (offline/timeout/network); the session-derived half of
+   * the list is unaffected either way. Manual typing into the input always
+   * works regardless of what's in the datalist.
+   */
+  async _refreshFleetDirCandidates(deviceId) {
+    this._renderFleetDirDatalist(deviceId);
+    if (!deviceId) return;
+    if (!this._fleetDirCandCache) this._fleetDirCandCache = new Map();
+    if (this._fleetDirCandCache.has(deviceId)) return; // cached (or an in-flight fetch already placeheld below)
+    this._fleetDirCandCache.set(deviceId, []); // placeholder: guards against duplicate concurrent fetches
+    let candidates = null;
+    try {
+      candidates = await this.fleetResumeCandidates(deviceId);
+    } catch {
+      /* silent-fail to empty */
+    }
+    this._fleetDirCandCache.set(deviceId, Array.isArray(candidates) ? candidates : []);
+    const sel = this.$('fleetCreateDevice');
+    if (sel && sel.value === deviceId) this._renderFleetDirDatalist(deviceId);
+  },
+
+  /**
+   * Merge the two candidate sources, dedup by workingDir keeping the most
+   * recent timestamp, sort most-recent-first, cap at 15, and paint the
+   * `<datalist>`. All values escaped (remote workingDirs are untrusted).
+   */
+  _renderFleetDirDatalist(deviceId) {
+    const list = this.$('fleetDirCandidates');
+    if (!list) return;
+    if (!deviceId) {
+      list.innerHTML = '';
+      return;
+    }
+    const state = this._fleetState || { sessions: [] };
+    const sessionDirs = (state.sessions || [])
+      .filter((s) => s.deviceId === deviceId && s.workingDir)
+      .map((s) => ({ dir: s.workingDir, at: s.lastActivityAt || 0 }));
+    const resumeCands = (this._fleetDirCandCache && this._fleetDirCandCache.get(deviceId)) || [];
+    const resumeDirs = resumeCands
+      .filter((c) => c && c.workingDir)
+      .map((c) => ({ dir: c.workingDir, at: c.updatedAt || 0 }));
+
+    const merged = new Map(); // workingDir -> most-recent `at` seen for it
+    for (const { dir, at } of [...sessionDirs, ...resumeDirs]) {
+      const prev = merged.get(dir);
+      if (prev === undefined || at > prev) merged.set(dir, at);
+    }
+    const ranked = [...merged.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15)
+      .map(([dir]) => dir);
+
+    list.innerHTML = ranked.map((dir) => `<option value="${escapeHtml(dir)}"></option>`).join('');
+  },
+
   // ─── Remote session create ──────────────────────────────────────────────────
 
   /** Validate + POST a remote session create, then refresh + toast. */
@@ -400,5 +484,137 @@ Object.assign(CodemanApp.prototype, {
       }
     }
     this.refreshFleetState();
+  },
+
+  // ─── Directory browser modal (Task 25, spec §12.5) ──────────────────────────
+  //
+  // Navigation state lives on `this._fleetDirBrowser` while `#fleetDirModal` is
+  // open: `{ deviceId, relPath, absPath, dirs, loading, error, reqId }`.
+  // `relPath` is ALWAYS home-relative (never absolute, never containing a
+  // leading slash) — every request to fleetListDirs() sends a relative
+  // subpath, which the node resolves under ITS OWN $HOME (dir-listing.ts).
+  // This sidesteps having to know or construct the target device's absolute
+  // home path / OS-specific separators in the browser; only the display value
+  // filled into the form on "选择此目录" uses the server-resolved absolute
+  // `path` verbatim. `reqId` guards against a stale response (from a
+  // superseded navigation, or after the modal was closed) clobbering newer
+  // state.
+
+  /** "浏览…" button — open the modal for the create-form's currently-selected device. */
+  openFleetDirBrowser() {
+    const sel = this.$('fleetCreateDevice');
+    const deviceId = sel && sel.value;
+    if (!deviceId) {
+      this.showToast('请先选择一个在线设备', 'warning');
+      return;
+    }
+    this._fleetDirBrowser = { deviceId, relPath: '', absPath: '', dirs: [], loading: false, error: null, reqId: 0 };
+    const modal = this.$('fleetDirModal');
+    if (modal) modal.classList.add('active');
+    this._fleetDirEscHandler = (ev) => {
+      if (ev.key === 'Escape') this.closeFleetDirBrowser();
+    };
+    document.addEventListener('keydown', this._fleetDirEscHandler);
+    this._loadFleetDir('');
+  },
+
+  /** Close the browser modal without applying a selection. */
+  closeFleetDirBrowser() {
+    const modal = this.$('fleetDirModal');
+    if (modal) modal.classList.remove('active');
+    this._fleetDirBrowser = null;
+    if (this._fleetDirEscHandler) {
+      document.removeEventListener('keydown', this._fleetDirEscHandler);
+      this._fleetDirEscHandler = null;
+    }
+  },
+
+  /**
+   * Fetch one level (`relPath`, home-relative) for the browser's device and
+   * render it. On failure the PREVIOUSLY loaded breadcrumb/list is kept intact
+   * (only an inline error + toast appear) so a transient blip doesn't strand
+   * the user at a blank screen.
+   */
+  async _loadFleetDir(relPath) {
+    const browser = this._fleetDirBrowser;
+    if (!browser) return;
+    const reqId = (browser.reqId += 1);
+    browser.loading = true;
+    browser.error = null;
+    this._renderFleetDirBrowser();
+    let result = null;
+    try {
+      result = await this.fleetListDirs(browser.deviceId, relPath || undefined);
+    } catch {
+      /* handled below */
+    }
+    // Bail if the modal was closed, or a newer navigation superseded this one,
+    // while the request was in flight.
+    if (this._fleetDirBrowser !== browser || browser.reqId !== reqId) return;
+    browser.loading = false;
+    if (!result) {
+      browser.error = '无法加载目录(设备离线或路径无效)';
+      this.showToast('加载目录失败', 'error');
+      this._renderFleetDirBrowser();
+      return;
+    }
+    browser.relPath = relPath || '';
+    browser.absPath = result.path;
+    browser.dirs = result.dirs;
+    this._renderFleetDirBrowser();
+  },
+
+  /** Render the breadcrumb + directory list from `this._fleetDirBrowser`. */
+  _renderFleetDirBrowser() {
+    const browser = this._fleetDirBrowser;
+    const crumbEl = this.$('fleetDirBreadcrumb');
+    const listEl = this.$('fleetDirList');
+    if (!browser || !crumbEl || !listEl) return;
+
+    // Breadcrumb is rendered relative to the home root (labeled '~') — the
+    // endpoint never returns anything outside home, so there is no ".." above it.
+    const segments = browser.relPath ? browser.relPath.split('/') : [];
+    const crumbs = ['~', ...segments];
+    crumbEl.innerHTML = crumbs
+      .map((seg, i) => {
+        const isLast = i === crumbs.length - 1;
+        const label = i === 0 ? '~' : escapeHtml(seg);
+        if (isLast) return `<span class="fleet-dir-crumb current">${label}</span>`;
+        const targetRel = segments.slice(0, i).join('/');
+        const targetJson = escapeHtml(JSON.stringify(targetRel));
+        return `<span class="fleet-dir-crumb" role="button" tabindex="0" onclick="app._loadFleetDir(${targetJson})" onkeydown="if(event.key==='Enter'){app._loadFleetDir(${targetJson})}">${label}</span><span class="fleet-dir-crumb-sep" aria-hidden="true">/</span>`;
+      })
+      .join('');
+
+    if (browser.loading) {
+      listEl.innerHTML = '<div class="fleet-dir-loading">加载中&hellip;</div>';
+    } else if (browser.error) {
+      listEl.innerHTML = `<div class="fleet-dir-error">${escapeHtml(browser.error)}</div>`;
+    } else if (browser.dirs.length === 0) {
+      listEl.innerHTML = '<div class="fleet-dir-empty">无子目录</div>';
+    } else {
+      listEl.innerHTML = browser.dirs
+        .map((name) => {
+          const nextRel = browser.relPath ? `${browser.relPath}/${name}` : name;
+          const nextJson = escapeHtml(JSON.stringify(nextRel));
+          return `<button type="button" class="fleet-dir-entry" onclick="app._loadFleetDir(${nextJson})">
+              <span class="fleet-dir-entry-icon" aria-hidden="true">&#128193;</span>
+              <span class="fleet-dir-entry-name">${escapeHtml(name)}</span>
+            </button>`;
+        })
+        .join('');
+    }
+
+    const selectBtn = this.$('fleetDirSelectBtn');
+    if (selectBtn) selectBtn.disabled = browser.loading || !!browser.error;
+  },
+
+  /** "选择此目录" — fill the create-form workingDir input with the resolved absolute path. */
+  selectFleetDirCurrent() {
+    const browser = this._fleetDirBrowser;
+    if (!browser || !browser.absPath || browser.loading || browser.error) return;
+    const dirEl = this.$('fleetCreateDir');
+    if (dirEl) dirEl.value = browser.absPath;
+    this.closeFleetDirBrowser();
   },
 });

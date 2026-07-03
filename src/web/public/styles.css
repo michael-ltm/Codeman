@@ -11707,6 +11707,133 @@ html[data-skin="daylight-blue"] .welcome-btn-tunnel.active:hover {
   margin-top: 0.4rem;
 }
 
+/* workingDir input + "浏览…" button row (Task 25) */
+.fleet-dir-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: stretch;
+}
+
+.fleet-dir-row .fleet-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.fleet-browse-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Directory browser modal (Task 25, spec §12.5) */
+.fleet-dir-modal .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+.fleet-dir-breadcrumb {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.15rem;
+  overflow-x: auto;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+
+.fleet-dir-crumb {
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.1rem 0.25rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.fleet-dir-crumb:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.fleet-dir-crumb.current {
+  color: var(--text);
+  font-weight: 500;
+  cursor: default;
+}
+
+.fleet-dir-crumb.current:hover {
+  background: none;
+}
+
+.fleet-dir-crumb-sep {
+  color: var(--text-muted);
+}
+
+.fleet-dir-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 120px;
+}
+
+.fleet-dir-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fleet-dir-entry:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.fleet-dir-entry-icon {
+  flex: 0 0 auto;
+  font-size: 0.9rem;
+}
+
+.fleet-dir-entry-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-dir-loading,
+.fleet-dir-empty {
+  padding: 2rem 0.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.fleet-dir-error {
+  padding: 1rem 0.75rem;
+  text-align: center;
+  color: var(--error, #f85149);
+  font-size: 0.82rem;
+}
+
+.fleet-dir-footer {
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 /* Header button online-device count badge (mirrors the subagent/attachment
    badges). Positioned on the fleet-devices header button. */
 .btn-fleet-devices {

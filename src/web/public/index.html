@@ -724,9 +724,13 @@
         <section class="fleet-section">
           <div class="fleet-section-title">远程新建会话</div>
           <label class="fleet-field-label" for="fleetCreateDevice">设备</label>
-          <select class="fleet-select" id="fleetCreateDevice" aria-label="Target device"></select>
+          <select class="fleet-select" id="fleetCreateDevice" aria-label="Target device" onchange="app.onFleetCreateDeviceChange()"></select>
           <label class="fleet-field-label" for="fleetCreateDir">工作目录 <span class="fleet-req" aria-hidden="true">*</span></label>
-          <input type="text" class="fleet-input" id="fleetCreateDir" placeholder="/path/to/project" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+          <div class="fleet-dir-row">
+            <input type="text" class="fleet-input" id="fleetCreateDir" list="fleetDirCandidates" placeholder="/path/to/project" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+            <datalist id="fleetDirCandidates"></datalist>
+            <button type="button" class="btn-toolbar btn-sm fleet-browse-btn" onclick="app.openFleetDirBrowser()">浏览&hellip;</button>
+          </div>
           <label class="fleet-field-label">模式</label>
           <div class="fleet-mode-seg" id="fleetCreateMode" role="group" aria-label="Session mode">
             <button type="button" class="fleet-mode-btn active" data-mode="claude" onclick="app.setFleetCreateMode('claude')">claude</button>
@@ -760,6 +764,28 @@
         </div>
         <div class="modal-footer-cancel">
           <button class="btn-toolbar btn-sm" onclick="app.cancelStopFleetSession()">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Working-directory browser (Task 25, spec §12.5) — app modal convention,
+         mirrors fleetStopModal's structure. Breadcrumb + one-level directory
+         list driven by GET /api/fleet/devices/:deviceId/dirs; works for both
+         the local device and remotes through the same endpoint. -->
+    <div class="modal" id="fleetDirModal">
+      <div class="modal-backdrop" onclick="app.closeFleetDirBrowser()"></div>
+      <div class="modal-content modal-lg fleet-dir-modal">
+        <div class="modal-header">
+          <h3>选择工作目录</h3>
+          <button class="modal-close" onclick="app.closeFleetDirBrowser()" aria-label="Close directory browser">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="fleet-dir-breadcrumb" id="fleetDirBreadcrumb"></div>
+          <div class="fleet-dir-list" id="fleetDirList"></div>
+        </div>
+        <div class="modal-footer-cancel fleet-dir-footer">
+          <button class="btn-toolbar btn-sm" onclick="app.closeFleetDirBrowser()">取消</button>
+          <button class="btn-toolbar btn-run btn-sm" id="fleetDirSelectBtn" onclick="app.selectFleetDirCurrent()">选择此目录</button>
         </div>
       </div>
     </div>

@@ -87,4 +87,24 @@ Object.assign(CodemanApp.prototype, {
     if (!data || !Array.isArray(data.candidates)) return null;
     return data.candidates;
   },
+
+  /**
+   * List one level of a (possibly remote) device's directory tree, confined to
+   * its $HOME (Task 25's working-dir browser). `path` should be a path
+   * RELATIVE to $HOME (e.g. `'proj/src'`), never absolute — the node resolves
+   * it under its own home directory (dir-listing.ts's `listDirsSafe`), which
+   * sidesteps any cross-platform (POSIX vs Windows) separator mismatch between
+   * this browser and the target device's OS. Omit `path` for the home root.
+   * @param {string} deviceId
+   * @param {string} [path] - home-relative subpath, e.g. 'proj/src'
+   * @returns {Promise<{path:string,dirs:string[]}|null>} the resolved absolute
+   *          path plus subdirectory names, or null on any failure (offline
+   *          409 / outside-home 400 / network error).
+   */
+  async fleetListDirs(deviceId, path) {
+    const qs = path ? `?path=${encodeURIComponent(path)}` : '';
+    const data = await this._apiJson(`/api/fleet/devices/${encodeURIComponent(deviceId)}/dirs${qs}`);
+    if (!data || typeof data.path !== 'string' || !Array.isArray(data.dirs)) return null;
+    return data;
+  },
 });
