@@ -73,4 +73,18 @@ Object.assign(CodemanApp.prototype, {
       `/api/fleet/devices/${encodeURIComponent(deviceId)}/sessions/${encodeURIComponent(sessionId)}/terminal`
     );
   },
+
+  /**
+   * List resumable past conversations on a (possibly remote) device (Task 23).
+   * Backs the cross-device Resume list on the welcome screen. `_apiJson` unwraps
+   * the `{ success, data }` envelope → `{ candidates }`.
+   * @param {string} deviceId
+   * @returns {Promise<Array<{sessionId:string,workingDir:string,title:string,updatedAt:number,projectKey?:string}>|null>}
+   *          candidate array, or null on any failure (offline 409 / timeout / network).
+   */
+  async fleetResumeCandidates(deviceId) {
+    const data = await this._apiJson(`/api/fleet/devices/${encodeURIComponent(deviceId)}/resume-candidates`);
+    if (!data || !Array.isArray(data.candidates)) return null;
+    return data.candidates;
+  },
 });

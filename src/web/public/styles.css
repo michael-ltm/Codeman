@@ -2822,6 +2822,24 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   font-weight: 500;
 }
 
+/* Cross-device resume (Task 23): origin-device chip on remote history rows. */
+.history-item-devchip {
+  flex-shrink: 0;
+  align-self: center;
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.62rem;
+  font-weight: 500;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  border-radius: 999px;
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.14);
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+}
+
 .history-item-meta {
   font-size: 0.7rem;
   color: var(--text-muted);

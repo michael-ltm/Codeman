@@ -1215,27 +1215,46 @@ Object.assign(CodemanApp.prototype, {
         this._fetchHistorySessions(30),
         casesPromise,
       ]);
-      if (allSessions.length === 0) {
+
+      // Cross-device resume (Task 23, spec §12.3): merge resume candidates from
+      // every ONLINE remote device into the same list. The 'local' device is
+      // skipped — its candidates ARE `allSessions`. Per-device failures are
+      // silently dropped (console.warn); the local list never blocks on them.
+      const remoteRows = await this._fetchRemoteResumeRows();
+
+      // Unified descriptor list, globally sorted by recency (updatedAt desc).
+      // Local rows keep byte-identical markup/behavior via `_buildHistoryItem`;
+      // remote rows carry a device chip and resume on their origin device.
+      const merged = [
+        ...allSessions.map((s) => ({ kind: 'local', record: s, t: new Date(s.lastModified).getTime() || 0 })),
+        ...remoteRows.map((r) => ({ kind: 'remote', ...r, t: Number(r.candidate.updatedAt) || 0 })),
+      ].sort((a, b) => b.t - a.t);
+
+      if (merged.length === 0) {
         container.style.display = 'none';
         return;
       }
 
       list.replaceChildren();
       const initialCount = this._HISTORY_INITIAL_COUNT;
+      const buildRow = (d) =>
+        d.kind === 'remote'
+          ? this._buildRemoteHistoryItem(d.deviceId, d.deviceName, d.candidate)
+          : this._buildHistoryItem(d.record, cases);
 
       // Render initial items
-      for (let i = 0; i < Math.min(initialCount, allSessions.length); i++) {
-        list.appendChild(this._buildHistoryItem(allSessions[i], cases));
+      for (let i = 0; i < Math.min(initialCount, merged.length); i++) {
+        list.appendChild(buildRow(merged[i]));
       }
 
       // Add "Show More" button if there are more items
-      if (allSessions.length > initialCount) {
+      if (merged.length > initialCount) {
         const moreBtn = document.createElement('button');
         moreBtn.className = 'history-show-more';
-        moreBtn.textContent = `Show ${allSessions.length - initialCount} more`;
+        moreBtn.textContent = `Show ${merged.length - initialCount} more`;
         moreBtn.addEventListener('click', () => {
-          for (let i = initialCount; i < allSessions.length; i++) {
-            list.insertBefore(this._buildHistoryItem(allSessions[i], cases), moreBtn);
+          for (let i = initialCount; i < merged.length; i++) {
+            list.insertBefore(buildRow(merged[i]), moreBtn);
           }
           moreBtn.remove();
         });
@@ -1246,6 +1265,200 @@ Object.assign(CodemanApp.prototype, {
     } catch (err) {
       console.error('[loadHistorySessions]', err);
       container.style.display = 'none';
+    }
+  },
+
+  /**
+   * Fetch resume candidates from every ONLINE remote device in parallel and
+   * flatten them into `{ deviceId, deviceName, candidate }` rows (Task 23).
+   * The central self ('local') is skipped — its candidates come from the local
+   * history list. Offline devices are not fetched (spec §12.3). A per-device
+   * failure is swallowed with a console.warn and simply contributes no rows, so
+   * the welcome list always renders the local entries regardless.
+   * @returns {Promise<Array<{deviceId:string,deviceName:string,candidate:object}>>}
+   */
+  async _fetchRemoteResumeRows() {
+    const state = this._fleetState;
+    const devices = state && Array.isArray(state.devices) ? state.devices : [];
+    const online = devices.filter((d) => d && d.id !== 'local' && d.status === 'online');
+    if (online.length === 0) return [];
+
+    const settled = await Promise.allSettled(
+      online.map(async (d) => {
+        const candidates = await this.fleetResumeCandidates(d.id);
+        if (!candidates) {
+          console.warn('[fleet] resume-candidates unavailable for device', d.id);
+          return [];
+        }
+        const deviceName = d.name || d.hostname || d.id.slice(0, 8);
+        return candidates.map((candidate) => ({ deviceId: d.id, deviceName, candidate }));
+      })
+    );
+
+    const rows = [];
+    for (const r of settled) {
+      if (r.status === 'fulfilled') rows.push(...r.value);
+      else console.warn('[fleet] resume-candidates fetch failed', r.reason);
+    }
+    return rows;
+  },
+
+  /**
+   * Derive a new session name from a workingDir, mirroring the local resume
+   * convention (`w{N}-{basename}`, N = next free index among local `w#-` names).
+   * Used only for remote resume — the local path (`resumeHistorySession`) keeps
+   * its own inline copy byte-identical (red line).
+   */
+  _deriveResumeName(workingDir) {
+    const dirName = (workingDir || '').split('/').pop() || 'session';
+    let startNumber = 1;
+    for (const [, session] of this.sessions) {
+      const match = session.name && session.name.match(/^w(\d+)-/);
+      if (match) {
+        const num = parseInt(match[1]);
+        if (num >= startNumber) startNumber = num + 1;
+      }
+    }
+    return `w${startNumber}-${dirName}`;
+  },
+
+  /**
+   * Build one history row for a REMOTE resume candidate (Task 23). Mirrors the
+   * `_buildHistoryItem` visual idiom (main row + expandable detail) but adds a
+   * device chip and resumes on the candidate's origin device. Every remote
+   * string is written via `textContent` (never innerHTML), so it is inherently
+   * XSS-safe — the DOM idiom used throughout `_buildHistoryItem`.
+   */
+  _buildRemoteHistoryItem(deviceId, deviceName, candidate) {
+    const workingDir = candidate.workingDir || '';
+    const shortDir = this._shortenHomePath(workingDir);
+    const title = candidate.title || shortDir || (candidate.sessionId || '').slice(0, 8);
+    const date = new Date(Number(candidate.updatedAt) || Date.now());
+    const timeStr =
+      date.toLocaleDateString('en', { month: 'short', day: 'numeric' }) +
+      ' ' +
+      date.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+    const item = document.createElement('div');
+    item.className = 'history-item history-item-remote';
+    item.title = `${deviceName} · ${workingDir}`;
+
+    const mainRow = document.createElement('div');
+    mainRow.className = 'history-item-main';
+    mainRow.addEventListener('click', () => this._resumeRemoteCandidate(deviceId, deviceName, candidate));
+
+    const textCol = document.createElement('div');
+    textCol.className = 'history-item-text';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'history-item-title';
+    titleSpan.textContent = title;
+
+    const subtitleSpan = document.createElement('span');
+    subtitleSpan.className = 'history-item-subtitle';
+    subtitleSpan.textContent = shortDir;
+
+    textCol.append(titleSpan, subtitleSpan);
+
+    // Device chip — identifies the origin device. textContent auto-escapes.
+    const chip = document.createElement('span');
+    chip.className = 'history-item-devchip';
+    chip.textContent = deviceName;
+    chip.title = deviceName;
+
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'history-item-meta';
+    metaSpan.textContent = timeStr;
+
+    const expandBtn = document.createElement('button');
+    expandBtn.className = 'history-item-expand';
+    expandBtn.type = 'button';
+    expandBtn.setAttribute('aria-label', 'Show details');
+    expandBtn.setAttribute('aria-expanded', 'false');
+    expandBtn.textContent = '⋯';
+
+    mainRow.append(textCol, chip, metaSpan, expandBtn);
+
+    const detail = document.createElement('div');
+    detail.className = 'history-item-detail';
+    detail.hidden = true;
+
+    const deviceRow = document.createElement('div');
+    deviceRow.className = 'history-detail-row';
+    const deviceLabel = document.createElement('span');
+    deviceLabel.className = 'history-detail-label';
+    deviceLabel.textContent = 'Device';
+    const deviceVal = document.createElement('span');
+    deviceVal.className = 'history-detail-value';
+    deviceVal.textContent = deviceName;
+    deviceRow.append(deviceLabel, deviceVal);
+
+    const promptRow = document.createElement('div');
+    promptRow.className = 'history-detail-row';
+    const promptLabel = document.createElement('span');
+    promptLabel.className = 'history-detail-label';
+    promptLabel.textContent = 'Prompt';
+    const promptText = document.createElement('span');
+    promptText.className = 'history-detail-value history-detail-prompt';
+    promptText.textContent = candidate.title || '(no prompt captured)';
+    promptRow.append(promptLabel, promptText);
+
+    const pathRow = document.createElement('div');
+    pathRow.className = 'history-detail-row';
+    const pathLabel = document.createElement('span');
+    pathLabel.className = 'history-detail-label';
+    pathLabel.textContent = 'Path';
+    const pathText = document.createElement('span');
+    pathText.className = 'history-detail-value history-detail-path';
+    pathText.textContent = shortDir;
+    pathRow.append(pathLabel, pathText);
+
+    const metaRow = document.createElement('div');
+    metaRow.className = 'history-detail-row history-detail-meta';
+    metaRow.textContent = `${timeStr} · ${(candidate.sessionId || '').slice(0, 8)}`;
+
+    detail.append(deviceRow, promptRow, pathRow, metaRow);
+
+    expandBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const expanded = item.classList.toggle('expanded');
+      detail.hidden = !expanded;
+      expandBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    });
+
+    item.append(mainRow, detail);
+    return item;
+  },
+
+  /**
+   * Resume a remote conversation: create+start a claude session on its origin
+   * device (Task 23), then refresh the fleet tab strip and select the new tab.
+   * On failure, toast + no navigation. No native dialogs.
+   */
+  async _resumeRemoteCandidate(deviceId, deviceName, candidate) {
+    document.getElementById('runModeMenu')?.classList.remove('active');
+    const workingDir = candidate.workingDir || '';
+    try {
+      const created = await this.fleetCreateSession(deviceId, {
+        workingDir,
+        mode: 'claude',
+        resumeSessionId: candidate.sessionId,
+        name: this._deriveResumeName(workingDir),
+      });
+      if (!created || !created.id) throw new Error('remote create failed');
+
+      await this.refreshFleetState();
+      const key = `${deviceId}:${created.id}`;
+      if (this.isFleetKey(key)) {
+        this.selectSession(key, { forceReload: true });
+      } else {
+        // The aggregated snapshot may not carry the new tab yet; it will arrive
+        // on the next fleet:sessions-updated SSE refresh. Surface success.
+        this.showToast?.(`Resumed on ${deviceName}`, 'success');
+      }
+    } catch (err) {
+      console.warn('[fleet] remote resume failed', err);
+      this.showToast?.(`Failed to resume on ${deviceName}`, 'error');
     }
   },
 
