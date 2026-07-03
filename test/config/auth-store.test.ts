@@ -12,10 +12,21 @@
  *
  * Port: N/A (no server; pure functions + tmp file IO).
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scryptSync } from 'node:crypto';
+
+// Spy on scryptSync while keeping the REAL implementation (so hashing stays
+// correct). Lets the constant-time test below assert that the scrypt derivation
+// runs even when the username is wrong — i.e. verifyCredentials does NOT
+// early-return before the password check, closing the username-timing channel.
+vi.mock('node:crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:crypto')>();
+  return { ...actual, scryptSync: vi.fn(actual.scryptSync) };
+});
+
 import {
   getConfiguredUsername,
   isPasswordConfigured,
@@ -139,5 +150,29 @@ describe('config/auth-store', () => {
     setPassword('dave', 'second-pass', file);
     expect(verifyCredentials('dave', 'first-pass', file)).toBe(false);
     expect(verifyCredentials('dave', 'second-pass', file)).toBe(true);
+  });
+
+  it('wrong-username and wrong-password both return false (auth.json path)', () => {
+    setPassword('erin', 'right-pass', file);
+    expect(verifyCredentials('erin', 'wrong-pass', file)).toBe(false); // right user, wrong pass
+    expect(verifyCredentials('mallory', 'right-pass', file)).toBe(false); // wrong user, right pass
+    expect(verifyCredentials('mallory', 'wrong-pass', file)).toBe(false); // both wrong
+    expect(verifyCredentials('erin', 'right-pass', file)).toBe(true); // sanity: both right
+  });
+
+  it('constant-time: scrypt derivation runs even on a username mismatch (no early return)', () => {
+    setPassword('erin', 'right-pass', file); // this call also invokes scryptSync
+    vi.mocked(scryptSync).mockClear();
+
+    // A wrong username must NOT short-circuit before the password derivation —
+    // otherwise a valid vs invalid username is timing-distinguishable. Observe
+    // the code path: scryptSync fires exactly once even though the username is wrong.
+    expect(verifyCredentials('mallory', 'irrelevant', file)).toBe(false);
+    expect(scryptSync).toHaveBeenCalledTimes(1);
+
+    // And a correct username with a wrong password takes the same path (one derive).
+    vi.mocked(scryptSync).mockClear();
+    expect(verifyCredentials('erin', 'wrong-pass', file)).toBe(false);
+    expect(scryptSync).toHaveBeenCalledTimes(1);
   });
 });

@@ -19,6 +19,10 @@
  * - `auth.json`-sourced passwords are compared via `scryptSync` (same salt)
  *   against the stored hash, also via `timingSafeEqual` (both buffers are the
  *   fixed scrypt keylen, so no length-based branch is needed).
+ * - `verifyCredentials` NEVER short-circuits on a username mismatch: it always
+ *   runs the (slow) password derivation and combines the username/password
+ *   results with a non-short-circuiting bitwise AND, so a valid username is
+ *   timing-indistinguishable from an invalid one (see the fn doc for why).
  *
  * No caching: every exported function re-reads `auth.json` from disk. Auth
  * checks are low-frequency (login attempts, occasional route middleware
@@ -72,7 +76,10 @@ function readAuthFile(filePath: string): StoredAuth | null {
       parsed.username.length > 0 &&
       typeof parsed.passwordHash === 'string' &&
       HEX_RE.test(parsed.passwordHash) &&
-      parsed.passwordHash.length % 2 === 0 &&
+      // Exactly SCRYPT_KEYLEN bytes — pins the derived-key length so the scrypt
+      // path in verifyCredentials always derives a fixed 64-byte key (a bad
+      // length would otherwise vary the scrypt cost or crash it).
+      parsed.passwordHash.length === SCRYPT_KEYLEN * 2 &&
       typeof parsed.salt === 'string' &&
       HEX_RE.test(parsed.salt) &&
       parsed.salt.length % 2 === 0 &&
@@ -105,35 +112,48 @@ function timingSafeEqualStrings(a: string, b: string): boolean {
  * `auth.json` wins when present and well-formed; otherwise falls back to
  * `CODEMAN_USERNAME` (default `admin`) / `CODEMAN_PASSWORD`. Returns `false`
  * (never throws) if no password is configured anywhere.
+ *
+ * Constant-time by construction: on BOTH paths the username check and the
+ * password check are computed into separate 0/1 flags — the password
+ * derivation (scrypt for `auth.json`, SHA-256 for env) ALWAYS runs regardless
+ * of whether the username matched — then combined with a **non-short-circuiting**
+ * bitwise AND. A `&&` here would skip the password compare on username mismatch,
+ * so a wrong username (fast) would be timing-distinguishable from a correct
+ * username with a wrong password (slow scrypt), leaking username validity to a
+ * remote attacker. Running both compares unconditionally closes that channel.
  */
 export function verifyCredentials(username: string, password: string, filePath: string = defaultPath()): boolean {
   const stored = readAuthFile(filePath);
   if (stored) {
-    if (!timingSafeEqualStrings(username, stored.username)) return false;
-    let saltBuf: Buffer;
-    let hashBuf: Buffer;
+    // Compute both flags up front; do NOT early-return on username mismatch.
+    const usernameOk = timingSafeEqualStrings(username, stored.username) ? 1 : 0;
+    // Always derive the scrypt key (against the real stored hash) even when the
+    // username is wrong, so the slow path is taken uniformly. readAuthFile has
+    // already pinned passwordHash to SCRYPT_KEYLEN bytes, so the derive length
+    // is fixed; the try/catch keeps the never-throw invariant if scrypt ever
+    // rejects (e.g. memory limits) — it is NOT dead (scryptSync can throw).
+    let passwordOk = 0;
     try {
-      saltBuf = Buffer.from(stored.salt, 'hex');
-      hashBuf = Buffer.from(stored.passwordHash, 'hex');
+      const saltBuf = Buffer.from(stored.salt, 'hex');
+      const hashBuf = Buffer.from(stored.passwordHash, 'hex');
+      const derived = scryptSync(password, saltBuf, hashBuf.length);
+      passwordOk = timingSafeEqual(derived, hashBuf) ? 1 : 0;
     } catch {
-      return false;
+      passwordOk = 0;
     }
-    if (hashBuf.length === 0) return false;
-    let derived: Buffer;
-    try {
-      derived = scryptSync(password, saltBuf, hashBuf.length);
-    } catch {
-      return false;
-    }
-    return timingSafeEqual(derived, hashBuf);
+    return (usernameOk & passwordOk) === 1; // non-short-circuiting AND
   }
 
   // Fall back to env credentials.
   const envPassword = process.env.CODEMAN_PASSWORD;
   if (!envPassword) return false;
   const envUsername = process.env.CODEMAN_USERNAME || 'admin';
-  if (!timingSafeEqualStrings(username, envUsername)) return false;
-  return timingSafeEqualStrings(password, envPassword);
+  // Symmetric shape: run both compares, combine without short-circuit. The env
+  // path's leak is tiny (SHA-256 vs SHA-256) but keeping it identical avoids a
+  // future refactor reintroducing an early return.
+  const usernameOk = timingSafeEqualStrings(username, envUsername) ? 1 : 0;
+  const passwordOk = timingSafeEqualStrings(password, envPassword) ? 1 : 0;
+  return (usernameOk & passwordOk) === 1;
 }
 
 /**
