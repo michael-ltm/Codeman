@@ -1497,3 +1497,11 @@ Task 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10(此时命令行可
 ### Task 26: 浏览器实测 + 部署
 
 隔离双实例拓扑;桌面:跨设备 resume 全流程(点远程历史条目 → 新 tab 活)、左侧布局切换往返、目录浏览模态逐级+回填、红线回归(本地 resume/顶部布局不变);移动 375px:布局设置被忽略、resume 列表可用;gates:typecheck/lint/test:ci(既有 flaky 除外);部署 mini+macbook 并真机验证。
+
+---
+
+# Rev 5 排队:外部 tmux 会话收编(spec §13;Rev 4 完成后执行)
+
+### Task 27: 节点侧发现器 + 协议上报(扫描外部 socket、候选清单、heartbeat 附带/独立帧、SSE)
+### Task 28: 收编执行(外部宿主 Session 包装、detach-only 生命周期、自动化豁免、终端全链路)
+### Task 29: UI(设备面板外部会话区 + 收编按钮 + tab 标记)+ 实测 + 部署

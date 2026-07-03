@@ -250,3 +250,20 @@ const title = `${deviceName} / ${sessionLabel}`;
 ### 12.5 工作目录选择(设备面板新建会话表单)
 - **智能下拉**:候选 = 该设备现有会话 workingDir ∪ resume 候选 workingDir,去重、按最近使用降序;仍可手输任意路径。
 - **目录浏览**:表单旁"浏览…"按钮 → 应用模态框逐级浏览(list-dirs 驱动,面包屑导航,选中即回填);本地设备走同一 UI(local handle 直调)。禁原生对话框。
+
+## 13. Rev 5 排队(2026-07-03 用户确认):外部 tmux 会话收编
+
+用户诉求:自己在终端开的 tmux claude/codex 会话,Codeman 自动发现并作为 tab 显示、可看可输入。三个已确认决策:仅 tmux 收编(裸终端不做)、完整交互、全部 fleet 节点扫描。
+
+### 13.1 发现
+- 每个节点(含中央本机)周期扫描:枚举候选 tmux socket(默认 socket `/tmp/tmux-<uid>/default` + `CODEMAN_ADOPT_SOCKETS` 配置的额外 socket;**排除自己的 codeman socket**),对每个 session 检查 pane 进程树是否含 claude/codex/gemini/opencode 可执行名。
+- 产出 `ExternalSessionCandidate { socket, tmuxSession, mode, workingDir(pane cwd), firstSeenAt }`,经协议扩展上报中央(heartbeat 附带或独立帧),SSE 推送。
+
+### 13.2 收编语义(安全红线)
+- 收编 = 在既有 Session 抽象上以"外部宿主"模式 attach(`tmux -L <socket> attach -t <session>` 的 PTY 包装);tab 显示 `设备名 / tmux:<会话名>` + 收编标记。
+- **绝不接管生死**:关 tab 仅 detach;不提供停止按钮;Codeman 的清理/驱逐/respawn 一律不得 kill 外部会话(`CODEMAN_MUX` 安全约束同源);不写入其环境。
+- 收编会话不参与 respawn/ralph 等 Claude 专属自动化(与外部 CLI 模式同等豁免)。
+
+### 13.3 UI
+- 设备面板新增"发现的外部会话"区:列表 + "收编为 Tab"按钮;收编后与普通 fleet tab 同权(终端/输入/分屏可钉)。
+- 全 fleet:候选与已收编状态经中央聚合,设备前缀一致。
