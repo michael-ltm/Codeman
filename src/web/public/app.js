@@ -2553,6 +2553,13 @@ class CodemanApp {
     this._serverCjkOverride = data.inputCjkForm || false;
     this._updateCjkInputState();
 
+    // Custom-login/change-password availability signal (see getLightState() in
+    // server.ts) — passwordless loopback instances get `authActive: false` so
+    // App Settings → Account hides the change-password form (the backend
+    // doesn't even register /api/auth/* routes there).
+    this._authActive = !!data.authActive;
+    this._authUsername = data.authUsername || '';
+
     // Plan-usage chip: server's last-known telemetry, so it shows immediately on
     // a fresh load / reconnect (authoritative; wins over the localStorage restore).
     if (data.planUsage) this.updatePlanUsageChip(data.planUsage);

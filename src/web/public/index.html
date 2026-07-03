@@ -1131,6 +1131,7 @@
           <button class="modal-tab-btn" data-tab="settings-paths">Paths</button>
           <button class="modal-tab-btn" data-tab="settings-notifications">Notifications</button>
           <button class="modal-tab-btn" data-tab="settings-voice">Voice</button>
+          <button class="modal-tab-btn" data-tab="settings-account" id="settingsAccountTabBtn" style="display:none">Account</button>
         </div>
         <div class="modal-body">
           <!-- Display Tab -->
@@ -1742,6 +1743,34 @@
                 <input type="text" id="voiceKeyterms" placeholder="codeman, tmux, respawn, subagent" style="width: 100%; padding: 0.5rem 0.75rem; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.8rem; font-family: inherit;">
                 <span class="form-hint">Comma-separated terms to boost recognition accuracy</span>
               </div>
+            </div>
+          </div>
+          <!-- Account Tab (hidden unless authActive — see settings-ui.js openAppSettings) -->
+          <div class="modal-tab-content hidden" id="settings-account">
+            <div class="settings-grid">
+              <div class="settings-section-header">Account</div>
+              <div class="settings-item" title="Username configured for this Codeman instance">
+                <span class="settings-item-label">Username</span>
+                <span class="settings-item-value" id="accountUsernameDisplay" style="font-family:monospace">&mdash;</span>
+              </div>
+
+              <div class="settings-section-header">Change Password</div>
+              <div class="form-row" style="grid-column: 1 / -1;">
+                <label for="accountCurrentPassword">Current Password</label>
+                <input type="password" id="accountCurrentPassword" autocomplete="current-password" placeholder="Current password" style="width: 100%; padding: 0.5rem 0.75rem; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.8rem; font-family: inherit;">
+              </div>
+              <div class="form-row" style="grid-column: 1 / -1;">
+                <label for="accountNewPassword">New Password</label>
+                <input type="password" id="accountNewPassword" autocomplete="new-password" placeholder="At least 8 characters" style="width: 100%; padding: 0.5rem 0.75rem; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.8rem; font-family: inherit;">
+              </div>
+              <div class="form-row" style="grid-column: 1 / -1;">
+                <label for="accountConfirmPassword">Confirm New Password</label>
+                <input type="password" id="accountConfirmPassword" autocomplete="new-password" placeholder="Repeat new password" style="width: 100%; padding: 0.5rem 0.75rem; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.8rem; font-family: inherit;">
+              </div>
+              <div class="settings-item" style="grid-column: 1 / -1; justify-content: flex-end;">
+                <button class="btn-toolbar btn-sm btn-primary" id="accountChangePasswordBtn" onclick="app.changeAccountPassword()" type="button">修改密码</button>
+              </div>
+              <div id="accountPasswordResult" style="display:none; grid-column: 1 / -1; padding:4px 2px 8px; font-size:13px;"></div>
             </div>
           </div>
         </div>

@@ -445,6 +445,23 @@ Object.assign(CodemanApp.prototype, {
     // Updates section — show current version, reset transient result/progress UI.
     this._initUpdatesSection();
 
+    // Account section (change-password) — only exists on instances where the
+    // custom-login flow is active (auth.json or CODEMAN_PASSWORD configured;
+    // see `authActive` in the SSE init payload / handleInit in app.js). A
+    // passwordless loopback instance never registers /api/auth/*, so hide the
+    // whole tab there rather than show a form that would just 404.
+    const accountTabBtn = document.getElementById('settingsAccountTabBtn');
+    if (accountTabBtn) accountTabBtn.style.display = this._authActive ? '' : 'none';
+    const usernameEl = document.getElementById('accountUsernameDisplay');
+    if (usernameEl) usernameEl.textContent = this._authUsername || '—';
+    // Clear any stale password input/result from a previous open of the modal.
+    for (const id of ['accountCurrentPassword', 'accountNewPassword', 'accountConfirmPassword']) {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    }
+    const accountResultEl = document.getElementById('accountPasswordResult');
+    if (accountResultEl) accountResultEl.style.display = 'none';
+
     // Reset to first tab and wire up tab switching
     this.switchSettingsTab('settings-display');
     const modal = document.getElementById('appSettingsModal');
@@ -477,6 +494,92 @@ Object.assign(CodemanApp.prototype, {
     if (this.activeFocusTrap) {
       this.activeFocusTrap.deactivate();
       this.activeFocusTrap = null;
+    }
+  },
+
+  // ───────────────────────────────────────────────────────────────
+  // Account (App Settings → Account). Backend: POST /api/auth/change-password
+  // (src/web/middleware/auth.ts). Only reachable when `this._authActive` (see
+  // handleInit in app.js) — the tab itself is hidden otherwise.
+  // ───────────────────────────────────────────────────────────────
+
+  _setAccountPasswordResult(message, kind) {
+    const el = document.getElementById('accountPasswordResult');
+    if (!el) return;
+    el.textContent = message;
+    el.style.color = kind === 'error' ? 'var(--error, #e05555)' : 'var(--text-secondary)';
+    el.style.display = message ? 'block' : 'none';
+    // The Account tab's content can exceed the modal body's scrollable
+    // viewport (same as the Display tab), so a freshly-set result — the whole
+    // point of which is to be seen right after clicking 修改密码 — can render
+    // below the fold. Scroll it into view rather than relying on the user to
+    // notice a scrollbar.
+    if (message) el.scrollIntoView({ block: 'nearest' });
+  },
+
+  async changeAccountPassword() {
+    const currentEl = document.getElementById('accountCurrentPassword');
+    const newEl = document.getElementById('accountNewPassword');
+    const confirmEl = document.getElementById('accountConfirmPassword');
+    const currentPassword = currentEl?.value || '';
+    const newPassword = newEl?.value || '';
+    const confirmPassword = confirmEl?.value || '';
+
+    // Client-side validation first — inline error via our own result element,
+    // never a native alert/confirm/prompt.
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      this._setAccountPasswordResult('请填写所有密码字段', 'error');
+      return;
+    }
+    if (newPassword.length < 8) {
+      this._setAccountPasswordResult('新密码至少 8 位', 'error');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      this._setAccountPasswordResult('两次输入的新密码不一致', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('accountChangePasswordBtn');
+    if (btn) btn.disabled = true;
+    this._setAccountPasswordResult('', null);
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body.success) {
+        currentEl.value = '';
+        newEl.value = '';
+        confirmEl.value = '';
+        this.showToast('密码已修改，下次登录用新密码', 'success');
+        return;
+      }
+      if (res.status === 401) {
+        this._setAccountPasswordResult('登录状态已过期，请重新登录', 'error');
+        this.showToast('登录状态已过期，请重新登录', 'error');
+        setTimeout(() => window.location.reload(), 1500);
+        return;
+      }
+      // 400 from the server: "Current password incorrect" / "New password too
+      // short" / "Invalid request" — map the known ones to the Chinese copy the
+      // spec calls for, fall back to the raw server message otherwise.
+      const serverError = body.error || '';
+      let message = '密码修改失败';
+      if (/current password incorrect/i.test(serverError)) {
+        message = '当前密码不正确';
+      } else if (/too short/i.test(serverError)) {
+        message = '新密码至少 8 位';
+      } else if (serverError) {
+        message = serverError;
+      }
+      this._setAccountPasswordResult(message, 'error');
+    } catch {
+      this._setAccountPasswordResult('网络错误，修改密码失败', 'error');
+    } finally {
+      if (btn) btn.disabled = false;
     }
   },
 

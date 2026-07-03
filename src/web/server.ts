@@ -42,6 +42,7 @@ import { execSync } from 'node:child_process';
 import { hostname as getHostname } from 'node:os';
 import { dataPath } from '../config/instance.js';
 import { getHookSecret } from '../config/hook-secret.js';
+import { isPasswordConfigured, getConfiguredUsername } from '../config/auth-store.js';
 import { EventEmitter } from 'node:events';
 import { Session, isExternalCliMode, type BackgroundTask } from '../session.js';
 import type { ClaudeMode, SessionAttachmentHistoryItem, SessionState, WorkflowRunInfo } from '../types.js';
@@ -1792,6 +1793,14 @@ export class WebServer extends EventEmitter {
       timestamp: now,
       inputCjkForm: process.env.INPUT_CJK_FORM?.toUpperCase() === 'ON',
       planUsage: getLatestPlanUsage(), // last-known plan-usage telemetry, for the header chip on fresh load
+      // Whether the custom-login/change-password flow is active on this instance
+      // (auth.json or CODEMAN_PASSWORD configured) — passwordless loopback
+      // instances get `false` so the frontend hides the Account settings section
+      // (the /api/auth/* routes aren't even registered there). Username is not
+      // secret (only the password gates access) and is cheap to include so the
+      // Account section can show it read-only instead of omitting it.
+      authActive: isPasswordConfigured(),
+      authUsername: getConfiguredUsername(),
     };
 
     this.cachedLightState = { data: result, timestamp: now };

@@ -5299,6 +5299,15 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   gap: 0.5rem;
   padding: 0 1rem 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
+  /* App Settings has grown to 8 tabs (Display…Voice + Account) — on desktop the
+     row is wide enough to fill modal-lg's 600px with no room to spare, so an
+     extra tab would silently overflow past the modal's right edge (invisible,
+     unclickable) instead of wrapping. Scroll horizontally instead, matching the
+     mobile/tablet behavior in mobile.css. flex-wrap stays default (nowrap) so
+     buttons never wrap to a second row and the scrollbar is the only overflow
+     affordance. */
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .modal-tab-btn {
