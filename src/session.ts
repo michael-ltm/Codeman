@@ -915,6 +915,10 @@ export class Session extends EventEmitter {
   }
 
   setAutoClear(enabled: boolean, threshold?: number): void {
+    // Adopted (foreign-tmux) sessions are exempt from Claude automation — this
+    // would eventually inject '/clear' into a session Codeman doesn't own
+    // (Rev5 §13.2). Belt-and-braces alongside the route-level guard.
+    if (this.isAdopted) return;
     this._autoOps.setAutoClear(enabled, threshold);
   }
 
@@ -931,6 +935,8 @@ export class Session extends EventEmitter {
   }
 
   setAutoCompact(enabled: boolean, threshold?: number, prompt?: string): void {
+    // Adopted (foreign-tmux) sessions are exempt from Claude automation (Rev5 §13.2).
+    if (this.isAdopted) return;
     this._autoOps.setAutoCompact(enabled, threshold, prompt);
   }
 
@@ -949,6 +955,11 @@ export class Session extends EventEmitter {
   }
 
   setAutoResume(enabled: boolean): void {
+    // Adopted (foreign-tmux) sessions are exempt from Claude automation — arming
+    // auto-resume would eventually inject Esc/'continue' into a session Codeman
+    // doesn't own (Rev5 §13.2). No-op here is belt-and-braces alongside the
+    // route-level guard, so no future caller can re-open this.
+    if (this.isAdopted) return;
     this._autoOps.setAutoResume(enabled);
     // Users typically enable this WHILE a session already sits paused — the
     // limit footer won't reprint on its own, so scan the recent buffer once.

@@ -870,6 +870,12 @@ export function registerSessionRoutes(
     const body = parseBody(AutoClearSchema, req.body, 'Invalid request body');
     const session = findSessionOrFail(ctx, id);
 
+    // Adopted (foreign-tmux) sessions are exempt from Claude automation — never
+    // send '/clear' into a session Codeman doesn't own (Rev5 §13.2).
+    if (session.isAdopted) {
+      return createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Not available for adopted sessions');
+    }
+
     session.setAutoClear(body.enabled, body.threshold);
     persistAndBroadcastSession(ctx, session);
 
@@ -890,6 +896,11 @@ export function registerSessionRoutes(
     const { id } = req.params as { id: string };
     const body = parseBody(AutoCompactSchema, req.body, 'Invalid request body');
     const session = findSessionOrFail(ctx, id);
+
+    // Adopted (foreign-tmux) sessions are exempt from Claude automation (Rev5 §13.2).
+    if (session.isAdopted) {
+      return createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Not available for adopted sessions');
+    }
 
     session.setAutoCompact(body.enabled, body.threshold, body.prompt);
     persistAndBroadcastSession(ctx, session);
@@ -912,6 +923,13 @@ export function registerSessionRoutes(
     const { id } = req.params as { id: string };
     const body = parseBody(AutoResumeSchema, req.body, 'Invalid request body');
     const session = findSessionOrFail(ctx, id);
+
+    // Adopted (foreign-tmux) sessions are exempt from Claude automation — arming
+    // auto-resume would inject Esc/'continue' into a session Codeman doesn't own
+    // (Rev5 §13.2).
+    if (session.isAdopted) {
+      return createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Not available for adopted sessions');
+    }
 
     session.setAutoResume(body.enabled);
     persistAndBroadcastSession(ctx, session);

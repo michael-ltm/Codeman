@@ -244,6 +244,22 @@ export class MockSession extends EventEmitter {
     if (!enabled) this.autoResumeAt = null;
   });
 
+  /** Auto-clear / auto-compact (route-test conveniences, mirroring Session) */
+  autoClearEnabled: boolean = false;
+  autoClearThreshold: number = 0;
+  autoCompactEnabled: boolean = false;
+  autoCompactThreshold: number = 0;
+  autoCompactPrompt: string = '';
+  setAutoClear = vi.fn((enabled: boolean, threshold?: number) => {
+    this.autoClearEnabled = enabled;
+    if (threshold !== undefined) this.autoClearThreshold = threshold;
+  });
+  setAutoCompact = vi.fn((enabled: boolean, threshold?: number, prompt?: string) => {
+    this.autoCompactEnabled = enabled;
+    if (threshold !== undefined) this.autoCompactThreshold = threshold;
+    if (prompt !== undefined) this.autoCompactPrompt = prompt;
+  });
+
   /** Check if session is busy */
   isBusy = vi.fn(() => false);
 

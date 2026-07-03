@@ -318,6 +318,70 @@ describe('session-routes', () => {
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
+
+    // Adopted (foreign-tmux) sessions are exempt from ALL Claude automation
+    // (Rev5 §13.2) — arming auto-resume would inject Esc/'continue' into a
+    // session Codeman doesn't own. Must reject at the route BEFORE
+    // session.setAutoResume() is ever called (no timer/scan side effect).
+    it('rejects adopted sessions (400) and never calls session.setAutoResume', async () => {
+      const session = harness.ctx.sessions.get(harness.ctx._sessionId)!;
+      session.isAdopted = true;
+      session.mode = 'claude'; // claude-mode adopted session — the dangerous case
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: `/api/sessions/${harness.ctx._sessionId}/auto-resume`,
+        payload: { enabled: true },
+      });
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(false);
+      expect(body.errorCode).toBe(ApiErrorCode.INVALID_INPUT);
+      expect(body.error).toContain('adopted');
+      expect(session.setAutoResume).not.toHaveBeenCalled();
+      expect(harness.ctx.persistSessionState).not.toHaveBeenCalled();
+    });
+  });
+
+  // ========== POST /api/sessions/:id/auto-clear ==========
+
+  describe('POST /api/sessions/:id/auto-clear — adopted sessions', () => {
+    it('rejects adopted sessions (400) and never calls session.setAutoClear', async () => {
+      const session = harness.ctx.sessions.get(harness.ctx._sessionId)!;
+      session.isAdopted = true;
+      session.mode = 'claude';
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: `/api/sessions/${harness.ctx._sessionId}/auto-clear`,
+        payload: { enabled: true },
+      });
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(false);
+      expect(body.errorCode).toBe(ApiErrorCode.INVALID_INPUT);
+      expect(body.error).toContain('adopted');
+      expect(session.setAutoClear).not.toHaveBeenCalled();
+    });
+  });
+
+  // ========== POST /api/sessions/:id/auto-compact ==========
+
+  describe('POST /api/sessions/:id/auto-compact — adopted sessions', () => {
+    it('rejects adopted sessions (400) and never calls session.setAutoCompact', async () => {
+      const session = harness.ctx.sessions.get(harness.ctx._sessionId)!;
+      session.isAdopted = true;
+      session.mode = 'claude';
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: `/api/sessions/${harness.ctx._sessionId}/auto-compact`,
+        payload: { enabled: true },
+      });
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(false);
+      expect(body.errorCode).toBe(ApiErrorCode.INVALID_INPUT);
+      expect(body.error).toContain('adopted');
+      expect(session.setAutoCompact).not.toHaveBeenCalled();
+    });
   });
 
   // ========== POST /api/sessions/:id/input ==========

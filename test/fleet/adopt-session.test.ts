@@ -19,6 +19,7 @@ import { Session, buildExternalAttachArgs } from '../../src/session.js';
 import { createMockRouteContext } from '../mocks/mock-route-context.js';
 import { adoptSessionCore, buildAdoptedSession } from '../../src/fleet/adopt-session.js';
 import { deleteSessionCore } from '../../src/web/route-helpers.js';
+import { WebServer } from '../../src/web/server.js';
 import type { ExternalSessionCandidate } from '../../src/fleet/protocol.js';
 
 function candidate(overrides: Partial<ExternalSessionCandidate> = {}): ExternalSessionCandidate {
@@ -173,5 +174,77 @@ describe('deleteSessionCore — adopted delete is detach-only', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await deleteSessionCore(ctx as any, ctx._sessionId, true);
     expect(ctx.cleanupSession).toHaveBeenCalledWith(ctx._sessionId, true, 'user_delete');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Belt-and-braces: adopted sessions are exempt from ALL Claude automation, not
+// just mux ownership. Two independent findings from the Task 28 review:
+//  (1) Session.setAutoResume/setAutoClear/setAutoCompact must no-op on an
+//      adopted session even if a route guard is somehow bypassed.
+//  (2) WebServer.setupSessionListeners must never wire the Ralph tracker's
+//      workspace watcher onto a foreign (user-owned) workspace.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('adopted Session — automation no-ops (belt-and-braces)', () => {
+  it('setAutoResume: no-op even with an unexpired usage-limit footer already on screen', () => {
+    const s = buildAdoptedSession(candidate({ mode: 'claude', workingDir: '/w' }));
+    // If the guard were missing, enabling would scan this buffer and arm a
+    // resume timer that fires Esc + 'continue' into the foreign session.
+    const futureEpoch = Math.floor(Date.now() / 1000) + 3600;
+    (s as unknown as { _terminalBuffer: { append(d: string): void } })._terminalBuffer.append(
+      `Claude AI usage limit reached|${futureEpoch}`
+    );
+
+    s.setAutoResume(true);
+
+    expect(s.autoResumeEnabled).toBe(false);
+    expect(s.isLimitPaused).toBe(false);
+    expect(s.autoResumeAt).toBeNull();
+  });
+
+  it('setAutoClear: no-op on an adopted session', () => {
+    const s = buildAdoptedSession(candidate({ mode: 'claude' }));
+    s.setAutoClear(true, 50);
+    expect(s.autoClearEnabled).toBe(false);
+  });
+
+  it('setAutoCompact: no-op on an adopted session', () => {
+    const s = buildAdoptedSession(candidate({ mode: 'claude' }));
+    s.setAutoCompact(true, 50, 'compact now');
+    expect(s.autoCompactEnabled).toBe(false);
+  });
+
+  it('control: a non-adopted claude-mode session DOES arm auto-resume normally', () => {
+    const s = new Session({ workingDir: '/tmp', mode: 'claude' });
+    const futureEpoch = Math.floor(Date.now() / 1000) + 3600;
+    (s as unknown as { _terminalBuffer: { append(d: string): void } })._terminalBuffer.append(
+      `Claude AI usage limit reached|${futureEpoch}`
+    );
+    s.setAutoResume(true);
+    expect(s.isLimitPaused).toBe(true);
+    s.setAutoResume(false); // clear the armed timer
+  });
+});
+
+describe('WebServer.setupSessionListeners — Ralph workspace watcher exemption', () => {
+  it('does NOT call ralphTracker.setWorkingDir for an adopted claude-mode session', async () => {
+    const server = new WebServer(0, false, true);
+    const session = buildAdoptedSession(candidate({ mode: 'claude', workingDir: '/w' }));
+    const spy = vi.spyOn(session.ralphTracker, 'setWorkingDir');
+
+    await (server as unknown as { setupSessionListeners(s: Session): Promise<void> }).setupSessionListeners(session);
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('control: DOES call ralphTracker.setWorkingDir for a normal (non-adopted) claude-mode session', async () => {
+    const server = new WebServer(0, false, true);
+    const session = new Session({ workingDir: '/tmp', mode: 'claude' });
+    const spy = vi.spyOn(session.ralphTracker, 'setWorkingDir');
+
+    await (server as unknown as { setupSessionListeners(s: Session): Promise<void> }).setupSessionListeners(session);
+
+    expect(spy).toHaveBeenCalledWith('/tmp');
   });
 });
