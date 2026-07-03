@@ -3081,6 +3081,8 @@ class CodemanApp {
   // inline onclick handlers (handleSessionTabClick / requestCloseSession), so a
   // plain innerHTML copy preserves click + close semantics with no re-wiring.
   _mirrorSessionListSidebar() {
+    // Skip rebuild while renaming to avoid destroying the input without firing blur.
+    if (this._inlineRenameActive) return;
     if (this._sessionListPosition !== 'left') return;
     const sidebar = document.getElementById('sessionListSidebar');
     const strip = this.$('sessionTabs');
