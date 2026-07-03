@@ -41,6 +41,7 @@ import {
   FLEET_PROTOCOL_VERSION,
   parseCentralToNodeFrame,
   type CentralToNodeFrame,
+  type ExternalSessionCandidate,
   type FleetDeviceSummary,
   type NodeToCentralFrame,
 } from './protocol.js';
@@ -48,6 +49,19 @@ import type { LocalSessionOps, TerminalSink } from './local-session-ops.js';
 import type { SessionCoreCtx } from '../web/route-helpers.js';
 import { collectDeviceJoinInfo, readFleetNodeConfig, type FleetNodeConfig } from './node-config.js';
 import { createLocalSessionOps } from './local-session-ops.js';
+import { ExternalSessionScanner } from './external-session-scanner.js';
+import { resolveConfiguredTmuxSocket } from '../tmux-manager.js';
+
+/**
+ * The subset of ExternalSessionScanner the agent drives — injectable so tests
+ * can supply a controllable fake instead of one that execs `ps`/`tmux`.
+ */
+export interface ExternalScannerLike {
+  start(): void;
+  stop(): void;
+  getCandidates(): ExternalSessionCandidate[];
+  on(event: 'changed', listener: (candidates: ExternalSessionCandidate[]) => void): void;
+}
 
 /** Micro-batch interval for terminal output (ms) — mirrors ws-routes.ts's browser WS cadence. */
 const FLUSH_INTERVAL_MS = 8;
@@ -96,6 +110,10 @@ export interface FleetNodeAgentOpts {
   reconnectBaseMs?: number;
   /** Reconnect backoff ceiling (ms). Default 30s. */
   reconnectMaxMs?: number;
+  /** External-tmux-session scanner. Default: a real one bound to `ownSocket` (or the configured codeman socket). */
+  scanner?: ExternalScannerLike;
+  /** This instance's own codeman tmux socket (excluded from scanning). Only used to build the default scanner. */
+  ownSocket?: string;
 }
 
 /** Per-session terminal output batch. */
@@ -115,6 +133,7 @@ export class FleetNodeAgent {
   private readonly heartbeatMs: number;
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
+  private readonly scanner: ExternalScannerLike;
 
   private ws: NodeAgentSocket | null = null;
   private stopped = false;
@@ -136,6 +155,10 @@ export class FleetNodeAgent {
     this.heartbeatMs = opts.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
     this.reconnectBaseMs = opts.reconnectBaseMs ?? DEFAULT_RECONNECT_BASE_MS;
     this.reconnectMaxMs = opts.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS;
+    this.scanner =
+      opts.scanner ?? new ExternalSessionScanner({ ownSocket: opts.ownSocket ?? resolveConfiguredTmuxSocket() });
+    // Forward every discovered external-session change; send() no-ops while the socket is down.
+    this.scanner.on('changed', (candidates) => this.sendExternalSessions(candidates));
   }
 
   /** Connect to the central controller; auto-reconnects with backoff until `stop()`. */
@@ -149,6 +172,7 @@ export class FleetNodeAgent {
     this.stopped = true;
     this.clearReconnectTimer();
     this.stopHeartbeat();
+    this.scanner.stop();
     this.unsubscribeAll();
     this.clearAllBatches();
     const ws = this.ws;
@@ -188,6 +212,10 @@ export class FleetNodeAgent {
       this.reconnectAttempt = 0; // successful connection resets backoff
       this.sendHello();
       this.startHeartbeat();
+      // Start external-tmux discovery (idempotent) and push the current snapshot
+      // right after hello; further changes flow via the scanner's 'changed' event.
+      this.scanner.start();
+      this.sendExternalSessions(this.scanner.getCandidates());
     });
 
     ws.on('message', (raw) => {
@@ -244,6 +272,11 @@ export class FleetNodeAgent {
       },
       sessions,
     });
+  }
+
+  /** Report the current external-tmux-session candidates (no-op while the socket is down). */
+  private sendExternalSessions(candidates: ExternalSessionCandidate[]): void {
+    this.send({ t: 'external-sessions', candidates });
   }
 
   private startHeartbeat(): void {

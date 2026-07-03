@@ -366,6 +366,8 @@ export const FleetDeviceOnline = 'fleet:device-online' as const;
 export const FleetDeviceOffline = 'fleet:device-offline' as const;
 /** A fleet device's session list changed. Payload: { deviceId: string; sessions: FleetSessionSummary[] }. */
 export const FleetSessionsUpdated = 'fleet:sessions-updated' as const;
+/** A fleet device's discovered external (foreign-tmux) sessions changed. Payload: { deviceId: string; candidates: ExternalSessionCandidate[] }. */
+export const FleetExternalSessionsUpdated = 'fleet:external-sessions-updated' as const;
 
 // ─── Namespace Re-export ─────────────────────────────────────────────────────
 

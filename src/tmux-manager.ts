@@ -493,7 +493,7 @@ function isValidPath(path: string): boolean {
  * Resolve the process-wide Codeman tmux socket name. Always returns a valid
  * name: `CODEMAN_TMUX_SOCKET` env override if safe, else the built-in default.
  */
-function resolveConfiguredTmuxSocket(): string {
+export function resolveConfiguredTmuxSocket(): string {
   const raw = process.env.CODEMAN_TMUX_SOCKET ?? DEFAULT_CODEMAN_TMUX_SOCKET;
   if (!SAFE_TMUX_SOCKET_PATTERN.test(raw)) {
     console.warn(`[TmuxManager] Ignoring invalid CODEMAN_TMUX_SOCKET: ${JSON.stringify(raw)}`);

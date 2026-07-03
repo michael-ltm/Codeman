@@ -98,6 +98,7 @@ class MockController {
   getHandle = vi.fn((_deviceId: string): FleetDeviceHandle | null => null);
   isOnline = vi.fn((_deviceId: string): boolean => false);
   hasSession = vi.fn((_deviceId: string, _sessionId: string): boolean => true);
+  getExternalSessions = vi.fn((): Record<string, unknown[]> => ({}));
 }
 
 /** Mock DeviceRegistry — only the methods fleet-routes.ts calls directly. */
@@ -190,6 +191,31 @@ describe('fleet-routes', () => {
       expect(res.statusCode).toBe(200);
       const body = res.json();
       expect(body.data).toEqual({ devices: state.devices, sessions: state.sessions });
+    });
+  });
+
+  // ========== GET /api/fleet/external-sessions ==========
+
+  describe('GET /api/fleet/external-sessions', () => {
+    it('returns { byDevice } from controller.getExternalSessions() through the envelope', async () => {
+      const byDevice = {
+        local: [{ socket: '', tmuxSession: 'work', mode: 'claude', workingDir: '/home/ming/work', firstSeenAt: 1 }],
+        dev_1: [{ socket: 'box', tmuxSession: 'remote', mode: 'codex', workingDir: '/srv/app', firstSeenAt: 2 }],
+      };
+      harness.controller.getExternalSessions.mockReturnValueOnce(byDevice);
+
+      const res = await harness.app.inject({ method: 'GET', url: '/api/fleet/external-sessions' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.success).toBe(true);
+      expect(body.data).toEqual({ byDevice });
+    });
+
+    it('returns an empty byDevice map when nothing has been discovered', async () => {
+      const res = await harness.app.inject({ method: 'GET', url: '/api/fleet/external-sessions' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data).toEqual({ byDevice: {} });
     });
   });
 

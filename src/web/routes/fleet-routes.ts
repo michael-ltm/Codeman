@@ -104,6 +104,14 @@ export function registerFleetRoutes(
     return { devices, sessions };
   });
 
+  // Discovered external (foreign-tmux) AI sessions across the whole fleet, keyed
+  // by deviceId (Rev5 §13.1). Read-only aggregate of the controller's per-device
+  // cache — populated by node `external-sessions` frames + the central's own
+  // scanner. Normal dashboard auth (handled upstream by the global middleware).
+  app.get('/api/fleet/external-sessions', async () => {
+    return { byDevice: controller.getExternalSessions() };
+  });
+
   app.post('/api/fleet/pairing-codes', async (req) => {
     const { code, expiresAt } = registry.createPairingCode();
     const origin = `${req.protocol}://${req.headers.host}`;

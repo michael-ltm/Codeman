@@ -7,6 +7,7 @@ import {
   parseCentralToNodeFrame,
   buildFleetSessionTab,
   ResumeCandidateSchema,
+  ExternalSessionCandidateSchema,
 } from '../../src/fleet/protocol.js';
 
 const device = {
@@ -88,6 +89,29 @@ describe('fleet protocol', () => {
     ).toBe(true);
     // title required
     expect(ResumeCandidateSchema.safeParse({ sessionId: 's1', workingDir: '/tmp', updatedAt: 1 }).success).toBe(false);
+  });
+
+  it('round-trips an external-sessions frame and validates the candidate shape', () => {
+    const candidate = {
+      socket: '',
+      tmuxSession: 'work',
+      mode: 'claude' as const,
+      workingDir: '/home/ming/work',
+      firstSeenAt: 1717000000000,
+    };
+    const frame = { t: 'external-sessions', candidates: [candidate] };
+    expect(parseNodeToCentralFrame(JSON.stringify(frame))).toEqual(frame);
+
+    // Empty candidate list is valid (nothing discovered).
+    expect(NodeToCentralFrameSchema.safeParse({ t: 'external-sessions', candidates: [] }).success).toBe(true);
+    // `candidates` is required.
+    expect(NodeToCentralFrameSchema.safeParse({ t: 'external-sessions' }).success).toBe(false);
+
+    // Candidate schema: all fields required.
+    expect(ExternalSessionCandidateSchema.safeParse(candidate).success).toBe(true);
+    expect(ExternalSessionCandidateSchema.safeParse({ ...candidate, firstSeenAt: undefined }).success).toBe(false);
+    // Extra `-L` socket names ride in the `socket` field.
+    expect(ExternalSessionCandidateSchema.safeParse({ ...candidate, socket: 'box', mode: 'codex' }).success).toBe(true);
   });
 
   it('builds tab with key/device-name/label/title rules', () => {

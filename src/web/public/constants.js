@@ -414,6 +414,7 @@ const SSE_EVENTS = {
   FLEET_DEVICE_ONLINE: 'fleet:device-online',
   FLEET_DEVICE_OFFLINE: 'fleet:device-offline',
   FLEET_SESSIONS_UPDATED: 'fleet:sessions-updated',
+  FLEET_EXTERNAL_SESSIONS_UPDATED: 'fleet:external-sessions-updated',
 };
 
 // ═══════════════════════════════════════════════════════════════

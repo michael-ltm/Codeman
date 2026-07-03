@@ -18,10 +18,11 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyWebsocket from '@fastify/websocket';
 import type { WebSocket as WsWebSocket } from 'ws';
 import type { IncomingHttpHeaders } from 'node:http';
-import { FleetNodeAgent } from '../../src/fleet/node-agent.js';
+import { FleetNodeAgent, type ExternalScannerLike } from '../../src/fleet/node-agent.js';
 import type { LocalSessionOps, TerminalSink } from '../../src/fleet/local-session-ops.js';
 import type {
   CentralToNodeFrame,
+  ExternalSessionCandidate,
   FleetDeviceSummary,
   FleetSessionSummary,
   NodeToCentralFrame,
@@ -66,6 +67,40 @@ function makeSession(overrides: Partial<FleetSessionSummary> = {}): FleetSession
     lastActivityAt: 1000,
     ...overrides,
   };
+}
+
+/** A controllable ExternalScannerLike: no exec, drive changes via emitChange(). */
+interface FakeScanner extends ExternalScannerLike {
+  current: ExternalSessionCandidate[];
+  startCalls: number;
+  stopCalls: number;
+  emitChange(candidates: ExternalSessionCandidate[]): void;
+}
+
+function makeScanner(): FakeScanner {
+  const s: FakeScanner & { _listener: ((c: ExternalSessionCandidate[]) => void) | null } = {
+    current: [],
+    startCalls: 0,
+    stopCalls: 0,
+    _listener: null,
+    start() {
+      s.startCalls += 1;
+    },
+    stop() {
+      s.stopCalls += 1;
+    },
+    getCandidates() {
+      return s.current;
+    },
+    on(_event: 'changed', listener: (c: ExternalSessionCandidate[]) => void) {
+      s._listener = listener;
+    },
+    emitChange(candidates: ExternalSessionCandidate[]) {
+      s.current = candidates;
+      s._listener?.(candidates);
+    },
+  };
+  return s;
 }
 
 interface MockOps extends LocalSessionOps {
@@ -149,11 +184,13 @@ function framesOfType<T extends NodeToCentralFrame['t']>(
 describe('FleetNodeAgent', () => {
   let central: Central;
   let ops: MockOps;
+  let scanner: FakeScanner;
   let agent: FleetNodeAgent | null;
 
   beforeEach(async () => {
     central = await startCentral();
     ops = makeOps();
+    scanner = makeScanner();
     agent = null;
   });
 
@@ -168,6 +205,7 @@ describe('FleetNodeAgent', () => {
       config,
       ops,
       device,
+      scanner, // injected fake — never execs ps/tmux in tests
       heartbeatMs: 10_000,
       reconnectBaseMs: 40,
       reconnectMaxMs: 200,
@@ -326,6 +364,48 @@ describe('FleetNodeAgent', () => {
     // Give it well past reconnectBaseMs (40ms) to prove no new connection is made.
     await new Promise((r) => setTimeout(r, 300));
     expect(central.connectionCount).toBe(1);
+  });
+
+  // external-sessions: starts the scanner on open and sends a snapshot right after hello
+  it('starts the scanner and sends an external-sessions snapshot after connecting', async () => {
+    scanner.current = [
+      { socket: '', tmuxSession: 'work', mode: 'claude', workingDir: '/home/ming/work', firstSeenAt: 111 },
+    ];
+    agent = newAgent();
+    agent.start();
+
+    await waitFor(() => expect(framesOfType(central, 'external-sessions').length).toBeGreaterThan(0), 5000);
+    expect(scanner.startCalls).toBeGreaterThanOrEqual(1);
+    const frame = framesOfType(central, 'external-sessions')[0];
+    expect(frame.candidates).toEqual(scanner.current);
+  });
+
+  // external-sessions: forwards a scanner 'changed' event as a new frame
+  it("forwards the scanner's 'changed' candidates as an external-sessions frame", async () => {
+    agent = newAgent();
+    agent.start();
+    await waitFor(() => expect(framesOfType(central, 'external-sessions').length).toBeGreaterThan(0));
+    const before = framesOfType(central, 'external-sessions').length;
+
+    const updated: ExternalSessionCandidate[] = [
+      { socket: 'box', tmuxSession: 'remote', mode: 'codex', workingDir: '/srv/app', firstSeenAt: 222 },
+    ];
+    scanner.emitChange(updated);
+
+    await waitFor(() => expect(framesOfType(central, 'external-sessions').length).toBeGreaterThan(before));
+    const last = framesOfType(central, 'external-sessions').at(-1)!;
+    expect(last.candidates).toEqual(updated);
+  });
+
+  // external-sessions: stop() stops the scanner
+  it('stops the scanner on stop()', async () => {
+    agent = newAgent();
+    agent.start();
+    await waitFor(() => expect(scanner.startCalls).toBeGreaterThanOrEqual(1));
+
+    agent.stop();
+    agent = null; // prevent afterEach double-stop
+    expect(scanner.stopCalls).toBeGreaterThanOrEqual(1);
   });
 
   // subscription cleanup on socket close

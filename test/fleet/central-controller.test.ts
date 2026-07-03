@@ -461,4 +461,58 @@ describe('FleetCentralController', () => {
     handle.writeInput('sess-1', 'x');
     expect(sock2.send).toHaveBeenCalled();
   });
+
+  it('14. an external-sessions frame caches candidates and broadcasts fleet:external-sessions-updated', () => {
+    const reg = makeRegistry();
+    const deviceId = pairDevice(reg);
+    const controller = new FleetCentralController(reg);
+    const onBroadcast = vi.fn();
+    controller.on('broadcast', onBroadcast);
+    controller.connectNode(deviceId, makeSocket(), helloFrame(deviceId));
+
+    const candidates = [
+      {
+        socket: '',
+        tmuxSession: 'work',
+        mode: 'claude' as const,
+        workingDir: '/home/ming/work',
+        firstSeenAt: 111,
+      },
+    ];
+    controller.handleNodeFrame(deviceId, { t: 'external-sessions', candidates });
+
+    expect(onBroadcast).toHaveBeenCalledWith('fleet:external-sessions-updated', { deviceId, candidates });
+    expect(controller.getExternalSessions()).toEqual({ [deviceId]: candidates });
+  });
+
+  it('15. registerLocalExternalSessions caches + broadcasts (the central-machine, no-WS path)', () => {
+    const reg = makeRegistry();
+    const controller = new FleetCentralController(reg);
+    const onBroadcast = vi.fn();
+    controller.on('broadcast', onBroadcast);
+
+    const candidates = [
+      { socket: 'box', tmuxSession: 'remote', mode: 'codex' as const, workingDir: '/srv/app', firstSeenAt: 222 },
+    ];
+    controller.registerLocalExternalSessions('local', candidates);
+
+    expect(onBroadcast).toHaveBeenCalledWith('fleet:external-sessions-updated', { deviceId: 'local', candidates });
+    expect(controller.getExternalSessions()).toEqual({ local: candidates });
+  });
+
+  it('16. disconnectNode drops the departed device external candidates', () => {
+    const reg = makeRegistry();
+    const deviceId = pairDevice(reg);
+    const controller = new FleetCentralController(reg);
+    controller.connectNode(deviceId, makeSocket(), helloFrame(deviceId));
+
+    controller.handleNodeFrame(deviceId, {
+      t: 'external-sessions',
+      candidates: [{ socket: '', tmuxSession: 'work', mode: 'gemini', workingDir: '/w', firstSeenAt: 1 }],
+    });
+    expect(controller.getExternalSessions()[deviceId]).toHaveLength(1);
+
+    controller.disconnectNode(deviceId);
+    expect(controller.getExternalSessions()[deviceId]).toBeUndefined();
+  });
 });

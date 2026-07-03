@@ -164,6 +164,8 @@ import { LocalDeviceAdapter } from '../fleet/device-adapter.js';
 import { createLocalSessionOps } from '../fleet/local-session-ops.js';
 import { collectDeviceJoinInfo } from '../fleet/node-config.js';
 import { startFleetNodeAgentIfConfigured, type FleetNodeAgent } from '../fleet/node-agent.js';
+import { ExternalSessionScanner } from '../fleet/external-session-scanner.js';
+import { resolveConfiguredTmuxSocket } from '../tmux-manager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -291,6 +293,9 @@ export class WebServer extends EventEmitter {
   private routeContext: ReturnType<WebServer['createRouteContext']> | null = null;
   // Fleet node agent — only started when fleet-node.json exists (device joined a fleet).
   private fleetNodeAgent: FleetNodeAgent | null = null;
+  // The central's own external-tmux-session scanner (this machine's 'local' device);
+  // feeds discovered candidates straight into the controller (no WS hop).
+  private localExternalScanner: ExternalSessionScanner | null = null;
   private pushStore: PushSubscriptionStore = new PushSubscriptionStore();
   private teamWatcher: TeamWatcher = new TeamWatcher();
   private _orchestratorLoop: import('../orchestrator-loop.js').OrchestratorLoop | null = null;
@@ -2081,6 +2086,17 @@ export class WebServer extends EventEmitter {
         console.log('Fleet node agent started - connecting to central controller from fleet-node.json');
       }
     }
+
+    // Discover external (foreign-tmux) AI sessions on the central's OWN machine
+    // so the 'local' device also surfaces adoptable sessions. Skipped in test
+    // mode (mirrors the fleet node agent) so tests never exec ps/tmux.
+    if (!this.testMode) {
+      this.localExternalScanner = new ExternalSessionScanner({ ownSocket: resolveConfiguredTmuxSocket() });
+      this.localExternalScanner.on('changed', (candidates) =>
+        this.fleetController.registerLocalExternalSessions('local', candidates)
+      );
+      this.localExternalScanner.start();
+    }
   }
 
   /**
@@ -2400,6 +2416,12 @@ export class WebServer extends EventEmitter {
     if (this.fleetNodeAgent) {
       this.fleetNodeAgent.stop();
       this.fleetNodeAgent = null;
+    }
+
+    // Stop the central's own external-tmux scanner.
+    if (this.localExternalScanner) {
+      this.localExternalScanner.stop();
+      this.localExternalScanner = null;
     }
 
     if (this._pasteImageGcStop) {

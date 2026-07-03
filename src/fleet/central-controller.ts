@@ -27,6 +27,7 @@ import {
   buildFleetSessionTab,
   type CentralToNodeFrame,
   type CreateFleetSessionRequest,
+  type ExternalSessionCandidate,
   type FleetDashboardState,
   type FleetDeviceSummary,
   type FleetSessionSummary,
@@ -297,6 +298,8 @@ class RemoteDeviceHandle implements FleetDeviceHandle {
 export class FleetCentralController extends EventEmitter {
   private readonly localDevices = new Map<string, FleetDeviceHandle>();
   private readonly remoteHandles = new Map<string, RemoteDeviceHandle>();
+  /** deviceId → last-reported external (foreign-tmux) session candidates (Rev5 §13.1). */
+  private readonly externalSessions = new Map<string, ExternalSessionCandidate[]>();
   private readonly requestTimeoutMs: number;
   private requestSeq = 0;
 
@@ -360,6 +363,7 @@ export class FleetCentralController extends EventEmitter {
     if (!handle) return;
     if (socket && handle.socket !== socket) return; // stale close from a replaced socket
     this.remoteHandles.delete(deviceId);
+    this.externalSessions.delete(deviceId); // drop stale foreign-tmux candidates for the departed device
     handle.rejectAllPending(new Error('Device disconnected'));
     handle.clearSinksSilently();
     this.registry.markOffline(deviceId);
@@ -389,6 +393,10 @@ export class FleetCentralController extends EventEmitter {
         this.registry.markOnline(deviceId);
         this.emit('broadcast', 'fleet:sessions-updated', { deviceId, sessions: handle.sessionList() });
         break;
+      case 'external-sessions':
+        this.registry.markOnline(deviceId);
+        this.setExternalSessions(deviceId, frame.candidates);
+        break;
       case 'terminal:data':
         handle.fanOutTerminal(frame.sessionId, { kind: 'data', data: frame.data });
         break;
@@ -405,6 +413,29 @@ export class FleetCentralController extends EventEmitter {
         handle.rejectPendingById(frame.requestId, frame.message);
         break;
     }
+  }
+
+  /**
+   * Record the local device's own external (foreign-tmux) session candidates.
+   * The central runs its own `ExternalSessionScanner` (wired in server.ts) whose
+   * 'changed' event feeds straight in here — no WebSocket hop, unlike remote
+   * nodes which arrive via the `external-sessions` frame in handleNodeFrame().
+   */
+  registerLocalExternalSessions(deviceId: string, candidates: ExternalSessionCandidate[]): void {
+    this.setExternalSessions(deviceId, candidates);
+  }
+
+  /** Per-device map of the latest external (foreign-tmux) session candidates. */
+  getExternalSessions(): Record<string, ExternalSessionCandidate[]> {
+    const out: Record<string, ExternalSessionCandidate[]> = {};
+    for (const [deviceId, candidates] of this.externalSessions) out[deviceId] = candidates;
+    return out;
+  }
+
+  /** Cache a device's external candidates and broadcast the update to the dashboard. */
+  private setExternalSessions(deviceId: string, candidates: ExternalSessionCandidate[]): void {
+    this.externalSessions.set(deviceId, candidates);
+    this.emit('broadcast', 'fleet:external-sessions-updated', { deviceId, candidates });
   }
 
   isOnline(deviceId: string): boolean {

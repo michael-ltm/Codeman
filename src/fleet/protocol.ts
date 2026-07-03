@@ -117,6 +117,27 @@ export interface ResumeCandidate {
   projectKey?: string;
 }
 
+/**
+ * An AI-CLI session discovered running inside a FOREIGN tmux server (i.e. one
+ * the user started themselves, not a Codeman-owned session on our own socket).
+ * Produced by `ExternalSessionScanner` (external-session-scanner.ts) on each
+ * node (and the central's own machine), reported up via the `external-sessions`
+ * frame, and cached per-device by the central controller. Task 28 turns a
+ * candidate into an adopted read/write tab; discovery (this) is read-only.
+ */
+export interface ExternalSessionCandidate {
+  /** tmux socket name the session lives on; '' = the user's default tmux server (no `-L`). */
+  socket: string;
+  /** tmux session name (`#{session_name}`). */
+  tmuxSession: string;
+  /** Which AI CLI is running in the pane's process tree. */
+  mode: FleetSessionMode;
+  /** The matching pane's current working directory (`#{pane_current_path}`). */
+  workingDir: string;
+  /** When this candidate was first observed (stable across scans while it persists). */
+  firstSeenAt: number;
+}
+
 /** Aggregate fleet state served by `GET /api/fleet`. */
 export interface FleetDashboardState {
   devices: FleetDeviceSummary[];
@@ -130,6 +151,7 @@ export type NodeToCentralFrame =
   | { t: 'hello'; protocol: 1; device: FleetDeviceSummary; sessions: FleetSessionSummary[] }
   | { t: 'heartbeat'; sessions: FleetSessionSummary[] }
   | { t: 'session:update'; session: FleetSessionSummary }
+  | { t: 'external-sessions'; candidates: ExternalSessionCandidate[] }
   | { t: 'terminal:data'; sessionId: string; data: string }
   | { t: 'terminal:clear'; sessionId: string }
   | { t: 'terminal:refresh'; sessionId: string } // signal only, buffer is fetched via get-buffer RPC
@@ -209,6 +231,14 @@ export const CreateFleetSessionRequestSchema: z.ZodType<CreateFleetSessionReques
   resumeSessionId: z.string().optional(),
 });
 
+export const ExternalSessionCandidateSchema: z.ZodType<ExternalSessionCandidate> = z.object({
+  socket: z.string(),
+  tmuxSession: z.string(),
+  mode: FleetSessionModeSchema,
+  workingDir: z.string(),
+  firstSeenAt: z.number(),
+});
+
 export const ResumeCandidateSchema: z.ZodType<ResumeCandidate> = z.object({
   sessionId: z.string(),
   workingDir: z.string(),
@@ -231,6 +261,10 @@ export const NodeToCentralFrameSchema = z.discriminatedUnion('t', [
   z.object({
     t: z.literal('session:update'),
     session: FleetSessionSummarySchema,
+  }),
+  z.object({
+    t: z.literal('external-sessions'),
+    candidates: z.array(ExternalSessionCandidateSchema),
   }),
   z.object({
     t: z.literal('terminal:data'),
