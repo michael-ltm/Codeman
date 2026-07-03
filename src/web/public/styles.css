@@ -12083,338 +12083,341 @@ html[data-skin="daylight-blue"] .welcome-btn-tunnel.active:hover {
    vars: glass panels/modals/popovers (rgba(19,19,22)/(31,38,48)/(22,22,28)…),
    the white-alpha tints inherited from the shared `html:not([data-skin="og"])`
    block (invisible on a light surface), the dark banner gradients, dark input
-   wells, the response viewer, and the welcome action buttons. Appended at EOF
-   so equal-specificity ties with the shared daylight block resolve in the light
-   skin's favor. Text on all of these already flows through var(--text) (dark).
-   Trivially removable. Uses the same native CSS nesting as the not-og block.
+   wells, the response viewer, and the welcome action buttons. Appended at EOF.
+   Text on all of these already flows through var(--text) (dark).
+   These are EXPLICIT FLAT selectors (`html[data-skin="light"] .foo`), NOT native
+   CSS nesting (`html[data-skin="light"] { .foo { ... } }`): the prod build runs
+   `esbuild --minify` on styles.css, which flattens nesting but DROPS the parent
+   prefix, so a nested `.foo` would ship BARE (applying to every skin + losing to
+   the base rule). Flat selectors survive the build with specificity (0,2,1),
+   cleanly beating the base and shared daylight rules. Dev (raw CSS, native
+   nesting) hid this — it only broke in production. Keep new light rules flat.
    ============================================================ */
-html[data-skin="light"] {
-  /* ---- Frosted panels / popovers / drawers: white glass, dark hairline ---- */
-  .monitor-panel,
-  .subagents-panel,
-  .project-insights-panel,
-  .file-browser-panel,
-  .file-preview-window,
-  .ralph-panel.detached,
-  .ralph-dropdown,
-  .run-mode-menu,
-  .case-settings-popover,
-  .attachment-history-drawer,
-  .fleet-panel {
-    background: rgba(255, 255, 255, 0.97);
-    border-color: rgba(15, 23, 42, 0.1);
-    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14), 0 2px 8px rgba(15, 23, 42, 0.08);
-  }
+/* ---- Frosted panels / popovers / drawers: white glass, dark hairline ---- */
+html[data-skin="light"] .monitor-panel,
+html[data-skin="light"] .subagents-panel,
+html[data-skin="light"] .project-insights-panel,
+html[data-skin="light"] .file-browser-panel,
+html[data-skin="light"] .file-preview-window,
+html[data-skin="light"] .ralph-panel.detached,
+html[data-skin="light"] .ralph-dropdown,
+html[data-skin="light"] .run-mode-menu,
+html[data-skin="light"] .case-settings-popover,
+html[data-skin="light"] .attachment-history-drawer,
+html[data-skin="light"] .fleet-panel {
+  background: rgba(255, 255, 255, 0.97);
+  border-color: rgba(15, 23, 42, 0.1);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14), 0 2px 8px rgba(15, 23, 42, 0.08);
+}
 
-  /* ---- Modal surface + mobile case sheet ---- */
-  .modal-content,
-  .mobile-case-picker-sheet {
-    background: #ffffff;
-    border-color: rgba(15, 23, 42, 0.1);
-    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
-  }
+/* ---- Modal surface + mobile case sheet ---- */
+html[data-skin="light"] .modal-content,
+html[data-skin="light"] .mobile-case-picker-sheet {
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.1);
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
+}
 
-  /* ---- Solo-gone fullscreen overlay: light frost ---- */
-  .solo-gone-overlay {
-    background: rgba(245, 246, 248, 0.92);
-  }
+/* ---- Solo-gone fullscreen overlay: light frost ---- */
+html[data-skin="light"] .solo-gone-overlay {
+  background: rgba(245, 246, 248, 0.92);
+}
 
-  /* ---- Image popup body: neutral light stage ---- */
-  .image-popup-body {
-    background: #eef0f3;
-  }
+/* ---- Image popup body: neutral light stage ---- */
+html[data-skin="light"] .image-popup-body {
+  background: #eef0f3;
+}
 
-  /* ---- Attachment cards / clear-all: white surface ---- */
-  .attachment-card,
-  .attachment-clear-all {
-    background: #ffffff;
-    border-color: rgba(15, 23, 42, 0.1);
-  }
+/* ---- Attachment cards / clear-all: white surface ---- */
+html[data-skin="light"] .attachment-card,
+html[data-skin="light"] .attachment-clear-all {
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.1);
+}
 
-  /* ---- Timer + respawn banners: light gradient, hairline ---- */
-  .timer-banner,
-  .respawn-banner {
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.96), rgba(245, 246, 248, 0.96));
-    border-bottom: 1px solid var(--glass-border);
-  }
+/* ---- Timer + respawn banners: light gradient, hairline ---- */
+html[data-skin="light"] .timer-banner,
+html[data-skin="light"] .respawn-banner {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.96), rgba(245, 246, 248, 0.96));
+  border-bottom: 1px solid var(--glass-border);
+}
 
-  /* ---- Bottom-toolbar neutral buttons: dark-alpha tints (white was invisible) ---- */
-  .btn-toolbar,
-  .btn-toolbar.btn-stop,
-  .toolbar-select {
-    background: rgba(15, 23, 42, 0.04);
-    border-color: rgba(15, 23, 42, 0.12);
-    color: var(--text-dim);
-  }
-  .btn-toolbar:hover,
-  .toolbar-select:hover {
-    background: rgba(15, 23, 42, 0.07);
-    border-color: rgba(15, 23, 42, 0.18);
-    color: var(--text);
-  }
+/* ---- Bottom-toolbar neutral buttons: dark-alpha tints (white was invisible) ---- */
+html[data-skin="light"] .btn-toolbar,
+html[data-skin="light"] .btn-toolbar.btn-stop,
+html[data-skin="light"] .toolbar-select {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.12);
+  color: var(--text-dim);
+}
+html[data-skin="light"] .btn-toolbar:hover,
+html[data-skin="light"] .toolbar-select:hover {
+  background: rgba(15, 23, 42, 0.07);
+  border-color: rgba(15, 23, 42, 0.18);
+  color: var(--text);
+}
 
-  /* ---- Tab number chip ---- */
-  .session-tab .tab-number {
-    background: rgba(15, 23, 42, 0.05);
-    border-color: rgba(15, 23, 42, 0.12);
-    color: var(--text-dim);
-  }
+/* ---- Tab number chip ---- */
+html[data-skin="light"] .session-tab .tab-number {
+  background: rgba(15, 23, 42, 0.05);
+  border-color: rgba(15, 23, 42, 0.12);
+  color: var(--text-dim);
+}
 
-  /* ---- Ralph ring track: dark-alpha (white stroke vanished on light) ---- */
-  .ralph-ring-bg,
-  .ralph-ring-track {
-    stroke: rgba(15, 23, 42, 0.1);
-  }
+/* ---- Ralph ring track: dark-alpha (white stroke vanished on light) ---- */
+html[data-skin="light"] .ralph-ring-bg,
+html[data-skin="light"] .ralph-ring-track {
+  stroke: rgba(15, 23, 42, 0.1);
+}
 
-  /* ---- CJK input + keyboard accessory + attachment chips ---- */
-  #cjkInput {
-    background: #ffffff;
-    color: var(--text);
-  }
-  .keyboard-accessory-bar {
-    background: #eef0f3;
-  }
-  .attachment-thumbnail-fallback,
-  .attachment-type-badge,
-  .attachment-history-thumb-fallback {
-    background: #eef0f3;
-    color: var(--text-dim);
-  }
+/* ---- CJK input + keyboard accessory + attachment chips ---- */
+html[data-skin="light"] #cjkInput {
+  background: #ffffff;
+  color: var(--text);
+}
+html[data-skin="light"] .keyboard-accessory-bar {
+  background: #eef0f3;
+}
+html[data-skin="light"] .attachment-thumbnail-fallback,
+html[data-skin="light"] .attachment-type-badge,
+html[data-skin="light"] .attachment-history-thumb-fallback {
+  background: #eef0f3;
+  color: var(--text-dim);
+}
 
-  /* ---- Response viewer (opt-in): light surfaces ---- */
-  .response-viewer,
-  .response-viewer-body pre,
-  .rv-table-wrap,
-  .rv-message,
-  .rv-message.rv-msg-assistant {
-    background: #ffffff;
-  }
-  .rv-message.rv-msg-user {
-    background: rgba(9, 105, 218, 0.06);
-  }
-  .rv-table-wrap th {
-    background: #f0f2f5;
-  }
-  .rv-wrap-toggle,
-  .rv-copy-btn {
-    background: rgba(15, 23, 42, 0.04);
-  }
+/* ---- Response viewer (opt-in): light surfaces ---- */
+html[data-skin="light"] .response-viewer,
+html[data-skin="light"] .response-viewer-body pre,
+html[data-skin="light"] .rv-table-wrap,
+html[data-skin="light"] .rv-message,
+html[data-skin="light"] .rv-message.rv-msg-assistant {
+  background: #ffffff;
+}
+html[data-skin="light"] .rv-message.rv-msg-user {
+  background: rgba(9, 105, 218, 0.06);
+}
+html[data-skin="light"] .rv-table-wrap th {
+  background: #f0f2f5;
+}
+html[data-skin="light"] .rv-wrap-toggle,
+html[data-skin="light"] .rv-copy-btn {
+  background: rgba(15, 23, 42, 0.04);
+}
 
-  /* ---- File preview body: neutral light stage ---- */
-  .file-preview-body {
-    background: #f0f2f5;
-  }
+/* ---- File preview body: neutral light stage ---- */
+html[data-skin="light"] .file-preview-body {
+  background: #f0f2f5;
+}
 
-  /* ---- Lifecycle log window (index.html inline dark styles → !important to
-     beat the element `style=` attributes; scoped to light so dark is untouched) ---- */
-  #lifecycleWindow {
-    background: #ffffff !important;
-    border-color: var(--border) !important;
-    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18) !important;
-  }
-  #lifecycleWindowHeader {
-    background: #f0f2f5 !important;
-    border-bottom-color: var(--border) !important;
-  }
-  #lifecycleFilterEvent,
-  #lifecycleFilterSession,
-  #lifecycleWindow button {
-    background: #ffffff !important;
-    color: var(--text) !important;
-    border-color: var(--border) !important;
-  }
-  #lifecycleWindow thead tr,
-  #lifecycleWindow table tr {
-    background: #ffffff !important;
-  }
+/* ---- Lifecycle log window (index.html inline dark styles → !important to
+   beat the element `style=` attributes; scoped to light so dark is untouched) ---- */
+html[data-skin="light"] #lifecycleWindow {
+  background: #ffffff !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18) !important;
+}
+html[data-skin="light"] #lifecycleWindowHeader {
+  background: #f0f2f5 !important;
+  border-bottom-color: var(--border) !important;
+}
+html[data-skin="light"] #lifecycleFilterEvent,
+html[data-skin="light"] #lifecycleFilterSession,
+html[data-skin="light"] #lifecycleWindow button {
+  background: #ffffff !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+html[data-skin="light"] #lifecycleWindow thead tr,
+html[data-skin="light"] #lifecycleWindow table tr {
+  background: #ffffff !important;
+}
 
-  /* ============================================================
-     Raised / card / input / hover surfaces. In the dark skins these are
-     rgba(255,255,255, .02–.15) fills with matching white-alpha borders —
-     BOTH invisible on the light bg (white over light ≈ no boundary), so
-     cards/inputs blur into the background. Give them real separation:
-     white cards + soft grey edges (Linear/Notion feel), recessed grey
-     fills for in-panel rows, and darken-based hover/track states. All
-     these surfaces already carry a border, so recoloring bg + border-color
-     is layout-neutral. Named in review: search box, Resume cards, filter
-     chips, settings rows, selects, toggles, tabs.
-     ============================================================ */
+/* ============================================================
+   Raised / card / input / hover surfaces. In the dark skins these are
+   rgba(255,255,255, .02–.15) fills with matching white-alpha borders —
+   BOTH invisible on the light bg (white over light ≈ no boundary), so
+   cards/inputs blur into the background. Give them real separation:
+   white cards + soft grey edges (Linear/Notion feel), recessed grey
+   fills for in-panel rows, and darken-based hover/track states. All
+   these surfaces already carry a border, so recoloring bg + border-color
+   is layout-neutral. Named in review: search box, Resume cards, filter
+   chips, settings rows, selects, toggles, tabs.
+   ============================================================ */
 
-  /* Inputs / selects → solid white well + soft edge; accent edge on focus */
-  .search-input,
-  .search-select,
-  .form-select {
-    background: #ffffff;
-    border-color: var(--border-light);
-  }
-  .search-input:focus,
-  .search-select:focus,
-  .form-select:focus {
-    background: #ffffff;
-    border-color: var(--accent);
-  }
+/* Inputs / selects → solid white well + soft edge; accent edge on focus */
+html[data-skin="light"] .search-input,
+html[data-skin="light"] .search-select,
+html[data-skin="light"] .form-select {
+  background: #ffffff;
+  border-color: var(--border-light);
+}
+html[data-skin="light"] .search-input:focus,
+html[data-skin="light"] .search-select:focus,
+html[data-skin="light"] .form-select:focus {
+  background: #ffffff;
+  border-color: var(--accent);
+}
 
-  /* Cards (search results, Resume history, timeline, stat) → white lift */
-  .search-result-card,
-  .history-item,
-  .history-item.expanded,
-  .timeline-event,
-  .stat-card {
-    background: #ffffff;
-    border-color: var(--border-light);
-  }
-  .history-item:hover,
-  .search-result-card:focus-visible,
-  .timeline-event:hover {
-    background: #f6f7f9;
-    border-color: var(--accent);
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
-  }
+/* Cards (search results, Resume history, timeline, stat) → white lift */
+html[data-skin="light"] .search-result-card,
+html[data-skin="light"] .history-item,
+html[data-skin="light"] .history-item.expanded,
+html[data-skin="light"] .timeline-event,
+html[data-skin="light"] .stat-card {
+  background: #ffffff;
+  border-color: var(--border-light);
+}
+html[data-skin="light"] .history-item:hover,
+html[data-skin="light"] .search-result-card:focus-visible,
+html[data-skin="light"] .timeline-event:hover {
+  background: #f6f7f9;
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
+}
 
-  /* Pills / chips / segmented containers → white with a soft edge */
-  .search-filter-chip,
-  .tab-count-group {
-    background: #ffffff;
-    border-color: var(--border-light);
-  }
-  .run-mode-option.selected {
-    background: rgba(9, 105, 218, 0.1);
-  }
+/* Pills / chips / segmented containers → white with a soft edge */
+html[data-skin="light"] .search-filter-chip,
+html[data-skin="light"] .tab-count-group {
+  background: #ffffff;
+  border-color: var(--border-light);
+}
+html[data-skin="light"] .run-mode-option.selected {
+  background: rgba(9, 105, 218, 0.1);
+}
 
-  /* Rows inside white panels/modals → faint grey lift + hairline */
-  .settings-item,
-  .context-setting,
-  .case-manage-item,
-  .header-font-controls,
-  .away-digest-custom-range {
-    background: rgba(15, 23, 42, 0.02);
-    border-color: var(--border);
-  }
+/* Rows inside white panels/modals → faint grey lift + hairline */
+html[data-skin="light"] .settings-item,
+html[data-skin="light"] .context-setting,
+html[data-skin="light"] .case-manage-item,
+html[data-skin="light"] .header-font-controls,
+html[data-skin="light"] .away-digest-custom-range {
+  background: rgba(15, 23, 42, 0.02);
+  border-color: var(--border);
+}
 
-  /* Small badges / counts / kbd / status chips → readable grey chip */
-  .search-group-count,
-  .welcome-hint kbd,
-  kbd,
-  .version-display,
-  .voice-provider-status,
-  .header-plan-usage,
-  .rv-role,
-  .away-digest-section-title,
-  .detection-ai-check.ai-disabled {
-    background: rgba(15, 23, 42, 0.05);
-    border-color: var(--border-light);
-  }
+/* Small badges / counts / kbd / status chips → readable grey chip */
+html[data-skin="light"] .search-group-count,
+html[data-skin="light"] .welcome-hint kbd,
+html[data-skin="light"] kbd,
+html[data-skin="light"] .version-display,
+html[data-skin="light"] .voice-provider-status,
+html[data-skin="light"] .header-plan-usage,
+html[data-skin="light"] .rv-role,
+html[data-skin="light"] .away-digest-section-title,
+html[data-skin="light"] .detection-ai-check.ai-disabled {
+  background: rgba(15, 23, 42, 0.05);
+  border-color: var(--border-light);
+}
 
-  /* Buttons that were white-alpha fills → soft grey + edge */
-  .history-show-more,
-  .btn-case-add,
-  .btn-case-settings,
-  .case-manage-btn,
-  .search-clear-btn {
-    background: rgba(15, 23, 42, 0.03);
-    border-color: var(--border-light);
-  }
+/* Buttons that were white-alpha fills → soft grey + edge */
+html[data-skin="light"] .history-show-more,
+html[data-skin="light"] .btn-case-add,
+html[data-skin="light"] .btn-case-settings,
+html[data-skin="light"] .case-manage-btn,
+html[data-skin="light"] .search-clear-btn {
+  background: rgba(15, 23, 42, 0.03);
+  border-color: var(--border-light);
+}
 
-  /* Progress / meter tracks + toggle OFF track → visible grey on white */
-  .stat-bar,
-  .respawn-timer-bar {
-    background: rgba(15, 23, 42, 0.08);
-  }
-  .switch .slider {
-    background-color: var(--border-light);
-    border-color: var(--border);
-  }
+/* Progress / meter tracks + toggle OFF track → visible grey on white */
+html[data-skin="light"] .stat-bar,
+html[data-skin="light"] .respawn-timer-bar {
+  background: rgba(15, 23, 42, 0.08);
+}
+html[data-skin="light"] .switch .slider {
+  background-color: var(--border-light);
+  border-color: var(--border);
+}
 
-  /* Hover / active brighten states (invisible on light) → subtle darken */
-  .tunnel-indicator:hover,
-  .btn-icon-header:hover,
-  .ralph-dropdown button:hover,
-  .search-clear-btn:hover,
-  .history-item-expand:hover,
-  .history-show-more:hover,
-  .btn-toolbar:active,
-  .run-mode-option:hover,
-  .btn-icon-only:hover,
-  .case-manage-item:hover,
-  .tab-count-btn:hover,
-  .mobile-case-item:hover,
-  .filter-btn:hover {
-    background: rgba(15, 23, 42, 0.05);
-  }
+/* Hover / active brighten states (invisible on light) → subtle darken */
+html[data-skin="light"] .tunnel-indicator:hover,
+html[data-skin="light"] .btn-icon-header:hover,
+html[data-skin="light"] .ralph-dropdown button:hover,
+html[data-skin="light"] .search-clear-btn:hover,
+html[data-skin="light"] .history-item-expand:hover,
+html[data-skin="light"] .history-show-more:hover,
+html[data-skin="light"] .btn-toolbar:active,
+html[data-skin="light"] .run-mode-option:hover,
+html[data-skin="light"] .btn-icon-only:hover,
+html[data-skin="light"] .case-manage-item:hover,
+html[data-skin="light"] .tab-count-btn:hover,
+html[data-skin="light"] .mobile-case-item:hover,
+html[data-skin="light"] .filter-btn:hover {
+  background: rgba(15, 23, 42, 0.05);
+}
 
-  /* Modal form text inputs / textareas (bare `.form-row input`) → white well */
-  .form-row input[type='text'],
-  .form-row input[type='number'],
-  .form-row textarea {
-    background: #ffffff;
-    border-color: var(--border-light);
-  }
-  .form-row input[type='text']:focus,
-  .form-row input[type='number']:focus,
-  .form-row textarea:focus {
-    border-color: var(--accent);
-  }
+/* Modal form text inputs / textareas (bare `.form-row input`) → white well */
+html[data-skin="light"] .form-row input[type='text'],
+html[data-skin="light"] .form-row input[type='number'],
+html[data-skin="light"] .form-row textarea {
+  background: #ffffff;
+  border-color: var(--border-light);
+}
+html[data-skin="light"] .form-row input[type='text']:focus,
+html[data-skin="light"] .form-row input[type='number']:focus,
+html[data-skin="light"] .form-row textarea:focus {
+  border-color: var(--accent);
+}
 
-  /* Away-digest cards + detection chip → white/grey lift with an edge */
-  .away-digest-card,
-  .away-digest-loading,
-  .away-digest-load-error {
-    background: #ffffff;
-    border-color: var(--border-light);
-  }
-  .detection-ai-check {
-    background: rgba(15, 23, 42, 0.05);
-    border-color: var(--border-light);
-  }
+/* Away-digest cards + detection chip → white/grey lift with an edge */
+html[data-skin="light"] .away-digest-card,
+html[data-skin="light"] .away-digest-loading,
+html[data-skin="light"] .away-digest-load-error {
+  background: #ffffff;
+  border-color: var(--border-light);
+}
+html[data-skin="light"] .detection-ai-check {
+  background: rgba(15, 23, 42, 0.05);
+  border-color: var(--border-light);
+}
 
-  /* Extra hover/active brighten states → subtle darken */
-  .session-tab .tab-close:hover,
-  .session-tab .tab-detach:hover,
-  .mobile-case-item:active,
-  .btn-toolbar.btn-case-mobile:hover,
-  .case-manage-btn:hover:not(:disabled),
-  .plan-subagent-prompt-link:hover {
-    background: rgba(15, 23, 42, 0.08);
-  }
+/* Extra hover/active brighten states → subtle darken */
+html[data-skin="light"] .session-tab .tab-close:hover,
+html[data-skin="light"] .session-tab .tab-detach:hover,
+html[data-skin="light"] .mobile-case-item:active,
+html[data-skin="light"] .btn-toolbar.btn-case-mobile:hover,
+html[data-skin="light"] .case-manage-btn:hover:not(:disabled),
+html[data-skin="light"] .plan-subagent-prompt-link:hover {
+  background: rgba(15, 23, 42, 0.08);
+}
 
-  /* Timeline scrollbar thumb → grey on light */
-  .run-summary-timeline::-webkit-scrollbar-thumb {
-    background: rgba(15, 23, 42, 0.18);
-  }
-  .run-summary-timeline::-webkit-scrollbar-thumb:hover {
-    background: rgba(15, 23, 42, 0.28);
-  }
+/* Timeline scrollbar thumb → grey on light */
+html[data-skin="light"] .run-summary-timeline::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.18);
+}
+html[data-skin="light"] .run-summary-timeline::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.28);
+}
 
-  /* Response-viewer zebra rows → faint grey stripe */
-  .rv-text tbody tr:nth-child(2n) td,
-  .response-viewer-body > table tbody tr:nth-child(2n) td,
-  .rv-table-wrap tbody tr:nth-child(2n) td {
-    background: rgba(15, 23, 42, 0.03);
-  }
+/* Response-viewer zebra rows → faint grey stripe */
+html[data-skin="light"] .rv-text tbody tr:nth-child(2n) td,
+html[data-skin="light"] .response-viewer-body > table tbody tr:nth-child(2n) td,
+html[data-skin="light"] .rv-table-wrap tbody tr:nth-child(2n) td {
+  background: rgba(15, 23, 42, 0.03);
+}
 
-  /* ---- Welcome action buttons: distinct light identities (Claude = accent
-     blue via the shared block; OpenCode = green; Tunnel = purple) ---- */
-  .welcome-btn-opencode {
-    background: linear-gradient(135deg, #1a7f37, #2da44e);
-    border-color: rgba(26, 127, 55, 0.5);
-    color: #ffffff;
-  }
-  .welcome-btn-opencode:hover {
-    background: linear-gradient(135deg, #2da44e, #3fb950);
-    box-shadow: 0 0 24px -6px rgba(26, 127, 55, 0.4);
-  }
-  .welcome-btn-tunnel {
-    background: linear-gradient(135deg, #8250df, #a475f0);
-    border-color: rgba(130, 80, 223, 0.45);
-    color: #ffffff;
-  }
-  .welcome-btn-tunnel:hover {
-    background: linear-gradient(135deg, #935ff0, #b085f5);
-    box-shadow: 0 0 24px -6px rgba(130, 80, 223, 0.4);
-  }
-  .welcome-btn-tunnel.active {
-    background: linear-gradient(135deg, #6639ba, #8250df);
-    border-color: rgba(130, 80, 223, 0.55);
-    color: #ffffff;
-  }
+/* ---- Welcome action buttons: distinct light identities (Claude = accent
+   blue via the shared block; OpenCode = green; Tunnel = purple) ---- */
+html[data-skin="light"] .welcome-btn-opencode {
+  background: linear-gradient(135deg, #1a7f37, #2da44e);
+  border-color: rgba(26, 127, 55, 0.5);
+  color: #ffffff;
+}
+html[data-skin="light"] .welcome-btn-opencode:hover {
+  background: linear-gradient(135deg, #2da44e, #3fb950);
+  box-shadow: 0 0 24px -6px rgba(26, 127, 55, 0.4);
+}
+html[data-skin="light"] .welcome-btn-tunnel {
+  background: linear-gradient(135deg, #8250df, #a475f0);
+  border-color: rgba(130, 80, 223, 0.45);
+  color: #ffffff;
+}
+html[data-skin="light"] .welcome-btn-tunnel:hover {
+  background: linear-gradient(135deg, #935ff0, #b085f5);
+  box-shadow: 0 0 24px -6px rgba(130, 80, 223, 0.4);
+}
+html[data-skin="light"] .welcome-btn-tunnel.active {
+  background: linear-gradient(135deg, #6639ba, #8250df);
+  border-color: rgba(130, 80, 223, 0.55);
+  color: #ffffff;
 }
