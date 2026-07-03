@@ -582,14 +582,17 @@ Object.assign(CodemanApp.prototype, {
    * Open (or re-attach) the terminal for `key` inside `containerEl`. A closed/
    * closing WS can never be reused — tear the dead rec down and rebuild. An
    * in-flight ws (`null`, buffer fetch not yet done) counts as healthy (0), as
-   * do CONNECTING (0) / OPEN (1) — those re-attach.
+   * do CONNECTING (0) / OPEN (1) — those re-attach. Exception: a rec whose
+   * local-session attach POST failed (`attachFailed`, ws still `null`) is DEAD,
+   * not in-flight — tear it down so the rebuild retries the attach; otherwise
+   * every re-render would re-adopt the stale failure overlay forever.
    */
   async openFleetGridTerminal(key, containerEl) {
     if (!key || !containerEl) return;
     const existing = this._fleetGridTerms.get(key);
     if (existing) {
       const wsState = existing.ws ? existing.ws.readyState : 0;
-      if (wsState !== 0 && wsState !== 1) {
+      if (existing.attachFailed || (wsState !== 0 && wsState !== 1)) {
         this.closeFleetGridTerminal(key);
       } else {
         return this._fleetGridReattach(existing, key, containerEl);
@@ -670,6 +673,7 @@ Object.assign(CodemanApp.prototype, {
       offlineEl: null,
       intentionalClose: false,
       offlineMessage: null,
+      attachFailed: false, // true = local attach POST failed; ws stays null but rec is DEAD, not in-flight
     };
     this._fleetGridTerms.set(key, rec);
 
@@ -711,6 +715,11 @@ Object.assign(CodemanApp.prototype, {
           console.error('Failed to attach unattached local session for grid tile:', err);
           // Tile may have been evicted/closed during the await.
           if (this._fleetGridTerms.get(key) === rec) {
+            // Mark the rec DEAD (ws stays null, which alone would read as
+            // "in-flight" to openFleetGridTerminal's liveness check) so the
+            // next grid re-render tears it down and RETRIES the attach,
+            // instead of re-adopting this failure overlay forever.
+            rec.attachFailed = true;
             this._fleetGridMarkOffline(key, '会话启动失败 · Failed to start');
           }
           this.showToast?.('会话启动失败 · Failed to start', 'error');
