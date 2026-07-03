@@ -1068,7 +1068,22 @@ Object.assign(CodemanApp.prototype, {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    const tabName = document.querySelector(`.tab-name[data-session-id="${sessionId}"]`);
+    // Prefer the visible copy: in left-sidebar mode the top strip is
+    // display:none (and precedes .main in DOM order), so a plain global
+    // querySelector would grab the hidden strip's copy. Building the rename
+    // <input> there makes input.focus() a no-op, the blur handler that
+    // clears _inlineRenameActive never fires, and _fullRenderSessionTabs
+    // early-returns forever (frozen tab rendering until reload). Same
+    // visible-preference idiom as tabElementFor() (app.js); top-mode
+    // selection is unchanged (red line: identical to the old behavior).
+    let tabName = null;
+    if (this._sessionListPosition === 'left') {
+      const sidebar = document.getElementById('sessionListSidebar');
+      tabName = sidebar && sidebar.querySelector(`.tab-name[data-session-id="${sessionId}"]`);
+    }
+    if (!tabName) {
+      tabName = document.querySelector(`.tab-name[data-session-id="${sessionId}"]`);
+    }
     if (!tabName) return;
 
     // Prevent tab re-renders from destroying the input while renaming
@@ -1099,6 +1114,17 @@ Object.assign(CodemanApp.prototype, {
     tabName.appendChild(input);
     input.focus();
     input.select();
+
+    // Safety net: if the input isn't actually focused (e.g. it landed in a
+    // hidden subtree due to some future mispositioning bug), the blur
+    // handler below — which is the only thing that clears
+    // _inlineRenameActive — will never fire, permanently freezing tab
+    // rendering. Bail out immediately instead of leaving that flag stuck.
+    if (document.activeElement !== input) {
+      this._inlineRenameActive = false;
+      this.renderSessionTabs();
+      return;
+    }
 
     const finishRename = async ({ commit }) => {
       if (!this._inlineRenameActive) return; // prevent double-fire
