@@ -133,6 +133,23 @@ Object.assign(CodemanApp.prototype, {
     this._updateFleetBadge?.();
     this._renderFleetPanelIfOpen?.();
 
+    // One-shot re-render: on a fresh page load, the welcome screen's Resume
+    // Conversation list can render (loadHistorySessions in terminal-ui.js)
+    // BEFORE this first fleet-state arrival — `_fetchRemoteResumeRows` reads
+    // `this._fleetState`, which was still unset, so remote candidates came
+    // back empty. Now that state has just landed for the first time, if the
+    // welcome screen is still showing and has no remote rows, re-run the
+    // list exactly once. `_fleetStateLoadedOnce` flips before the call so
+    // this can never re-trigger, including from later SSE-driven refreshes.
+    if (!this._fleetStateLoadedOnce) {
+      this._fleetStateLoadedOnce = true;
+      const welcomeVisible = document.getElementById('welcomeOverlay')?.classList.contains('visible');
+      const hasRemoteRows = !!document.querySelector('#historyList .history-item-remote');
+      if (welcomeVisible && !hasRemoteRows) {
+        this.loadHistorySessions();
+      }
+    }
+
     // Split-grid (Task 20): a device that just came back online may have
     // pinned tiles still showing their offline overlay — reconnect them. Also
     // refresh live tile titles (a remote tab's status/label may have changed).
