@@ -673,6 +673,54 @@ Object.assign(CodemanApp.prototype, {
     };
     this._fleetGridTerms.set(key, rec);
 
+    // Grid-only path (never reached in layout 1 — _fleetGridCreateTerminal is
+    // only invoked from the grid-active render/reconnect paths): a LOCAL tile
+    // key (target.kind === 'local' — i.e. not isFleetKey-shaped, no deviceId
+    // prefix) whose session has no live PTY (pid === null — restored after a
+    // server restart and never selected in single view). Mirror selectSession's
+    // re-attach call (app.js `pid === null` branch) BEFORE opening the tile WS;
+    // otherwise the WS opens fine against a session with no PTY — empty buffer,
+    // input silently dropped, no on-tile hint.
+    //
+    // REMOTE tiles are deliberately NOT handled here, even though a remote
+    // session can also end up pid === null (a node restarts and restores its
+    // own sessions too): there is no fleet endpoint to attach/start an
+    // existing remote session, so re-attach isn't possible client-side. A
+    // detached-vs-live hint isn't wired in either — `target` (from
+    // `_fleetGridTileTarget`) and `this.fleetTabs` (the registry this module
+    // owns) only carry `status`, which stays 'idle' whether or not pid is
+    // null (see session.ts / sessionStatusForFleet), so it can't distinguish
+    // the two cases. `pid` DOES exist one layer out, in the separately-cached
+    // `this._fleetState.sessions` (FleetSessionSummary[]) — but wiring a hint
+    // through that would mean flagging the tile via `_fleetGridMarkOffline`
+    // (`rec.offline = true`), and `_fleetGridReconnectOfflineTiles` treats
+    // ANY offline-flagged tile on an online device as reconnectable, re-
+    // closing+reopening it on every `fleet:sessions-updated` broadcast (which
+    // fires on the node's heartbeat/session-update cadence, not just device
+    // online transitions) — a reconnect loop for a tile that was never
+    // actually disconnected. Left as a documented follow-up rather than risking
+    // that regression in this bounded fix.
+    if (target.kind === 'local') {
+      const session = this.sessions.get(key);
+      if (session && session.pid === null) {
+        try {
+          const endpoint = session.mode === 'shell' ? `/api/sessions/${key}/shell` : `/api/sessions/${key}/interactive`;
+          await fetch(endpoint, { method: 'POST' });
+          session.status = 'busy';
+        } catch (err) {
+          console.error('Failed to attach unattached local session for grid tile:', err);
+          // Tile may have been evicted/closed during the await.
+          if (this._fleetGridTerms.get(key) === rec) {
+            this._fleetGridMarkOffline(key, '会话启动失败 · Failed to start');
+          }
+          this.showToast?.('会话启动失败 · Failed to start', 'error');
+          return;
+        }
+        // Tile may have been evicted/closed during the attach await.
+        if (this._fleetGridTerms.get(key) !== rec) return;
+      }
+    }
+
     const buf = await this._fleetGridFetchBuffer(target);
     // The tile may have been evicted/closed during the await — bail if so.
     if (this._fleetGridTerms.get(key) !== rec) return;
