@@ -12,6 +12,8 @@ function makeOps(overrides: Partial<LocalSessionOps> = {}): LocalSessionOps {
     resize: vi.fn(),
     subscribeTerminal: vi.fn(() => () => {}),
     getTerminalBuffer: vi.fn(async () => ''),
+    listResumeCandidates: vi.fn(async () => []),
+    listDirs: vi.fn(async () => ({ path: '/home', dirs: [] })),
     ...overrides,
   };
 }
@@ -107,5 +109,21 @@ describe('LocalDeviceAdapter', () => {
     const adapter = new LocalDeviceAdapter(identity, ops);
     await expect(adapter.getTerminalBuffer('s1')).resolves.toBe('buffer-content');
     expect(ops.getTerminalBuffer).toHaveBeenCalledWith('s1');
+  });
+
+  it('listResumeCandidates delegates to ops.listResumeCandidates', async () => {
+    const candidates = [{ sessionId: 's1', workingDir: '/p', title: 't', updatedAt: 1 }];
+    const ops = makeOps({ listResumeCandidates: vi.fn(async () => candidates) });
+    const adapter = new LocalDeviceAdapter(identity, ops);
+    await expect(adapter.listResumeCandidates()).resolves.toBe(candidates);
+    expect(ops.listResumeCandidates).toHaveBeenCalled();
+  });
+
+  it('listDirs delegates to ops.listDirs, forwarding the path', async () => {
+    const result = { path: '/home/proj', dirs: ['a', 'b'] };
+    const ops = makeOps({ listDirs: vi.fn(async () => result) });
+    const adapter = new LocalDeviceAdapter(identity, ops);
+    await expect(adapter.listDirs('/home/proj')).resolves.toBe(result);
+    expect(ops.listDirs).toHaveBeenCalledWith('/home/proj');
   });
 });

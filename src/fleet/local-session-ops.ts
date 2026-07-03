@@ -15,6 +15,7 @@
  * - sessionStatusForFleet — maps Session's live status to FleetSessionStatus
  */
 
+import { basename } from 'node:path';
 import type { Session } from '../session.js';
 import {
   createSessionCore,
@@ -22,11 +23,14 @@ import {
   readSessionTerminalBuffer,
   type SessionCoreCtx,
 } from '../web/route-helpers.js';
+import { listHistorySessions, type HistorySession } from '../web/history-sessions-core.js';
+import { listDirsSafe } from './dir-listing.js';
 import type {
   CreateFleetSessionRequest,
   FleetSessionMode,
   FleetSessionStatus,
   FleetSessionSummary,
+  ResumeCandidate,
 } from './protocol.js';
 
 /** A single terminal event forwarded from a live Session to a fleet subscriber. */
@@ -54,6 +58,22 @@ export interface LocalSessionOps {
   /** Subscribes to terminal data/clear/refresh events for a session; returns an unsubscribe function. */
   subscribeTerminal(sessionId: string, sink: TerminalSink): () => void;
   getTerminalBuffer(sessionId: string): Promise<string>;
+  /** Resumable past Claude conversations on this device (same core as `GET /api/history/sessions`). */
+  listResumeCandidates(): Promise<ResumeCandidate[]>;
+  /** Immediate subdirectories of `path` (default `$HOME`), confined to home. Throws 'Path outside home' on escape. */
+  listDirs(path?: string): Promise<{ path: string; dirs: string[] }>;
+}
+
+/** Map a history-listing row to the fleet ResumeCandidate wire shape. */
+export function historySessionToResumeCandidate(h: HistorySession): ResumeCandidate {
+  return {
+    sessionId: h.sessionId,
+    workingDir: h.workingDir,
+    // Prefer the sniffed first prompt; fall back to the workspace basename, then the id.
+    title: h.firstPrompt || basename(h.workingDir) || h.sessionId,
+    updatedAt: new Date(h.lastModified).getTime(),
+    projectKey: h.projectKey,
+  };
 }
 
 /**
@@ -83,7 +103,12 @@ export function createLocalSessionOps(deviceId: string, ctx: SessionCoreCtx): Lo
       }
       const session = await createSessionCore(
         ctx,
-        { workingDir: input.workingDir, mode: input.mode ?? 'claude', name: input.name },
+        {
+          workingDir: input.workingDir,
+          mode: input.mode ?? 'claude',
+          name: input.name,
+          resumeSessionId: input.resumeSessionId,
+        },
         { start: true }
       );
       return toSummary(session);
@@ -120,6 +145,13 @@ export function createLocalSessionOps(deviceId: string, ctx: SessionCoreCtx): Lo
     },
 
     getTerminalBuffer: (id) => readSessionTerminalBuffer(ctx, id),
+
+    listResumeCandidates: async () => {
+      const { sessions } = await listHistorySessions();
+      return sessions.map(historySessionToResumeCandidate);
+    },
+
+    listDirs: async (path) => listDirsSafe(path),
   };
 }
 

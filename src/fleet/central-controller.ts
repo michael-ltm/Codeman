@@ -32,6 +32,7 @@ import {
   type FleetSessionSummary,
   type FleetSessionTab,
   type NodeToCentralFrame,
+  type ResumeCandidate,
 } from './protocol.js';
 
 /** The minimal socket surface the controller needs to talk to a node agent; kept independent of `ws` so this module stays unit-testable with a fake object. */
@@ -181,6 +182,18 @@ class RemoteDeviceHandle implements FleetDeviceHandle {
   async getTerminalBuffer(sessionId: string): Promise<string> {
     const data = await this.request((requestId) => ({ t: 'get-buffer', requestId, sessionId }));
     return data as string;
+  }
+
+  async listResumeCandidates(): Promise<ResumeCandidate[]> {
+    const data = await this.request((requestId) => ({ t: 'list-resume-candidates', requestId }));
+    return data as ResumeCandidate[];
+  }
+
+  async listDirs(path?: string): Promise<{ path: string; dirs: string[] }> {
+    // The wire frame requires a string; an empty string means "default to $HOME"
+    // (the node's listDirsSafe treats '' as undefined).
+    const data = await this.request((requestId) => ({ t: 'list-dirs', requestId, path: path ?? '' }));
+    return data as { path: string; dirs: string[] };
   }
 
   // ---- internal: driven only by FleetCentralController ----

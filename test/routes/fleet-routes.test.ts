@@ -86,6 +86,8 @@ function makeHandle(overrides: Partial<FleetDeviceHandle> = {}): FleetDeviceHand
     resize: vi.fn(),
     subscribeTerminal: vi.fn(() => () => {}),
     getTerminalBuffer: vi.fn(async () => 'buffered-output'),
+    listResumeCandidates: vi.fn(async () => []),
+    listDirs: vi.fn(async () => ({ path: '/home/runner', dirs: [] })),
     ...overrides,
   } as FleetDeviceHandle;
 }
@@ -350,6 +352,140 @@ describe('fleet-routes', () => {
 
       expect(res.statusCode).toBe(400);
       expect(handle.createSession).not.toHaveBeenCalled();
+    });
+
+    it('forwards resumeSessionId to handle.createSession()', async () => {
+      const handle = makeHandle();
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+
+      const body: CreateFleetSessionRequest = {
+        workingDir: '/tmp/proj',
+        mode: 'claude',
+        resumeSessionId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+      };
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/fleet/devices/dev_1/sessions',
+        payload: body,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(handle.createSession).toHaveBeenCalledWith(body);
+    });
+  });
+
+  // ========== GET /api/fleet/devices/:deviceId/resume-candidates ==========
+
+  describe('GET /api/fleet/devices/:deviceId/resume-candidates', () => {
+    it('returns 409 "Device is offline" when the device is offline', async () => {
+      harness.controller.getHandle.mockReturnValueOnce(null);
+      harness.controller.isOnline.mockReturnValueOnce(false);
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: '/api/fleet/devices/dev_1/resume-candidates',
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('Device is offline');
+    });
+
+    it('passes through handle.listResumeCandidates() as { candidates }', async () => {
+      const candidates = [
+        { sessionId: 's1', workingDir: '/tmp/proj', title: 'fix the thing', updatedAt: 100, projectKey: '-tmp-proj' },
+      ];
+      const handle = makeHandle({ listResumeCandidates: vi.fn(async () => candidates) });
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: '/api/fleet/devices/dev_1/resume-candidates',
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data).toEqual({ candidates });
+      expect(handle.listResumeCandidates).toHaveBeenCalled();
+    });
+  });
+
+  // ========== GET /api/fleet/devices/:deviceId/dirs ==========
+
+  describe('GET /api/fleet/devices/:deviceId/dirs', () => {
+    it('returns 409 when the device is offline', async () => {
+      harness.controller.getHandle.mockReturnValueOnce(null);
+      harness.controller.isOnline.mockReturnValueOnce(false);
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: '/api/fleet/devices/dev_1/dirs?path=/home/x',
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('Device is offline');
+    });
+
+    it('passes through handle.listDirs(path) as { path, dirs }', async () => {
+      const result = { path: '/home/runner/projects', dirs: ['alpha', 'beta'] };
+      const handle = makeHandle({ listDirs: vi.fn(async () => result) });
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: '/api/fleet/devices/dev_1/dirs?path=/home/runner/projects',
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data).toEqual(result);
+      expect(handle.listDirs).toHaveBeenCalledWith('/home/runner/projects');
+    });
+
+    it('defaults path to undefined when the query is absent', async () => {
+      const handle = makeHandle();
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: '/api/fleet/devices/dev_1/dirs',
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(handle.listDirs).toHaveBeenCalledWith(undefined);
+    });
+
+    it("maps an out-of-home path ('Path outside home') to 400", async () => {
+      const handle = makeHandle({
+        listDirs: vi.fn(async () => {
+          throw new Error('Path outside home');
+        }),
+      });
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: '/api/fleet/devices/dev_1/dirs?path=/etc',
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe('Path outside home');
+    });
+
+    it('rejects a path longer than 4096 chars with 400 and never calls listDirs', async () => {
+      const handle = makeHandle();
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: `/api/fleet/devices/dev_1/dirs?path=${'a'.repeat(4097)}`,
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(handle.listDirs).not.toHaveBeenCalled();
     });
   });
 

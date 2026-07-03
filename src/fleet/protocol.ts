@@ -100,6 +100,21 @@ export interface CreateFleetSessionRequest {
   mode?: FleetSessionMode;
   name?: string;
   prompt?: string;
+  /** Resume an existing Claude conversation by its sessionId (claude mode only; passed to createSessionCore). */
+  resumeSessionId?: string;
+}
+
+/**
+ * A resumable past conversation on a device, derived from the same core listing
+ * logic behind `GET /api/history/sessions` (session-routes.ts). Returned by the
+ * `list-resume-candidates` RPC and `GET /api/fleet/devices/:deviceId/resume-candidates`.
+ */
+export interface ResumeCandidate {
+  sessionId: string;
+  workingDir: string;
+  title: string;
+  updatedAt: number;
+  projectKey?: string;
 }
 
 /** Aggregate fleet state served by `GET /api/fleet`. */
@@ -127,6 +142,8 @@ export type CentralToNodeFrame =
   | { t: 'create-session'; requestId: string; payload: CreateFleetSessionRequest }
   | { t: 'stop-session'; requestId: string; sessionId: string }
   | { t: 'get-buffer'; requestId: string; sessionId: string }
+  | { t: 'list-resume-candidates'; requestId: string }
+  | { t: 'list-dirs'; requestId: string; path: string }
   | { t: 'terminal:subscribe'; requestId: string; sessionId: string }
   | { t: 'terminal:unsubscribe'; requestId: string; sessionId: string }
   | { t: 'terminal:input'; sessionId: string; data: string; seq?: number; cid?: string }
@@ -189,6 +206,15 @@ export const CreateFleetSessionRequestSchema: z.ZodType<CreateFleetSessionReques
   mode: FleetSessionModeSchema.optional(),
   name: z.string().optional(),
   prompt: z.string().optional(),
+  resumeSessionId: z.string().optional(),
+});
+
+export const ResumeCandidateSchema: z.ZodType<ResumeCandidate> = z.object({
+  sessionId: z.string(),
+  workingDir: z.string(),
+  title: z.string(),
+  updatedAt: z.number(),
+  projectKey: z.string().optional(),
 });
 
 export const NodeToCentralFrameSchema = z.discriminatedUnion('t', [
@@ -250,6 +276,15 @@ export const CentralToNodeFrameSchema = z.discriminatedUnion('t', [
     t: z.literal('get-buffer'),
     requestId: z.string(),
     sessionId: z.string(),
+  }),
+  z.object({
+    t: z.literal('list-resume-candidates'),
+    requestId: z.string(),
+  }),
+  z.object({
+    t: z.literal('list-dirs'),
+    requestId: z.string(),
+    path: z.string(),
   }),
   z.object({
     t: z.literal('terminal:subscribe'),

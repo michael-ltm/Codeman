@@ -65,9 +65,15 @@ const FleetSessionInputSchema = z.object({
   clientId: z.string().max(128).optional(),
 });
 
+/** Query for the directory browser (GET .../dirs) — an optional path, bounded to a sane length. */
+const FleetDirsQuerySchema = z.object({
+  path: z.string().max(4096).optional(),
+});
+
 const DEVICE_OFFLINE_MESSAGE = 'Device is offline';
 const NODE_TIMEOUT_MESSAGE = 'Fleet node request timed out';
 const UNKNOWN_SESSION_MESSAGE = 'Unknown session';
+const PATH_OUTSIDE_HOME_MESSAGE = 'Path outside home';
 
 /**
  * Throws a structured `{statusCode, body}` error at an explicit HTTP status —
@@ -167,6 +173,50 @@ export function registerFleetRoutes(
         // support) — the browser terminal WS (Task 11) fills in live output
         // from here on, so an empty buffer is a safe fallback, not an error.
         return { buffer: '' };
+      }
+    }
+  );
+
+  // Cross-device Resume candidates (Task 22): the local device delegates to
+  // LocalSessionOps → the shared history-sessions-core listing; a remote device
+  // answers over the `list-resume-candidates` RPC. Offline → 409.
+  app.get<{ Params: { deviceId: string } }>('/api/fleet/devices/:deviceId/resume-candidates', async (req) => {
+    const { deviceId } = req.params;
+    const handle = controller.getHandle(deviceId);
+    if (!handle || !controller.isOnline(deviceId)) {
+      throwFleetError(409, ApiErrorCode.CONFLICT, DEVICE_OFFLINE_MESSAGE);
+    }
+    try {
+      return { candidates: await handle.listResumeCandidates() };
+    } catch (err) {
+      if (err && typeof err === 'object' && 'statusCode' in err) throw err;
+      const message = getErrorMessage(err);
+      if (message === NODE_TIMEOUT_MESSAGE) throwFleetError(504, ApiErrorCode.OPERATION_FAILED, message);
+      throw err;
+    }
+  });
+
+  // Directory browser for the new-session workingDir picker (Task 22). The path
+  // is security-confined to the target device's home ON THE NODE (listDirsSafe);
+  // this route only validates the query bound. Offline → 409; an out-of-home
+  // path (rejected node-side with 'Path outside home') → 400.
+  app.get<{ Params: { deviceId: string }; Querystring: { path?: string } }>(
+    '/api/fleet/devices/:deviceId/dirs',
+    async (req) => {
+      const { deviceId } = req.params;
+      const { path } = parseBody(FleetDirsQuerySchema, req.query);
+      const handle = controller.getHandle(deviceId);
+      if (!handle || !controller.isOnline(deviceId)) {
+        throwFleetError(409, ApiErrorCode.CONFLICT, DEVICE_OFFLINE_MESSAGE);
+      }
+      try {
+        return await handle.listDirs(path);
+      } catch (err) {
+        if (err && typeof err === 'object' && 'statusCode' in err) throw err;
+        const message = getErrorMessage(err);
+        if (message === PATH_OUTSIDE_HOME_MESSAGE) throwFleetError(400, ApiErrorCode.INVALID_INPUT, message);
+        if (message === NODE_TIMEOUT_MESSAGE) throwFleetError(504, ApiErrorCode.OPERATION_FAILED, message);
+        throw err;
       }
     }
   );

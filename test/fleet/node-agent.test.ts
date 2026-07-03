@@ -85,6 +85,10 @@ function makeOps(): MockOps {
       return () => sinks.delete(sessionId);
     }),
     getTerminalBuffer: vi.fn(async () => 'BUFFER'),
+    listResumeCandidates: vi.fn(async () => [
+      { sessionId: 'sid-1', workingDir: '/work/proj', title: 'fix the bug', updatedAt: 123, projectKey: '-work-proj' },
+    ]),
+    listDirs: vi.fn(async (path?: string) => ({ path: path || '/home/runner', dirs: ['projects', 'documents'] })),
     __sinks: sinks,
   };
   return ops as unknown as MockOps;
@@ -215,6 +219,52 @@ describe('FleetNodeAgent', () => {
     await waitFor(() => expect(framesOfType(central, 'error').some((f) => f.requestId === 'req-err')).toBe(true));
     const err = framesOfType(central, 'error').find((f) => f.requestId === 'req-err')!;
     expect(err.message).toContain('boom-create');
+  });
+
+  // 3b. list-resume-candidates -> ack with ops result
+  it('replies with an ack carrying ops.listResumeCandidates result', async () => {
+    agent = newAgent();
+    agent.start();
+    await waitFor(() => expect(central.serverSocket).not.toBeNull());
+
+    sendToAgent(central, { t: 'list-resume-candidates', requestId: 'rc-1' });
+
+    await waitFor(() => expect(framesOfType(central, 'ack').some((f) => f.requestId === 'rc-1')).toBe(true));
+    const ack = framesOfType(central, 'ack').find((f) => f.requestId === 'rc-1')!;
+    expect(ops.listResumeCandidates).toHaveBeenCalled();
+    expect(ack.data).toEqual([
+      { sessionId: 'sid-1', workingDir: '/work/proj', title: 'fix the bug', updatedAt: 123, projectKey: '-work-proj' },
+    ]);
+  });
+
+  // 3c. list-dirs -> ack with ops result (path forwarded)
+  it('replies with an ack carrying ops.listDirs result and forwards the path', async () => {
+    agent = newAgent();
+    agent.start();
+    await waitFor(() => expect(central.serverSocket).not.toBeNull());
+
+    sendToAgent(central, { t: 'list-dirs', requestId: 'ld-1', path: '/home/runner/projects' });
+
+    await waitFor(() => expect(framesOfType(central, 'ack').some((f) => f.requestId === 'ld-1')).toBe(true));
+    const ack = framesOfType(central, 'ack').find((f) => f.requestId === 'ld-1')!;
+    expect(ops.listDirs).toHaveBeenCalledWith('/home/runner/projects');
+    expect(ack.data).toEqual({ path: '/home/runner/projects', dirs: ['projects', 'documents'] });
+  });
+
+  // 3d. list-dirs throws -> error{requestId, message}
+  it('replies with an error frame when ops.listDirs throws', async () => {
+    ops.listDirs = vi.fn(async () => {
+      throw new Error('Path outside home');
+    }) as unknown as MockOps['listDirs'];
+    agent = newAgent();
+    agent.start();
+    await waitFor(() => expect(central.serverSocket).not.toBeNull());
+
+    sendToAgent(central, { t: 'list-dirs', requestId: 'ld-err', path: '/etc' });
+
+    await waitFor(() => expect(framesOfType(central, 'error').some((f) => f.requestId === 'ld-err')).toBe(true));
+    const err = framesOfType(central, 'error').find((f) => f.requestId === 'ld-err')!;
+    expect(err.message).toContain('Path outside home');
   });
 
   // 4. terminal:subscribe -> sink data -> terminal:data on the wire (+ idempotent)

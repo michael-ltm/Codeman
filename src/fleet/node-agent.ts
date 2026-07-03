@@ -312,6 +312,24 @@ export class FleetNodeAgent {
         }
         break;
 
+      case 'list-resume-candidates':
+        try {
+          const data = await this.ops.listResumeCandidates();
+          this.send({ t: 'ack', requestId: frame.requestId, data });
+        } catch (err) {
+          this.send({ t: 'error', requestId: frame.requestId, message: getErrorMessage(err) });
+        }
+        break;
+
+      case 'list-dirs':
+        try {
+          const data = await this.ops.listDirs(frame.path);
+          this.send({ t: 'ack', requestId: frame.requestId, data });
+        } catch (err) {
+          this.send({ t: 'error', requestId: frame.requestId, message: getErrorMessage(err) });
+        }
+        break;
+
       case 'terminal:input':
         try {
           this.ops.writeInput(frame.sessionId, frame.data, frame.seq, frame.cid);

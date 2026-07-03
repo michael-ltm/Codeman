@@ -22,6 +22,7 @@ import type {
   FleetCapabilities,
   FleetDeviceSummary,
   FleetSessionSummary,
+  ResumeCandidate,
 } from './protocol.js';
 import type { LocalSessionOps, TerminalSink } from './local-session-ops.js';
 
@@ -40,6 +41,8 @@ export interface FleetDeviceHandle {
   resize(sessionId: string, cols: number, rows: number, opts?: { viewportType?: string; force?: boolean }): void;
   subscribeTerminal(sessionId: string, sink: TerminalSink): () => void;
   getTerminalBuffer(sessionId: string): Promise<string>;
+  listResumeCandidates(): Promise<ResumeCandidate[]>;
+  listDirs(path?: string): Promise<{ path: string; dirs: string[] }>;
 }
 
 /**
@@ -100,5 +103,13 @@ export class LocalDeviceAdapter implements FleetDeviceHandle {
 
   getTerminalBuffer(sessionId: string): Promise<string> {
     return this.ops.getTerminalBuffer(sessionId);
+  }
+
+  listResumeCandidates(): Promise<ResumeCandidate[]> {
+    return this.ops.listResumeCandidates();
+  }
+
+  listDirs(path?: string): Promise<{ path: string; dirs: string[] }> {
+    return this.ops.listDirs(path);
   }
 }

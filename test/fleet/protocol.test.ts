@@ -6,6 +6,7 @@ import {
   parseNodeToCentralFrame,
   parseCentralToNodeFrame,
   buildFleetSessionTab,
+  ResumeCandidateSchema,
 } from '../../src/fleet/protocol.js';
 
 const device = {
@@ -55,6 +56,38 @@ describe('fleet protocol', () => {
     expect(CentralToNodeFrameSchema.safeParse({ t: 'create-session', requestId: 'r1', payload: {} }).success).toBe(
       false
     ); // workingDir 必填
+  });
+
+  it('round-trips the list-resume-candidates and list-dirs frames', () => {
+    const rc = { t: 'list-resume-candidates', requestId: 'r1' };
+    expect(parseCentralToNodeFrame(JSON.stringify(rc))).toEqual(rc);
+
+    const ld = { t: 'list-dirs', requestId: 'r2', path: '/home/ming/projects' };
+    expect(parseCentralToNodeFrame(JSON.stringify(ld))).toEqual(ld);
+
+    // list-dirs requires a `path` string
+    expect(CentralToNodeFrameSchema.safeParse({ t: 'list-dirs', requestId: 'r3' }).success).toBe(false);
+  });
+
+  it('accepts resumeSessionId on a create-session payload', () => {
+    const frame = {
+      t: 'create-session',
+      requestId: 'r4',
+      payload: { workingDir: '/tmp/proj', mode: 'claude', resumeSessionId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' },
+    };
+    const parsed = parseCentralToNodeFrame(JSON.stringify(frame));
+    expect(parsed).toEqual(frame);
+  });
+
+  it('validates a ResumeCandidate shape', () => {
+    const ok = { sessionId: 's1', workingDir: '/tmp', title: 'fix the thing', updatedAt: 123, projectKey: '-tmp' };
+    expect(ResumeCandidateSchema.safeParse(ok).success).toBe(true);
+    // projectKey is optional
+    expect(
+      ResumeCandidateSchema.safeParse({ sessionId: 's1', workingDir: '/tmp', title: 't', updatedAt: 1 }).success
+    ).toBe(true);
+    // title required
+    expect(ResumeCandidateSchema.safeParse({ sessionId: 's1', workingDir: '/tmp', updatedAt: 1 }).success).toBe(false);
   });
 
   it('builds tab with key/device-name/label/title rules', () => {

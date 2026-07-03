@@ -106,6 +106,8 @@ function makeLocalHandle(overrides: Partial<FleetDeviceHandle> = {}): FleetDevic
     resize: vi.fn(),
     subscribeTerminal: vi.fn(() => () => {}),
     getTerminalBuffer: vi.fn(async () => ''),
+    listResumeCandidates: vi.fn(async () => []),
+    listDirs: vi.fn(async () => ({ path: '/home', dirs: [] })),
     ...overrides,
   };
 }
@@ -152,6 +154,43 @@ describe('FleetCentralController', () => {
     controller.handleNodeFrame(deviceId, { t: 'ack', requestId: sent[0].requestId as string, data: created });
 
     await expect(promise).resolves.toEqual(created);
+  });
+
+  it('2b. listResumeCandidates and listDirs send RPC frames; acks resolve the promises', async () => {
+    const reg = makeRegistry();
+    const deviceId = pairDevice(reg);
+    const controller = new FleetCentralController(reg);
+    const socket = makeSocket();
+    controller.connectNode(deviceId, socket, helloFrame(deviceId));
+    const handle = controller.getHandle(deviceId)!;
+
+    // list-resume-candidates
+    const rcPromise = handle.listResumeCandidates();
+    const rcSent = framesSent(socket, 'list-resume-candidates');
+    expect(rcSent).toHaveLength(1);
+    const candidates = [{ sessionId: 's1', workingDir: '/p', title: 't', updatedAt: 5 }];
+    controller.handleNodeFrame(deviceId, { t: 'ack', requestId: rcSent[0].requestId as string, data: candidates });
+    await expect(rcPromise).resolves.toEqual(candidates);
+
+    // list-dirs — empty path sends '' on the wire (node defaults to $HOME)
+    const ldPromise = handle.listDirs();
+    const ldSent = framesSent(socket, 'list-dirs');
+    expect(ldSent).toHaveLength(1);
+    expect(ldSent[0]).toMatchObject({ path: '' });
+    const dirs = { path: '/home/ming', dirs: ['projects'] };
+    controller.handleNodeFrame(deviceId, { t: 'ack', requestId: ldSent[0].requestId as string, data: dirs });
+    await expect(ldPromise).resolves.toEqual(dirs);
+
+    // list-dirs with an explicit path forwards it
+    const ld2 = handle.listDirs('/home/ming/projects');
+    const ld2Sent = framesSent(socket, 'list-dirs');
+    expect(ld2Sent[ld2Sent.length - 1]).toMatchObject({ path: '/home/ming/projects' });
+    controller.handleNodeFrame(deviceId, {
+      t: 'ack',
+      requestId: ld2Sent[ld2Sent.length - 1].requestId as string,
+      data: { path: '/home/ming/projects', dirs: [] },
+    });
+    await expect(ld2).resolves.toEqual({ path: '/home/ming/projects', dirs: [] });
   });
 
   it('3. error frame rejects with its message; no ack within 10s rejects with a timeout error', async () => {
