@@ -1304,6 +1304,16 @@ html.mobile-init .file-browser-panel {
     margin-bottom: 0.4rem;
   }
 
+  /* Homepage device selector (Task 2): wrap on small screens, never overflow. */
+  .welcome-devices {
+    max-width: 100%;
+    margin-top: 0.75rem;
+  }
+
+  .welcome-device-hint {
+    font-size: 0.72rem;
+  }
+
   .welcome-actions {
     flex-direction: column;
     gap: 0.5rem;

@@ -296,6 +296,10 @@ Object.assign(CodemanApp.prototype, {
   },
 
   async runClaude() {
+    // Homepage device selector (Task 2): a REMOTE target retargets quick-start
+    // to the fleet create flow. 'local'/unset falls through to the EXACT
+    // original local path below — byte-identical (red line).
+    if ((this._welcomeDeviceId || 'local') !== 'local') return this._quickStartRemote('claude');
     const caseName = document.getElementById('quickStartCase').value || 'testcase';
     const tabCount = Math.min(20, Math.max(1, parseInt(document.getElementById('tabCount').value) || 1));
 
@@ -550,6 +554,8 @@ Object.assign(CodemanApp.prototype, {
   },
 
   async runOpenCode() {
+    // Homepage device selector (Task 2): remote → fleet create; local unchanged (red line).
+    if ((this._welcomeDeviceId || 'local') !== 'local') return this._quickStartRemote('opencode');
     const caseName = document.getElementById('quickStartCase').value || 'testcase';
 
     this.terminal.clear();
@@ -644,6 +650,8 @@ Object.assign(CodemanApp.prototype, {
   },
 
   async runGemini() {
+    // Homepage device selector (Task 2): remote → fleet create; local unchanged (red line).
+    if ((this._welcomeDeviceId || 'local') !== 'local') return this._quickStartRemote('gemini');
     const caseName = document.getElementById('quickStartCase').value || 'testcase';
 
     this.terminal.clear();
@@ -684,6 +692,211 @@ Object.assign(CodemanApp.prototype, {
     }
   },
 
+
+  // ═══════════════════════════════════════════════════════════════
+  // Welcome device selector (homepage device row · Task 2)
+  //
+  // ADDITIVE to the local quick-start path. `_welcomeDeviceId` defaults to
+  // 'local' → runClaude/runOpenCode/runGemini keep their EXACT original
+  // behavior (red line). Selecting a remote device retargets quick-start +
+  // Resume to that device. The row only appears when >=1 remote device exists.
+  // ═══════════════════════════════════════════════════════════════
+
+  /** Devices from the cached fleet snapshot (empty until first fleet:* SSE). */
+  _welcomeDevices() {
+    return this._fleetState && Array.isArray(this._fleetState.devices) ? this._fleetState.devices : [];
+  },
+
+  /** Find one device record by id (null when absent / no fleet state yet). */
+  _welcomeDevice(id) {
+    return this._welcomeDevices().find((d) => d && d.id === id) || null;
+  },
+
+  /** Human-readable device label; local shows '本机', mirroring the fleet panel fallback chain. */
+  _welcomeDeviceName(device) {
+    if (!device) return '';
+    if (device.id === 'local') return '本机';
+    return device.name || device.hostname || String(device.id).slice(0, 8);
+  },
+
+  /** True when at least one non-local (remote) device is known. */
+  _welcomeHasRemoteDevices() {
+    return this._welcomeDevices().some((d) => d && d.id !== 'local');
+  },
+
+  /**
+   * Select a target device for welcome quick-start + Resume. Re-renders the
+   * device row and reloads the Resume list (which re-filters + retitles).
+   */
+  selectWelcomeDevice(id) {
+    this._welcomeDeviceId = id || 'local';
+    this.renderWelcomeDeviceRow();
+    this.loadHistorySessions?.();
+  },
+
+  /**
+   * Render the welcome device row from `this._fleetState.devices`. Hidden
+   * entirely unless a remote device exists (single-machine users keep today's
+   * UI). Also drives the "→ 在 <设备名> 上创建" hint + the run-button disabled
+   * state when the selected device is offline. Re-run on each fleet:* refresh
+   * (wired into refreshFleetState) and on showWelcome. Escapes all device
+   * strings via textContent.
+   */
+  renderWelcomeDeviceRow() {
+    const row = document.getElementById('welcomeDeviceRow');
+    const hint = document.getElementById('welcomeDeviceHint');
+    if (!row) return;
+
+    // DEGRADE: no remote node → hide the row and force selection back to local
+    // so quick-start + Resume stay on the byte-identical local path.
+    if (!this._welcomeHasRemoteDevices()) {
+      row.style.display = 'none';
+      row.replaceChildren();
+      if (this._welcomeDeviceId && this._welcomeDeviceId !== 'local') this._welcomeDeviceId = 'local';
+      if (hint) {
+        hint.style.display = 'none';
+        hint.textContent = '';
+        hint.classList.remove('is-offline');
+      }
+      this._applyWelcomeDeviceRunState(null);
+      return;
+    }
+
+    // Selected id fallback: a vanished selection reverts to local.
+    let selectedId = this._welcomeDeviceId || 'local';
+    if (selectedId !== 'local' && !this._welcomeDevice(selectedId)) selectedId = 'local';
+    this._welcomeDeviceId = selectedId;
+
+    // 'local' pill always first (synthesize when the central self is absent).
+    const ordered = [this._welcomeDevice('local') || { id: 'local', status: 'online', activeSessionCount: 0 }];
+    for (const d of this._welcomeDevices()) if (d && d.id !== 'local') ordered.push(d);
+
+    row.replaceChildren();
+    for (const d of ordered) {
+      const online = d.status === 'online';
+      const selected = d.id === selectedId;
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'welcome-device-pill' + (selected ? ' selected' : '') + (online ? '' : ' offline');
+      pill.setAttribute('role', 'tab');
+      pill.setAttribute('aria-selected', selected ? 'true' : 'false');
+      const nameStr = this._welcomeDeviceName(d);
+      pill.title = nameStr + (online ? '' : ' · 离线');
+
+      const dot = document.createElement('span');
+      dot.className = 'welcome-device-dot ' + (online ? 'online' : 'offline');
+      dot.setAttribute('aria-hidden', 'true');
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'welcome-device-name';
+      nameEl.textContent = nameStr; // textContent auto-escapes remote strings
+
+      pill.append(dot, nameEl);
+
+      const count = Number(d.activeSessionCount || 0);
+      if (count > 0) {
+        const countEl = document.createElement('span');
+        countEl.className = 'welcome-device-count';
+        countEl.textContent = '·' + count;
+        pill.appendChild(countEl);
+      }
+
+      pill.addEventListener('click', () => this.selectWelcomeDevice(d.id));
+      row.appendChild(pill);
+    }
+    row.style.display = '';
+
+    // Hint + run-button state reflect the selected device.
+    const selDevice = selectedId === 'local' ? null : this._welcomeDevice(selectedId);
+    if (hint) {
+      if (selDevice) {
+        hint.textContent = '→ 在 ' + this._welcomeDeviceName(selDevice) + ' 上创建';
+        hint.style.display = '';
+      } else {
+        hint.textContent = '';
+        hint.style.display = 'none';
+      }
+      hint.classList.remove('is-offline');
+    }
+    this._applyWelcomeDeviceRunState(selDevice);
+  },
+
+  /**
+   * Disable the run buttons + show "设备离线" inline when the selected remote
+   * device is offline; restore otherwise. `selDevice` null = local (always
+   * enabled). No native dialog.
+   */
+  _applyWelcomeDeviceRunState(selDevice) {
+    const offline = !!selDevice && selDevice.status !== 'online';
+    const actions = document.querySelector('.welcome-actions');
+    if (actions) {
+      actions
+        .querySelectorAll('.welcome-btn-claude, .welcome-btn-opencode, .welcome-btn-gemini')
+        .forEach((btn) => {
+          btn.disabled = offline;
+          btn.classList.toggle('welcome-btn-disabled', offline);
+        });
+    }
+    const hint = document.getElementById('welcomeDeviceHint');
+    if (hint && offline) {
+      hint.textContent = '设备离线';
+      hint.style.display = '';
+      hint.classList.add('is-offline');
+    }
+  },
+
+  /**
+   * Quick-start a fresh session on the SELECTED remote device (welcome device
+   * row). Mirrors submitFleetCreateSession's create → refresh → select idiom.
+   * The working dir defaults to the remote device's $HOME (resolved via
+   * fleetListDirs) — the local `quickStartCase` case dir is a central-only
+   * concept and native prompts are disallowed, so the device home is the
+   * sensible v1 default. No native dialogs.
+   */
+  async _quickStartRemote(mode) {
+    const deviceId = this._welcomeDeviceId;
+    const device = this._welcomeDevice(deviceId);
+    const deviceName = this._welcomeDeviceName(device) || String(deviceId || '');
+    if (!device) {
+      this.showToast?.('设备不可用', 'error');
+      return;
+    }
+    if (device.status !== 'online') {
+      this.showToast?.('设备离线', 'error');
+      return;
+    }
+
+    this.terminal.clear();
+    this.terminal.writeln(`\x1b[1;32m Creating ${mode} session on ${deviceName}...\x1b[0m`);
+    this.terminal.writeln('');
+    this.terminal.focus();
+
+    try {
+      // Resolve the device's home as the working dir (v1 default).
+      const home = await this.fleetListDirs(deviceId);
+      const workingDir = home && home.path;
+      if (!workingDir) throw new Error('无法解析远程工作目录');
+
+      const created = await this.fleetCreateSession(deviceId, {
+        workingDir,
+        mode,
+        ...(this._deriveResumeName ? { name: this._deriveResumeName(workingDir) } : {}),
+      });
+      if (!created || !created.id) throw new Error('远程会话创建失败');
+
+      await this.refreshFleetState();
+      const key = `${deviceId}:${created.id}`;
+      if (this.isFleetKey(key)) {
+        this.selectSession(key, { forceReload: true });
+      } else {
+        this.showToast?.(`已在 ${deviceName} 上创建`, 'success');
+      }
+      this.terminal.focus();
+    } catch (err) {
+      this.terminal.writeln(`\x1b[1;31m Error: ${err.message}\x1b[0m`);
+      this.showToast?.(`在 ${deviceName} 上创建失败`, 'error');
+    }
+  },
 
   // ═══════════════════════════════════════════════════════════════
   // Session Options Modal

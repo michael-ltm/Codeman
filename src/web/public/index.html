@@ -309,6 +309,11 @@
         <div class="welcome-content">
           <h1 class="welcome-title">Codeman</h1>
           <p class="welcome-desc">Manage AI Coding tools in persistent tmux sessions.</p>
+          <!-- Homepage device selector (Task 2): additive device row. Empty +
+               display:none by default so a single-machine user sees today's UI
+               byte-identical; populated + shown by app.renderWelcomeDeviceRow()
+               only when a remote fleet device exists. -->
+          <div class="welcome-devices" id="welcomeDeviceRow" role="tablist" aria-label="Target device" style="display:none"></div>
           <div class="welcome-actions">
             <button class="welcome-btn welcome-btn-claude" onclick="app.setRunMode('claude'); app.runClaude()">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -327,6 +332,8 @@
               Run Gemini
             </button>
           </div>
+          <!-- "→ 在 <设备名> 上创建" hint / "设备离线" state (Task 2). Hidden for 本机. -->
+          <div class="welcome-device-hint" id="welcomeDeviceHint" style="display:none"></div>
           <div class="welcome-qr" id="welcomeQr" onclick="app.toggleWelcomeQrSize()">
             <div class="welcome-qr-inner" id="welcomeQrInner"></div>
             <div class="welcome-qr-url" id="welcomeQrUrl"></div>

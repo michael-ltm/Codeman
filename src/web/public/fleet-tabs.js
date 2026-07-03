@@ -148,6 +148,10 @@ Object.assign(CodemanApp.prototype, {
     this._fleetState = state;
     this._updateFleetBadge?.();
     this._renderFleetPanelIfOpen?.();
+    // Homepage device selector (Task 2) tracks the same snapshot — refresh the
+    // welcome device row so pills/counts/online-state stay live. Hidden unless a
+    // remote device exists, so single-machine users are unaffected.
+    this.renderWelcomeDeviceRow?.();
 
     // One-shot re-render: on a fresh page load, the welcome screen's Resume
     // Conversation list can render (loadHistorySessions in terminal-ui.js)

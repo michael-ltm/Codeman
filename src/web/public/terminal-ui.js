@@ -1003,6 +1003,7 @@ Object.assign(CodemanApp.prototype, {
     if (overlay) {
       overlay.classList.add('visible');
       this.loadTunnelStatus();
+      this.renderWelcomeDeviceRow?.();
       this.loadHistorySessions();
       this.initSearchPanel();
     }
@@ -1227,10 +1228,26 @@ Object.assign(CodemanApp.prototype, {
       // Unified descriptor list, globally sorted by recency (updatedAt desc).
       // Local rows keep byte-identical markup/behavior via `_buildHistoryItem`;
       // remote rows carry a device chip and resume on their origin device.
-      const merged = [
+      let merged = [
         ...allSessions.map((s) => ({ kind: 'local', record: s, t: new Date(s.lastModified).getTime() || 0 })),
         ...remoteRows.map((r) => ({ kind: 'remote', ...r, t: Number(r.candidate.updatedAt) || 0 })),
       ].sort((a, b) => b.t - a.t);
+
+      // Homepage device selector (Task 2): when a REMOTE device is selected,
+      // filter to that device's candidates and retitle. 'local' (default) keeps
+      // the full merged view + original title 'Resume Conversation' (red line —
+      // the title assignment below is the pre-existing default, idempotent on a
+      // fresh load; it only clears a prior remote selection's title).
+      const selDeviceId = this._welcomeDeviceId || 'local';
+      const titleEl = document.getElementById('historyTitle');
+      if (selDeviceId !== 'local') {
+        merged = merged.filter((d) => d.kind === 'remote' && d.deviceId === selDeviceId);
+        const dev = this._welcomeDevice ? this._welcomeDevice(selDeviceId) : null;
+        const devName = dev ? dev.name || dev.hostname || String(selDeviceId).slice(0, 8) : String(selDeviceId);
+        if (titleEl) titleEl.textContent = `Resume Conversation (${devName})`;
+      } else if (titleEl) {
+        titleEl.textContent = 'Resume Conversation';
+      }
 
       if (merged.length === 0) {
         container.style.display = 'none';

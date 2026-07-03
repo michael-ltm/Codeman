@@ -2402,6 +2402,99 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   margin-bottom: 0.5rem;
 }
 
+/* Homepage device selector (Task 2) — additive device row; hidden unless a
+   remote fleet device exists. Uses only skin CSS variables so it auto-adapts to
+   every skin (incl. light). */
+.welcome-devices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 1.25rem;
+}
+
+.welcome-device-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.32rem 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-dim);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all var(--transition-smooth);
+  letter-spacing: 0.01em;
+}
+
+.welcome-device-pill:hover {
+  border-color: var(--border-light);
+  color: var(--text);
+}
+
+.welcome-device-pill.selected {
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.14);
+  box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.25);
+}
+
+.welcome-device-pill.offline {
+  opacity: 0.55;
+}
+
+.welcome-device-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.welcome-device-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--text-muted);
+}
+
+.welcome-device-dot.online {
+  background: var(--green, #3fb950);
+}
+
+.welcome-device-dot.offline {
+  background: var(--text-muted);
+}
+
+.welcome-device-count {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.welcome-device-pill.selected .welcome-device-count {
+  color: var(--accent);
+}
+
+.welcome-device-hint {
+  margin-top: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.welcome-device-hint.is-offline {
+  color: var(--red);
+}
+
+.welcome-btn-disabled,
+.welcome-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .welcome-actions {
   display: flex;
   gap: 0.75rem;
