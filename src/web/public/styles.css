@@ -12119,6 +12119,170 @@ html[data-skin="light"] {
     background: #ffffff !important;
   }
 
+  /* ============================================================
+     Raised / card / input / hover surfaces. In the dark skins these are
+     rgba(255,255,255, .02–.15) fills with matching white-alpha borders —
+     BOTH invisible on the light bg (white over light ≈ no boundary), so
+     cards/inputs blur into the background. Give them real separation:
+     white cards + soft grey edges (Linear/Notion feel), recessed grey
+     fills for in-panel rows, and darken-based hover/track states. All
+     these surfaces already carry a border, so recoloring bg + border-color
+     is layout-neutral. Named in review: search box, Resume cards, filter
+     chips, settings rows, selects, toggles, tabs.
+     ============================================================ */
+
+  /* Inputs / selects → solid white well + soft edge; accent edge on focus */
+  .search-input,
+  .search-select,
+  .form-select {
+    background: #ffffff;
+    border-color: var(--border-light);
+  }
+  .search-input:focus,
+  .search-select:focus,
+  .form-select:focus {
+    background: #ffffff;
+    border-color: var(--accent);
+  }
+
+  /* Cards (search results, Resume history, timeline, stat) → white lift */
+  .search-result-card,
+  .history-item,
+  .history-item.expanded,
+  .timeline-event,
+  .stat-card {
+    background: #ffffff;
+    border-color: var(--border-light);
+  }
+  .history-item:hover,
+  .search-result-card:focus-visible,
+  .timeline-event:hover {
+    background: #f6f7f9;
+    border-color: var(--accent);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
+  }
+
+  /* Pills / chips / segmented containers → white with a soft edge */
+  .search-filter-chip,
+  .tab-count-group {
+    background: #ffffff;
+    border-color: var(--border-light);
+  }
+  .run-mode-option.selected {
+    background: rgba(9, 105, 218, 0.1);
+  }
+
+  /* Rows inside white panels/modals → faint grey lift + hairline */
+  .settings-item,
+  .context-setting,
+  .case-manage-item,
+  .header-font-controls,
+  .away-digest-custom-range {
+    background: rgba(15, 23, 42, 0.02);
+    border-color: var(--border);
+  }
+
+  /* Small badges / counts / kbd / status chips → readable grey chip */
+  .search-group-count,
+  .welcome-hint kbd,
+  kbd,
+  .version-display,
+  .voice-provider-status,
+  .header-plan-usage,
+  .rv-role,
+  .away-digest-section-title,
+  .detection-ai-check.ai-disabled {
+    background: rgba(15, 23, 42, 0.05);
+    border-color: var(--border-light);
+  }
+
+  /* Buttons that were white-alpha fills → soft grey + edge */
+  .history-show-more,
+  .btn-case-add,
+  .btn-case-settings,
+  .case-manage-btn,
+  .search-clear-btn {
+    background: rgba(15, 23, 42, 0.03);
+    border-color: var(--border-light);
+  }
+
+  /* Progress / meter tracks + toggle OFF track → visible grey on white */
+  .stat-bar,
+  .respawn-timer-bar {
+    background: rgba(15, 23, 42, 0.08);
+  }
+  .switch .slider {
+    background-color: var(--border-light);
+    border-color: var(--border);
+  }
+
+  /* Hover / active brighten states (invisible on light) → subtle darken */
+  .tunnel-indicator:hover,
+  .btn-icon-header:hover,
+  .ralph-dropdown button:hover,
+  .search-clear-btn:hover,
+  .history-item-expand:hover,
+  .history-show-more:hover,
+  .btn-toolbar:active,
+  .run-mode-option:hover,
+  .btn-icon-only:hover,
+  .case-manage-item:hover,
+  .tab-count-btn:hover,
+  .mobile-case-item:hover,
+  .filter-btn:hover {
+    background: rgba(15, 23, 42, 0.05);
+  }
+
+  /* Modal form text inputs / textareas (bare `.form-row input`) → white well */
+  .form-row input[type='text'],
+  .form-row input[type='number'],
+  .form-row textarea {
+    background: #ffffff;
+    border-color: var(--border-light);
+  }
+  .form-row input[type='text']:focus,
+  .form-row input[type='number']:focus,
+  .form-row textarea:focus {
+    border-color: var(--accent);
+  }
+
+  /* Away-digest cards + detection chip → white/grey lift with an edge */
+  .away-digest-card,
+  .away-digest-loading,
+  .away-digest-load-error {
+    background: #ffffff;
+    border-color: var(--border-light);
+  }
+  .detection-ai-check {
+    background: rgba(15, 23, 42, 0.05);
+    border-color: var(--border-light);
+  }
+
+  /* Extra hover/active brighten states → subtle darken */
+  .session-tab .tab-close:hover,
+  .session-tab .tab-detach:hover,
+  .mobile-case-item:active,
+  .btn-toolbar.btn-case-mobile:hover,
+  .case-manage-btn:hover:not(:disabled),
+  .plan-subagent-prompt-link:hover {
+    background: rgba(15, 23, 42, 0.08);
+  }
+
+  /* Timeline scrollbar thumb → grey on light */
+  .run-summary-timeline::-webkit-scrollbar-thumb {
+    background: rgba(15, 23, 42, 0.18);
+  }
+  .run-summary-timeline::-webkit-scrollbar-thumb:hover {
+    background: rgba(15, 23, 42, 0.28);
+  }
+
+  /* Response-viewer zebra rows → faint grey stripe */
+  .rv-text tbody tr:nth-child(2n) td,
+  .response-viewer-body > table tbody tr:nth-child(2n) td,
+  .rv-table-wrap tbody tr:nth-child(2n) td {
+    background: rgba(15, 23, 42, 0.03);
+  }
+
   /* ---- Welcome action buttons: distinct light identities (Claude = accent
      blue via the shared block; OpenCode = green; Tunnel = purple) ---- */
   .welcome-btn-opencode {
