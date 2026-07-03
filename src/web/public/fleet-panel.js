@@ -13,6 +13,16 @@
  *     `⚠ 无 tmux` capability tag. Clicking a device only updates in-panel
  *     selection state (NEVER navigates); selecting a remote device expands its
  *     remote sessions with a per-session stop action.
+ *   - External sessions (Rev5 §13.3, Task 29): a "发现的外部会话" section below
+ *     the device list lists the SELECTED device's discovered foreign-tmux
+ *     candidates (`GET /api/fleet/external-sessions`, fetched once on panel
+ *     open + kept current by the `fleet:external-sessions-updated` SSE delta —
+ *     see `_refreshFleetExternalSessions`/`_onFleetExternalSessionsUpdated`).
+ *     "收编为 Tab" POSTs `.../adopt-session`; a candidate whose tmux session was
+ *     already adopted (matched against `state.sessions` by the `tmux:<name>`
+ *     convention + workingDir — the scanner keeps reporting the foreign tmux
+ *     session forever, it never leaves the foreign server) renders as 已收编
+ *     with the button disabled instead of disappearing.
  *   - Pairing: mint a one-time code → shows code + expiry countdown + a copyable
  *     `codeman node join …` command (copied via app._copyText, the codebase's
  *     clipboard helper, with a toast).
@@ -47,7 +57,7 @@
  * @mixin Extends CodemanApp.prototype via Object.assign
  * @dependency app.js (CodemanApp, this.$, this._copyText, showToast),
  *   fleet-api.js (fleetCreatePairingCode/fleetCreateSession/fleetStopSession/
- *   fleetResumeCandidates/fleetListDirs),
+ *   fleetResumeCandidates/fleetListDirs/fleetExternalSessions/fleetAdoptSession),
  *   fleet-tabs.js (refreshFleetState/stopFleetSession/isFleetKey),
  *   constants.js (escapeHtml)
  * @loadorder after fleet-tabs.js
@@ -72,6 +82,7 @@ Object.assign(CodemanApp.prototype, {
       // Render immediately from the last snapshot, then refresh for freshness.
       this.renderFleetPanel();
       this.refreshFleetState();
+      this._refreshFleetExternalSessions();
     }
   },
 
@@ -134,6 +145,10 @@ Object.assign(CodemanApp.prototype, {
     this._renderFleetModeSeg();
     const createSel = this.$('fleetCreateDevice');
     this._refreshFleetDirCandidates(createSel && createSel.value);
+    // Cheap re-render from the already-fetched candidate cache — picks up both
+    // a device-selection change and any `adopted` flag that just landed on
+    // `state.sessions` (e.g. right after a successful adopt POST).
+    this._renderFleetExternalSessions();
   },
 
   /** One device row (+ its remote sessions when selected). All strings escaped. */
@@ -175,19 +190,32 @@ Object.assign(CodemanApp.prototype, {
       </div>${sessionsHtml}`;
   },
 
-  /** One remote session row with a stop action. All strings escaped. */
+  /**
+   * One remote session row with a stop action. All strings escaped. Adopted
+   * (foreign-tmux) sessions get a 🔗 marker and a relabeled/repurposed action
+   * button — Codeman never owns their lifecycle, so "停止" (which reads as
+   * destructive) would be misleading; the button becomes "移除" and its
+   * confirm-modal copy is swapped by `requestStopFleetSession` accordingly.
+   */
   _fleetSessionHtml(device, session) {
     const key = `${session.deviceId}:${session.id}`;
     const status = escapeHtml(session.status || 'idle');
     const mode = session.mode || 'claude';
     const label = session.name || this._fleetBasename(session.workingDir) || session.id.slice(0, 8);
     const modeBadge = mode !== 'claude' ? `<span class="fleet-session-mode">${escapeHtml(mode)}</span>` : '';
+    const adopted = !!session.adopted;
+    const adoptedBadge = adopted
+      ? '<span class="tab-adopted-badge" title="收编的外部 tmux 会话 · Adopted external tmux session" aria-hidden="true">\u{1F517}</span>'
+      : '';
     const keyJson = escapeHtml(JSON.stringify(key));
     const labelJson = escapeHtml(JSON.stringify(`${device.name || device.hostname || ''} / ${label}`));
+    const stopLabel = adopted ? '移除' : '停止';
+    const stopTitle = adopted ? '从 Codeman 移除(不会关闭该 tmux 会话)' : '停止远程会话';
+    const stopAria = adopted ? 'Remove adopted session (tmux keeps running)' : 'Stop remote session';
     return `<div class="fleet-session">
         <span class="fleet-session-dot ${status}" aria-hidden="true"></span>
-        <span class="fleet-session-label" title="${escapeHtml(session.workingDir || '')}">${modeBadge}${escapeHtml(label)}</span>
-        <button type="button" class="fleet-session-stop" onclick="event.stopPropagation(); app.requestStopFleetSession(${keyJson}, ${labelJson})" title="停止远程会话" aria-label="Stop remote session">停止</button>
+        <span class="fleet-session-label" title="${escapeHtml(session.workingDir || '')}">${modeBadge}${adoptedBadge}${escapeHtml(label)}</span>
+        <button type="button" class="fleet-session-stop" onclick="event.stopPropagation(); app.requestStopFleetSession(${keyJson}, ${labelJson}, ${adopted})" title="${stopTitle}" aria-label="${stopAria}">${stopLabel}</button>
       </div>`;
   },
 
@@ -196,6 +224,169 @@ Object.assign(CodemanApp.prototype, {
     if (!p || typeof p !== 'string') return '';
     const parts = p.split(/[\\/]/).filter(Boolean);
     return parts.length ? parts[parts.length - 1] : '';
+  },
+
+  // ─── External session discovery + adoption (Rev5 §13.3, Task 29) ───────────
+  //
+  // `this._fleetExternalSessionsByDevice` — Record<deviceId, ExternalSessionCandidate[]>,
+  // fetched in one shot on panel open (fetches EVERY device, not just the
+  // selected one — the `/api/fleet/external-sessions` response already covers
+  // the whole fleet) and kept current thereafter by the `fleet:external-
+  // sessions-updated` SSE delta (`_onFleetExternalSessionsUpdated`, wired in
+  // app.js's `_SSE_HANDLER_MAP`), which merges straight into the cache with NO
+  // refetch. The section only ever displays the currently-SELECTED device's
+  // slice (spec §13.3); `renderFleetPanel`/`selectFleetDevice` re-render it on
+  // every device-selection change from the cache alone.
+
+  /**
+   * Fetch + cache the fleet-wide candidate map, then render. Called on panel
+   * open. A failure leaves whatever was cached (rendered as-is, or the empty
+   * section on first load) — non-fatal, matches `_refreshFleetDirCandidates`'s
+   * silent-fail convention.
+   */
+  async _refreshFleetExternalSessions() {
+    let byDevice = null;
+    try {
+      byDevice = await this.fleetExternalSessions();
+    } catch {
+      /* keep whatever was cached */
+    }
+    if (byDevice && typeof byDevice === 'object') this._fleetExternalSessionsByDevice = byDevice;
+    this._renderFleetExternalSessions();
+  },
+
+  /**
+   * SSE `fleet:external-sessions-updated` handler (payload `{deviceId,
+   * candidates}`), wired in app.js's `_SSE_HANDLER_MAP`. Merges the single
+   * device's slice directly into the cache — no refetch, this delta already
+   * carries the full current list for that device — then re-renders only when
+   * the panel is open (cheap either way, but the panel may not exist yet).
+   */
+  _onFleetExternalSessionsUpdated(data) {
+    if (!data || !data.deviceId) return;
+    if (!this._fleetExternalSessionsByDevice) this._fleetExternalSessionsByDevice = {};
+    this._fleetExternalSessionsByDevice[data.deviceId] = Array.isArray(data.candidates) ? data.candidates : [];
+    if (this.fleetPanelVisible) this._renderFleetExternalSessions();
+  },
+
+  /**
+   * Render the "发现的外部会话" section for the currently-selected device. Hidden
+   * entirely when no device is selected/known (e.g. panel opened with an empty
+   * fleet). All candidate strings (tmux session name, workingDir) are
+   * untrusted (foreign/remote-machine-controlled) → escaped in
+   * `_fleetExternalSessionHtml`.
+   */
+  _renderFleetExternalSessions() {
+    const section = this.$('fleetExternalSessions');
+    const listEl = this.$('fleetExternalSessionList');
+    if (!section || !listEl) return;
+    const deviceId = this._fleetSelectedDeviceId;
+    const state = this._fleetState || { devices: [] };
+    const deviceExists = !!deviceId && (state.devices || []).some((d) => d.id === deviceId);
+    if (!deviceExists) {
+      section.style.display = 'none';
+      listEl.innerHTML = '';
+      return;
+    }
+    section.style.display = '';
+    const byDevice = this._fleetExternalSessionsByDevice || {};
+    const candidates = byDevice[deviceId] || [];
+    if (candidates.length === 0) {
+      listEl.innerHTML = '<div class="fleet-session-empty">未发现外部会话</div>';
+      return;
+    }
+    const adoptedKeys = this._fleetAdoptedCandidateKeys(deviceId);
+    listEl.innerHTML = candidates.map((c) => this._fleetExternalSessionHtml(deviceId, c, adoptedKeys)).join('');
+  },
+
+  /**
+   * Set of `${tmuxSession} ${workingDir}` keys already adopted on
+   * `deviceId`, derived from `state.sessions` (FleetSessionSummary carries
+   * `.adopted` but NOT the original candidate's `socket` — `buildAdoptedSession`
+   * (adopt-session.ts) names the session `tmux:<tmuxSession>` and copies
+   * `workingDir` verbatim from the candidate, so that pair is a reliable
+   * reconstruction of the adoption's source candidate). Adopting a candidate
+   * does not remove the foreign tmux session from the scanner's view (it never
+   * left the foreign server), so the candidate list keeps reporting it
+   * forever — this lets a matching row render as 已收编/disabled instead of
+   * silently vanishing or offering to re-adopt.
+   */
+  _fleetAdoptedCandidateKeys(deviceId) {
+    const state = this._fleetState || { sessions: [] };
+    const keys = new Set();
+    for (const s of state.sessions || []) {
+      if (s.deviceId !== deviceId || !s.adopted) continue;
+      const m = /^tmux:(.*)$/.exec(s.name || '');
+      if (!m) continue;
+      keys.add(`${m[1]} ${s.workingDir || ''}`);
+    }
+    return keys;
+  },
+
+  /** One discovered-candidate row. All remote-origin strings escaped. */
+  _fleetExternalSessionHtml(deviceId, candidate, adoptedKeys) {
+    const mode = candidate.mode || 'claude';
+    const modeBadge = `<span class="fleet-session-mode">${escapeHtml(mode)}</span>`;
+    const tmuxSession = candidate.tmuxSession || '';
+    const workingDir = candidate.workingDir || '';
+    const isAdopted = adoptedKeys.has(`${tmuxSession} ${workingDir}`);
+    const deviceJson = escapeHtml(JSON.stringify(deviceId));
+    const socketJson = escapeHtml(JSON.stringify(candidate.socket || ''));
+    const tmuxJson = escapeHtml(JSON.stringify(tmuxSession));
+    const btn = isAdopted
+      ? '<button type="button" class="fleet-adopt-btn" disabled>已收编</button>'
+      : `<button type="button" class="fleet-adopt-btn" onclick="app.adoptFleetExternalSession(event.currentTarget, ${deviceJson}, ${socketJson}, ${tmuxJson})">收编为 Tab</button>`;
+    return `<div class="fleet-external-session${isAdopted ? ' adopted' : ''}">
+        <span class="fleet-external-session-main" title="${escapeHtml(workingDir)}">
+          ${modeBadge}<span class="fleet-external-session-name">tmux:${escapeHtml(tmuxSession)}</span>
+          <span class="fleet-external-session-dir">${escapeHtml(this._fleetTruncatePath(workingDir))}</span>
+        </span>
+        ${btn}
+      </div>`;
+  },
+
+  /** Truncate a long path for display (tail kept — most identifying part); the full path stays in the row's title. */
+  _fleetTruncatePath(p) {
+    if (!p || typeof p !== 'string') return '';
+    const max = 40;
+    if (p.length <= max) return p;
+    return `…${p.slice(-(max - 1))}`;
+  },
+
+  /**
+   * "收编为 Tab" click. Busy-guards the CLICKED button only (candidate rows are
+   * independent, so a global busy flag would needlessly block unrelated rows).
+   * On success, the adopted session already landed in the central cache
+   * synchronously (central-controller.ts's adoptSession upserts from the ack
+   * before resolving) — `refreshFleetState()` picks it up immediately, and the
+   * `renderFleetPanel`→`_renderFleetExternalSessions` chain then grays this row
+   * out via `_fleetAdoptedCandidateKeys` without waiting for the next scanner
+   * tick. 404 = candidate vanished between render and click (re-fetch clears
+   * it); 409 = device went offline (refreshFleetState reflects that too).
+   */
+  async adoptFleetExternalSession(btn, deviceId, socket, tmuxSession) {
+    if (btn) btn.disabled = true;
+    let res = null;
+    try {
+      res = await this.fleetAdoptSession(deviceId, { socket, tmuxSession });
+    } catch {
+      /* handled below */
+    }
+    if (res && res.ok) {
+      this.showToast('已收编为 Tab', 'success');
+      this.refreshFleetState();
+      return;
+    }
+    if (btn) btn.disabled = false;
+    if (res && res.status === 404) {
+      this.showToast('会话已消失', 'error');
+      this._refreshFleetExternalSessions();
+    } else if (res && res.status === 409) {
+      this.showToast('设备离线', 'error');
+      this.refreshFleetState();
+    } else {
+      this.showToast('收编失败', 'error');
+    }
   },
 
   /**
@@ -446,11 +637,32 @@ Object.assign(CodemanApp.prototype, {
 
   // ─── Stop remote session (modal confirm — NO native confirm) ────────────────
 
-  /** Arm the stop-confirm modal for a remote session key. */
-  requestStopFleetSession(key, label) {
-    this._fleetStopPending = { key, label: label || key };
+  /**
+   * Arm the stop-confirm modal for a remote session key. `adopted` swaps the
+   * modal's warning copy + danger-button text: an adopted (foreign-tmux)
+   * session is detach-only server-side regardless of which button is pressed
+   * (Session.stop() never kills a `_externalHost` session's mux), so the
+   * default "will terminate, irreversible" wording would be actively false —
+   * it must read as a safe removal instead (spec §13.2/§13.3 safety rail).
+   */
+  requestStopFleetSession(key, label, adopted) {
+    this._fleetStopPending = { key, label: label || key, adopted: !!adopted };
     const nameEl = this.$('fleetStopName');
     if (nameEl) nameEl.textContent = this._fleetStopPending.label;
+    const warnEl = this.$('fleetStopWarn');
+    if (warnEl) {
+      warnEl.textContent = this._fleetStopPending.adopted
+        ? '仅从 Codeman 移除,不会关闭你的 tmux 会话。'
+        : '将在远端设备上终止该会话,操作不可撤销。';
+    }
+    const titleEl = this.$('fleetStopConfirmTitle');
+    if (titleEl) titleEl.textContent = this._fleetStopPending.adopted ? '移除会话' : '停止会话';
+    const descEl = this.$('fleetStopConfirmDesc');
+    if (descEl) {
+      descEl.textContent = this._fleetStopPending.adopted
+        ? 'Detach only — the tmux session keeps running'
+        : 'Terminate the remote session';
+    }
     const modal = this.$('fleetStopModal');
     if (modal) modal.classList.add('active');
   },

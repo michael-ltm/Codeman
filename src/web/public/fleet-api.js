@@ -107,4 +107,32 @@ Object.assign(CodemanApp.prototype, {
     if (!data || typeof data.path !== 'string' || !Array.isArray(data.dirs)) return null;
     return data;
   },
+
+  /**
+   * Fetch discovered external (foreign-tmux) AI-CLI session candidates across
+   * the whole fleet (Rev5 §13.3, Task 29). `_apiJson` unwraps the envelope to
+   * `{ byDevice }`; this returns the bare map (empty object on any failure so
+   * callers never need a null-check).
+   * @returns {Promise<Record<string, Array<{socket:string,tmuxSession:string,mode:string,workingDir:string,firstSeenAt:number}>>>}
+   */
+  async fleetExternalSessions() {
+    const data = await this._apiJson('/api/fleet/external-sessions');
+    return (data && data.byDevice) || {};
+  },
+
+  /**
+   * Adopt a discovered external tmux session as a first-class fleet session.
+   * Unlike the other mutating helpers in this file, this returns the RAW
+   * Response (not the unwrapped envelope) — the caller needs to branch on the
+   * HTTP status (404 candidate vanished vs 409 device offline) for distinct
+   * toasts, the same pattern `_handleTunnelEnableRefusal` uses in
+   * settings-ui.js. `_apiJson`'s envelope-unwrap would collapse both failure
+   * modes to `null` and lose that distinction.
+   * @param {string} deviceId
+   * @param {{socket:string, tmuxSession:string}} payload
+   * @returns {Promise<Response|null>}
+   */
+  async fleetAdoptSession(deviceId, payload) {
+    return this._apiPost(`/api/fleet/devices/${encodeURIComponent(deviceId)}/adopt-session`, payload);
+  },
 });

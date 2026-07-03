@@ -11600,6 +11600,80 @@ html[data-skin="daylight-blue"] .welcome-btn-tunnel.active:hover {
   background: rgba(248, 81, 73, 0.12);
 }
 
+/* External (foreign-tmux) session discovery + adoption (Rev5 §13.3, Task 29) */
+.fleet-external-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.fleet-external-session {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-dark);
+  font-size: 0.72rem;
+}
+
+.fleet-external-session.adopted {
+  opacity: 0.65;
+}
+
+.fleet-external-session-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  overflow: hidden;
+}
+
+.fleet-external-session-name {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fleet-external-session-dir {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-adopt-btn {
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--success, #3fb950);
+  cursor: pointer;
+}
+
+.fleet-adopt-btn:hover:not(:disabled) {
+  border-color: var(--success, #3fb950);
+  background: rgba(63, 185, 80, 0.12);
+}
+
+.fleet-adopt-btn:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* Adopted-session marker (tab strip + fleet-panel session rows) */
+.tab-adopted-badge {
+  font-size: 0.65rem;
+  line-height: 1;
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
 /* Pairing */
 .fleet-pairing {
   margin-top: 0.5rem;

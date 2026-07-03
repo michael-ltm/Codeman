@@ -267,6 +267,11 @@ const _SSE_HANDLER_MAP = [
   [SSE_EVENTS.FLEET_DEVICE_ONLINE, 'refreshFleetState'],
   [SSE_EVENTS.FLEET_DEVICE_OFFLINE, 'refreshFleetState'],
   [SSE_EVENTS.FLEET_SESSIONS_UPDATED, 'refreshFleetState'],
+  // External (foreign-tmux) session discovery (Rev5 §13.3, Task 29): a lighter,
+  // panel-only handler (fleet-panel.js) — merges the single device's candidate
+  // list into its own cache and re-renders just that section, unlike the
+  // three above which re-pull the whole aggregate state.
+  [SSE_EVENTS.FLEET_EXTERNAL_SESSIONS_UPDATED, '_onFleetExternalSessionsUpdated'],
 ];
 
 
@@ -3025,6 +3030,12 @@ class CodemanApp {
       const tallTabsEnabled = this._tallTabsEnabled ?? false;
       const showFolder = tallTabsEnabled && session.name && folderName && folderName !== name;
 
+      // Adopted (foreign-tmux) session marker (Rev5 §13.3, Task 29) — `adopted`
+      // rides SessionState from the server (session.ts toState()).
+      const adoptedBadge = session.adopted
+        ? '<span class="tab-adopted-badge" title="收编的外部 tmux 会话 · Adopted external tmux session" aria-hidden="true">\u{1F517}</span>'
+        : '';
+
       parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${loadState ? ' tab-loading' : ''}" data-id="${id}" data-color="${color}" ${loadState ? `data-load-phase="${escapeHtml(loadState.phase)}"` : ''} onclick="app.handleSessionTabClick(event, ${escapeHtml(JSON.stringify(id))})" oncontextmenu="event.preventDefault(); app.startInlineRename(${escapeHtml(JSON.stringify(id))})" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-busy="${loadState ? 'true' : 'false'}" aria-label="${escapeHtml(name)} session" ${session.workingDir ? `title="${escapeHtml(session.workingDir)}"` : ''}>
           ${_tabIdx < 9 ? '<span class="tab-number">' + (_tabIdx + 1) + '</span>' : ''}
           ${loadState ? '<span class="tab-load-spinner" aria-hidden="true"></span>' : ''}
@@ -3032,6 +3043,7 @@ class CodemanApp {
           <span class="tab-info">
             <span class="tab-name-row">
               ${mode === 'shell' ? '<span class="tab-mode shell" aria-hidden="true">sh</span>' : mode === 'opencode' ? '<span class="tab-mode opencode" aria-hidden="true">oc</span>' : mode === 'codex' ? '<span class="tab-mode codex" aria-hidden="true">cx</span>' : mode === 'gemini' ? '<span class="tab-mode gemini" aria-hidden="true">gm</span>' : ''}
+              ${adoptedBadge}
               <span class="tab-name" data-session-id="${id}">${(() => { const p = parseSessionPrefix(name); return p && p.suffix ? '<span class="tab-prefix">' + escapeHtml(p.prefix) + '</span><span class="tab-suffix">: ' + escapeHtml(p.suffix) + '</span>' : escapeHtml(name); })()}</span>
               <span class="tab-detached-badge" aria-hidden="true">detached</span>
             </span>
@@ -4075,7 +4087,21 @@ class CodemanApp {
     const sessionNameEl = document.getElementById('closeConfirmSessionName');
     sessionNameEl.textContent = name;
 
-    // Update kill button text based on session mode
+    // Adopted (foreign-tmux) sessions are detach-only server-side no matter
+    // which button below is pressed — session.ts's stop() only ever kills the
+    // mux when `!this._externalHost`, and adopted sessions never have one
+    // (Rev5 §13.2/§13.3, Task 29). The "Kill Tmux & X / Terminate completely"
+    // option would therefore be actively misleading (it can't and won't touch
+    // the foreign tmux session), so hide it and surface an explanatory note
+    // instead. "Remove Tab" stays visible/unchanged — its existing copy
+    // ("Tmux session keeps running in background") is already accurate here.
+    const adoptedNote = document.getElementById('closeConfirmAdoptedNote');
+    const killBtn = document.getElementById('closeConfirmKillBtn');
+    const isAdopted = !!session.adopted;
+    if (adoptedNote) adoptedNote.style.display = isAdopted ? '' : 'none';
+    if (killBtn) killBtn.style.display = isAdopted ? 'none' : '';
+
+    // Update kill button text based on session mode (moot while hidden above).
     const killTitle = document.getElementById('closeConfirmKillTitle');
     if (killTitle) {
       killTitle.textContent = session.mode === 'opencode'

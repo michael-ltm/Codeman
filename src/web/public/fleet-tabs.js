@@ -11,10 +11,13 @@
  * ones. There is no second rendering pipeline.
  *
  * Registry:
- *   `this.fleetTabs` — Map<key, FleetSessionTab+{online}>, key = `${deviceId}:${sessionId}`.
+ *   `this.fleetTabs` — Map<key, FleetSessionTab+{online,adopted}>, key = `${deviceId}:${sessionId}`.
  *   Populated by `refreshFleetState()` from `GET /api/fleet` (`sessionTabs`),
  *   EXCLUDING the central self device (`deviceId === 'local'`; its sessions are
  *   already native local tabs) and user-hidden keys (`this._fleetHidden`).
+ *   `adopted` is cross-referenced from `state.sessions` (FleetSessionSummary
+ *   carries it; FleetSessionTab does not) by the shared `key` — drives the 🔗
+ *   marker in `_fleetTabHtml` (Rev5 §13.3, Task 29).
  *   Driven by SSE `fleet:device-online` / `fleet:device-offline` /
  *   `fleet:sessions-updated` (all mapped to `refreshFleetState` in app.js).
  *
@@ -116,12 +119,25 @@ Object.assign(CodemanApp.prototype, {
     const online = new Map();
     for (const d of state.devices || []) online.set(d.id, d.status === 'online');
 
+    // FleetSessionTab (state.sessionTabs) doesn't carry `adopted` — only
+    // FleetSessionSummary (state.sessions) does — so cross-reference by the
+    // same `${deviceId}:${id}` key to mark a remote tab as an adopted
+    // (foreign-tmux) session for the tab-strip marker (Rev5 §13.3, Task 29).
+    const adoptedByKey = new Set();
+    for (const s of state.sessions || []) {
+      if (s.adopted) adoptedByKey.add(`${s.deviceId}:${s.id}`);
+    }
+
     const next = new Map();
     for (const tab of state.sessionTabs || []) {
       // Central self device is already rendered as native local tabs.
       if (tab.deviceId === 'local') continue;
       if (this._fleetHidden.has(tab.key)) continue;
-      next.set(tab.key, { ...tab, online: online.get(tab.deviceId) ?? true });
+      next.set(tab.key, {
+        ...tab,
+        online: online.get(tab.deviceId) ?? true,
+        adopted: adoptedByKey.has(tab.key),
+      });
     }
     this.fleetTabs = next;
 
@@ -240,7 +256,13 @@ Object.assign(CodemanApp.prototype, {
    * Build the markup for one remote tab. Mirrors the native `.session-tab`
    * structure (status dot + mode badge + name) but trimmed: no tab-number
    * (Alt+N maps to local sessionOrder only), no gear/detach/task/subagent
-   * badges (Claude-specific). Every remote-origin string is escaped.
+   * badges (Claude-specific). Every remote-origin string is escaped. An
+   * adopted (foreign-tmux) session gets a 🔗 marker (`tab.adopted`, merged in
+   * by `refreshFleetState` from `state.sessions` — Rev5 §13.3, Task 29); its ×
+   * always closes via `requestCloseSession`/`closeFleetTab`, which for ANY
+   * fleet tab already only hides it locally (title says as much) — no
+   * separate copy fix needed here, unlike the explicit stop-session action in
+   * the device panel.
    */
   _fleetTabHtml(key, tab) {
     const isActive = key === this.activeSessionId;
@@ -259,6 +281,9 @@ Object.assign(CodemanApp.prototype, {
             : mode === 'gemini'
               ? '<span class="tab-mode gemini" aria-hidden="true">gm</span>'
               : '';
+    const adoptedBadge = tab.adopted
+      ? '<span class="tab-adopted-badge" title="收编的外部 tmux 会话 · Adopted external tmux session" aria-hidden="true">\u{1F517}</span>'
+      : '';
     const keyJson = escapeHtml(JSON.stringify(key));
     const titleAttr = tab.workingDir ? `${tab.deviceName} · ${tab.workingDir}` : tab.deviceName || '';
     return `<div class="session-tab fleet-tab ${isActive ? 'active' : ''}${tab.online === false ? ' fleet-offline' : ''}" data-id="${escapeHtml(key)}" data-fleet="1" onclick="app.handleSessionTabClick(event, ${keyJson})" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-label="${escapeHtml(tab.title || key)} remote session" title="${escapeHtml(titleAttr)}">
@@ -266,7 +291,7 @@ Object.assign(CodemanApp.prototype, {
         <span class="tab-info">
           <span class="tab-name-row">
             <span class="tab-fleet-dev" aria-hidden="true">\u{1F5A5}</span>
-            ${modeBadge}
+            ${modeBadge}${adoptedBadge}
             <span class="tab-name"><span class="tab-prefix">${escapeHtml(tab.deviceName || '')}</span><span class="tab-suffix"> / ${escapeHtml(tab.sessionLabel || '')}</span></span>
           </span>
         </span>

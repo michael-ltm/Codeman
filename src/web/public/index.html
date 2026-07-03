@@ -696,7 +696,7 @@
       <div class="fleet-panel-header">
         <span class="fleet-panel-title">设备 · Devices</span>
         <div class="fleet-panel-actions">
-          <button class="btn-icon-sm" onclick="app.refreshFleetState()" title="Refresh" aria-label="Refresh fleet">&#x21BB;</button>
+          <button class="btn-icon-sm" onclick="app.refreshFleetState(); app._refreshFleetExternalSessions?.()" title="Refresh" aria-label="Refresh fleet">&#x21BB;</button>
           <button class="btn-icon-sm" onclick="app.closeFleetPanel()" title="Close" aria-label="Close fleet panel">&times;</button>
         </div>
       </div>
@@ -706,6 +706,15 @@
           <div class="fleet-device-list" id="fleetDeviceList">
             <div class="fleet-empty">暂无设备。生成配对码以加入新设备。</div>
           </div>
+        </section>
+
+        <!-- Discovered external (foreign-tmux) AI sessions for the SELECTED
+             device (Rev5 §13.3, Task 29) — "收编为 Tab" adopts one as a
+             first-class, detach-only fleet session. Hidden when no device is
+             selected/known; see _renderFleetExternalSessions (fleet-panel.js). -->
+        <section class="fleet-section" id="fleetExternalSessions" style="display:none;">
+          <div class="fleet-section-title">发现的外部会话</div>
+          <div class="fleet-external-session-list" id="fleetExternalSessionList"></div>
         </section>
 
         <section class="fleet-section">
@@ -754,12 +763,16 @@
         </div>
         <div class="modal-body">
           <p class="modal-session-name" id="fleetStopName"></p>
-          <p class="fleet-stop-warn">将在远端设备上终止该会话,操作不可撤销。</p>
+          <!-- Text swapped by requestStopFleetSession (fleet-panel.js) — an
+               adopted (foreign-tmux) session's DELETE is detach-only
+               server-side no matter which button here is pressed, so this
+               must never read as "will terminate / irreversible" for one. -->
+          <p class="fleet-stop-warn" id="fleetStopWarn">将在远端设备上终止该会话,操作不可撤销。</p>
         </div>
         <div class="close-options">
           <button class="close-option close-option-danger" onclick="app.confirmStopFleetSession()">
-            <span class="close-option-title">停止会话</span>
-            <span class="close-option-desc">Terminate the remote session</span>
+            <span class="close-option-title" id="fleetStopConfirmTitle">停止会话</span>
+            <span class="close-option-desc" id="fleetStopConfirmDesc">Terminate the remote session</span>
           </button>
         </div>
         <div class="modal-footer-cancel">
@@ -1081,13 +1094,17 @@
         </div>
         <div class="modal-body">
           <p class="modal-session-name" id="closeConfirmSessionName"></p>
+          <!-- Adopted (foreign-tmux) sessions, Rev5 §13.3 Task 29: shown instead
+               of the kill option below, which is hidden for these sessions
+               (requestCloseSession toggles both — app.js). -->
+          <p class="fleet-stop-warn" id="closeConfirmAdoptedNote" style="display:none;">仅从 Codeman 移除,不会关闭你的 tmux 会话。</p>
         </div>
         <div class="close-options">
           <button class="close-option" onclick="app.confirmCloseSession(false)">
             <span class="close-option-title">Remove Tab</span>
             <span class="close-option-desc">Tmux session keeps running in background</span>
           </button>
-          <button class="close-option close-option-danger" onclick="app.confirmCloseSession(true)">
+          <button class="close-option close-option-danger" id="closeConfirmKillBtn" onclick="app.confirmCloseSession(true)">
             <span class="close-option-title" id="closeConfirmKillTitle">Kill Tmux & Claude Code</span>
             <span class="close-option-desc">Terminate the session completely</span>
           </button>
