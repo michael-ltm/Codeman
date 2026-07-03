@@ -145,6 +145,34 @@ html[data-skin="og"] {
   --ui-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
+/* ===== Skin: Light / 浅色 (soft light-grey-white — Linear/Notion feel) =====
+   Mirrors every var the daylight skins define, retoned for a light surface.
+   Page steps DOWN into shadow (bg-dark = the tint behind white cards). Accent
+   is GitHub blue (#0969da), readable on white with a white ink on the fill.
+   The hardcoded dark-neutral panel/glass colors that don't flow through these
+   vars are retuned in the appended `html[data-skin="light"]` block at EOF. */
+html[data-skin="light"] {
+  --bg-dark: #f5f6f8; --bg-card: #ffffff; --bg-input: #f0f2f5; --bg-hover: #e8ebef;
+  --border: #e2e5ea; --border-light: #d5d9e0;
+  --text: #1f2328; --text-dim: #57606a; --text-muted: #6e7781;
+  --accent: #0969da; --accent-hover: #0860c9;
+  --term-bg: #fbfcfd;
+  --green: #1a7f37; --yellow: #9a6700; --red: #cf222e;
+  --glass-bg: rgba(255, 255, 255, 0.9); --glass-border: rgba(15, 23, 42, 0.1);
+  --accent-d: #0a4fa8; --emerald: #218bff; --teal: #0969da;
+  --accent-soft: #1a7f37; --accent-ink: #ffffff;
+  --accent-rgb: 9, 105, 218;
+  --accent-grad-a: #218bff; --accent-grad-b: #0969da;
+  --run-hover-a: #3f9bff; --run-hover-b: #0860c9; --gear-hover: #0860c9;
+  --ring-glow: 0 0 12px -2px rgba(9, 105, 218, 0.3);
+  --session-red: #cf222e; --session-orange: #bc4c00; --session-yellow: #9a6700;
+  --session-green: #1a7f37; --session-blue: #0969da; --session-purple: #8250df; --session-pink: #bf3989;
+  --ui-font: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* Light-only fills for the two undefined vars that otherwise fall back dark
+     (paste dialog / orchestrator panels use var(--bg-secondary|--bg-primary)). */
+  --bg-secondary: #ffffff; --bg-primary: #f5f6f8;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* ========== Accessibility: Focus Styles ========== */
@@ -11938,4 +11966,182 @@ html[data-skin="daylight-blue"] .welcome-btn-tunnel.active:hover {
   background: var(--accent);
   color: var(--bg-dark, #0d1117);
   pointer-events: none;
+}
+
+/* ============================================================
+   === Light skin overrides (soft light-grey-white) ===
+   Retones the hardcoded dark-neutral colors that do NOT flow through the skin
+   vars: glass panels/modals/popovers (rgba(19,19,22)/(31,38,48)/(22,22,28)…),
+   the white-alpha tints inherited from the shared `html:not([data-skin="og"])`
+   block (invisible on a light surface), the dark banner gradients, dark input
+   wells, the response viewer, and the welcome action buttons. Appended at EOF
+   so equal-specificity ties with the shared daylight block resolve in the light
+   skin's favor. Text on all of these already flows through var(--text) (dark).
+   Trivially removable. Uses the same native CSS nesting as the not-og block.
+   ============================================================ */
+html[data-skin="light"] {
+  /* ---- Frosted panels / popovers / drawers: white glass, dark hairline ---- */
+  .monitor-panel,
+  .subagents-panel,
+  .project-insights-panel,
+  .file-browser-panel,
+  .file-preview-window,
+  .ralph-panel.detached,
+  .ralph-dropdown,
+  .run-mode-menu,
+  .case-settings-popover,
+  .attachment-history-drawer,
+  .fleet-panel {
+    background: rgba(255, 255, 255, 0.97);
+    border-color: rgba(15, 23, 42, 0.1);
+    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14), 0 2px 8px rgba(15, 23, 42, 0.08);
+  }
+
+  /* ---- Modal surface + mobile case sheet ---- */
+  .modal-content,
+  .mobile-case-picker-sheet {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.1);
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
+  }
+
+  /* ---- Solo-gone fullscreen overlay: light frost ---- */
+  .solo-gone-overlay {
+    background: rgba(245, 246, 248, 0.92);
+  }
+
+  /* ---- Image popup body: neutral light stage ---- */
+  .image-popup-body {
+    background: #eef0f3;
+  }
+
+  /* ---- Attachment cards / clear-all: white surface ---- */
+  .attachment-card,
+  .attachment-clear-all {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.1);
+  }
+
+  /* ---- Timer + respawn banners: light gradient, hairline ---- */
+  .timer-banner,
+  .respawn-banner {
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.96), rgba(245, 246, 248, 0.96));
+    border-bottom: 1px solid var(--glass-border);
+  }
+
+  /* ---- Bottom-toolbar neutral buttons: dark-alpha tints (white was invisible) ---- */
+  .btn-toolbar,
+  .btn-toolbar.btn-stop,
+  .toolbar-select {
+    background: rgba(15, 23, 42, 0.04);
+    border-color: rgba(15, 23, 42, 0.12);
+    color: var(--text-dim);
+  }
+  .btn-toolbar:hover,
+  .toolbar-select:hover {
+    background: rgba(15, 23, 42, 0.07);
+    border-color: rgba(15, 23, 42, 0.18);
+    color: var(--text);
+  }
+
+  /* ---- Tab number chip ---- */
+  .session-tab .tab-number {
+    background: rgba(15, 23, 42, 0.05);
+    border-color: rgba(15, 23, 42, 0.12);
+    color: var(--text-dim);
+  }
+
+  /* ---- Ralph ring track: dark-alpha (white stroke vanished on light) ---- */
+  .ralph-ring-bg,
+  .ralph-ring-track {
+    stroke: rgba(15, 23, 42, 0.1);
+  }
+
+  /* ---- CJK input + keyboard accessory + attachment chips ---- */
+  #cjkInput {
+    background: #ffffff;
+    color: var(--text);
+  }
+  .keyboard-accessory-bar {
+    background: #eef0f3;
+  }
+  .attachment-thumbnail-fallback,
+  .attachment-type-badge,
+  .attachment-history-thumb-fallback {
+    background: #eef0f3;
+    color: var(--text-dim);
+  }
+
+  /* ---- Response viewer (opt-in): light surfaces ---- */
+  .response-viewer,
+  .response-viewer-body pre,
+  .rv-table-wrap,
+  .rv-message,
+  .rv-message.rv-msg-assistant {
+    background: #ffffff;
+  }
+  .rv-message.rv-msg-user {
+    background: rgba(9, 105, 218, 0.06);
+  }
+  .rv-table-wrap th {
+    background: #f0f2f5;
+  }
+  .rv-wrap-toggle,
+  .rv-copy-btn {
+    background: rgba(15, 23, 42, 0.04);
+  }
+
+  /* ---- File preview body: neutral light stage ---- */
+  .file-preview-body {
+    background: #f0f2f5;
+  }
+
+  /* ---- Lifecycle log window (index.html inline dark styles → !important to
+     beat the element `style=` attributes; scoped to light so dark is untouched) ---- */
+  #lifecycleWindow {
+    background: #ffffff !important;
+    border-color: var(--border) !important;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18) !important;
+  }
+  #lifecycleWindowHeader {
+    background: #f0f2f5 !important;
+    border-bottom-color: var(--border) !important;
+  }
+  #lifecycleFilterEvent,
+  #lifecycleFilterSession,
+  #lifecycleWindow button {
+    background: #ffffff !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+  }
+  #lifecycleWindow thead tr,
+  #lifecycleWindow table tr {
+    background: #ffffff !important;
+  }
+
+  /* ---- Welcome action buttons: distinct light identities (Claude = accent
+     blue via the shared block; OpenCode = green; Tunnel = purple) ---- */
+  .welcome-btn-opencode {
+    background: linear-gradient(135deg, #1a7f37, #2da44e);
+    border-color: rgba(26, 127, 55, 0.5);
+    color: #ffffff;
+  }
+  .welcome-btn-opencode:hover {
+    background: linear-gradient(135deg, #2da44e, #3fb950);
+    box-shadow: 0 0 24px -6px rgba(26, 127, 55, 0.4);
+  }
+  .welcome-btn-tunnel {
+    background: linear-gradient(135deg, #8250df, #a475f0);
+    border-color: rgba(130, 80, 223, 0.45);
+    color: #ffffff;
+  }
+  .welcome-btn-tunnel:hover {
+    background: linear-gradient(135deg, #935ff0, #b085f5);
+    box-shadow: 0 0 24px -6px rgba(130, 80, 223, 0.4);
+  }
+  .welcome-btn-tunnel.active {
+    background: linear-gradient(135deg, #6639ba, #8250df);
+    border-color: rgba(130, 80, 223, 0.55);
+    color: #ffffff;
+  }
 }

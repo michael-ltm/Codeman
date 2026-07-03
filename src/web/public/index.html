@@ -45,16 +45,16 @@
   <!-- Synchronous mobile detection — runs before first paint to prevent panel flash -->
   <script>if(window.innerWidth<768||(('ontouchstart' in window||navigator.maxTouchPoints>0)&&window.innerWidth<1024))document.documentElement.classList.add('mobile-init');</script>
   <!-- Synchronous skin selection — runs before first paint to prevent theme flash -->
-  <script>try{var s=localStorage.getItem('codeman:skin');if(s!=='og'&&s!=='daylight-green'&&s!=='daylight-blue')s='daylight-blue';document.documentElement.dataset.skin=s;window.__codemanSkin=s;}catch(e){document.documentElement.dataset.skin='daylight-blue';window.__codemanSkin='daylight-blue';}</script>
+  <script>try{var s=localStorage.getItem('codeman:skin');if(s!=='og'&&s!=='daylight-green'&&s!=='daylight-blue'&&s!=='light')s='daylight-blue';document.documentElement.dataset.skin=s;window.__codemanSkin=s;}catch(e){document.documentElement.dataset.skin='daylight-blue';window.__codemanSkin='daylight-blue';}</script>
   <!-- Inline critical CSS for instant skeleton paint (before styles.css loads) -->
   <style>
-    .loading-skeleton{display:flex;flex-direction:column;height:100vh;height:100dvh;background:#11151c}
-    .skeleton-header{height:40px;background:rgba(31,38,48,0.85);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;padding:0 12px}
-    .skeleton-brand{color:#38b6f0;font-size:14px;font-weight:700;font-family:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;opacity:.85}
+    .loading-skeleton{display:flex;flex-direction:column;height:100vh;height:100dvh;background:var(--bg-dark,#11151c)}
+    .skeleton-header{height:40px;background:var(--glass-bg,rgba(31,38,48,0.85));border-bottom:1px solid var(--glass-border,rgba(255,255,255,0.08));display:flex;align-items:center;padding:0 12px}
+    .skeleton-brand{color:var(--accent,#38b6f0);font-size:14px;font-weight:700;font-family:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;opacity:.85}
     .skeleton-tabs{display:flex;gap:4px;margin-left:16px}
-    .skeleton-tab{width:80px;height:24px;background:rgba(255,255,255,0.04);border-radius:6px}
-    .skeleton-terminal{flex:1;background:#161b23}
-    .skeleton-toolbar{height:42px;background:rgba(31,38,48,0.85);border-top:1px solid rgba(255,255,255,0.08)}
+    .skeleton-tab{width:80px;height:24px;background:var(--bg-hover,rgba(255,255,255,0.04));border-radius:6px}
+    .skeleton-terminal{flex:1;background:var(--term-bg,#161b23)}
+    .skeleton-toolbar{height:42px;background:var(--glass-bg,rgba(31,38,48,0.85));border-top:1px solid var(--glass-border,rgba(255,255,255,0.08))}
     .app-loaded .loading-skeleton{display:none}
   </style>
 </head>
@@ -1144,6 +1144,7 @@
                 <select id="appSettingsSkin" class="form-select">
                   <option value="daylight-blue">Daylight Blue</option>
                   <option value="daylight-green">Daylight Green</option>
+                  <option value="light">Light / 浅色</option>
                   <option value="og">OG Codeman</option>
                 </select>
               </div>

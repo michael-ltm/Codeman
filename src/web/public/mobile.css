@@ -2264,3 +2264,29 @@ html.mobile-init .file-browser-panel {
     padding: 4px 7px;
   }
 }
+
+/* ============================================================================
+   Light skin — mobile/tablet chrome. The fixed header/toolbar and two popovers
+   hardcode near-black backgrounds for the dark skins; retint them to the light
+   surface so the phone/tablet layout has no dark remnants. Opaque white avoids
+   content bleed-through (the mobile bars have no backdrop blur). Dark skins are
+   untouched — scoped to html[data-skin="light"], appended after the breakpoints.
+   ============================================================================ */
+@media (max-width: 768px) {
+  html[data-skin='light'] .header {
+    background: var(--bg-card);
+    border-bottom-color: var(--border);
+  }
+  html[data-skin='light'] .toolbar {
+    background: var(--bg-card);
+    border-top-color: var(--border);
+  }
+  html[data-skin='light'] .case-settings-popover-mobile {
+    background: #ffffff;
+    border-color: var(--border);
+  }
+  html[data-skin='light'] .keyboard-accessory-bar {
+    background: #eef0f3;
+    border-top-color: var(--border);
+  }
+}
