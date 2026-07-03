@@ -1211,16 +1211,15 @@ Object.assign(CodemanApp.prototype, {
       const casesPromise = Array.isArray(this.cases) && this.cases.length > 0
         ? Promise.resolve(this.cases)
         : fetch('/api/cases').then((r) => (r.ok ? r.json() : null)).then((d) => d?.data || []).catch(() => []);
-      const [allSessions, cases] = await Promise.all([
-        this._fetchHistorySessions(30),
-        casesPromise,
-      ]);
-
       // Cross-device resume (Task 23, spec §12.3): merge resume candidates from
       // every ONLINE remote device into the same list. The 'local' device is
       // skipped — its candidates ARE `allSessions`. Per-device failures are
       // silently dropped (console.warn); the local list never blocks on them.
-      const remoteRows = await this._fetchRemoteResumeRows();
+      const [allSessions, cases, remoteRows] = await Promise.all([
+        this._fetchHistorySessions(30),
+        casesPromise,
+        this._fetchRemoteResumeRows(),
+      ]);
 
       // Unified descriptor list, globally sorted by recency (updatedAt desc).
       // Local rows keep byte-identical markup/behavior via `_buildHistoryItem`;
@@ -1345,7 +1344,7 @@ Object.assign(CodemanApp.prototype, {
 
     const mainRow = document.createElement('div');
     mainRow.className = 'history-item-main';
-    mainRow.addEventListener('click', () => this._resumeRemoteCandidate(deviceId, deviceName, candidate));
+    mainRow.addEventListener('click', () => this._resumeRemoteCandidate(mainRow, deviceId, deviceName, candidate));
 
     const textCol = document.createElement('div');
     textCol.className = 'history-item-text';
@@ -1435,7 +1434,12 @@ Object.assign(CodemanApp.prototype, {
    * device (Task 23), then refresh the fleet tab strip and select the new tab.
    * On failure, toast + no navigation. No native dialogs.
    */
-  async _resumeRemoteCandidate(deviceId, deviceName, candidate) {
+  async _resumeRemoteCandidate(mainRow, deviceId, deviceName, candidate) {
+    // Re-entrancy guard: prevent double-click from spawning duplicate sessions
+    if (this._resumeRemoteBusy) return;
+    this._resumeRemoteBusy = true;
+    if (mainRow) mainRow.classList.add('busy');
+
     document.getElementById('runModeMenu')?.classList.remove('active');
     const workingDir = candidate.workingDir || '';
     try {
@@ -1459,6 +1463,9 @@ Object.assign(CodemanApp.prototype, {
     } catch (err) {
       console.warn('[fleet] remote resume failed', err);
       this.showToast?.(`Failed to resume on ${deviceName}`, 'error');
+    } finally {
+      this._resumeRemoteBusy = false;
+      if (mainRow) mainRow.classList.remove('busy');
     }
   },
 
