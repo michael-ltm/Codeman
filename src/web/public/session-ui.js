@@ -747,6 +747,17 @@ Object.assign(CodemanApp.prototype, {
     const hint = document.getElementById('welcomeDeviceHint');
     if (!row) return;
 
+    // Snapshot the selection BEFORE any degrade/vanish mutation. If a passive
+    // re-render (SSE fleet:*) forces the selection back to 'local' (the
+    // previously-selected remote device disappeared, or all remote devices are
+    // gone), the Resume list + title are still filtered/titled for that device,
+    // so we reload it ONCE — guarded on an ACTUAL change below so unchanged SSE
+    // ticks never re-fire, and a steady 'local' selection never newly triggers
+    // a reload (red line). A user pill-click can't double-reload: selectWelcomeDevice
+    // sets _welcomeDeviceId first, so prevSelected === the new id here (no forced
+    // change), and it does its own single loadHistorySessions.
+    const prevSelected = this._welcomeDeviceId || 'local';
+
     // DEGRADE: no remote node → hide the row and force selection back to local
     // so quick-start + Resume stay on the byte-identical local path.
     if (!this._welcomeHasRemoteDevices()) {
@@ -759,6 +770,7 @@ Object.assign(CodemanApp.prototype, {
         hint.classList.remove('is-offline');
       }
       this._applyWelcomeDeviceRunState(null);
+      if (prevSelected !== this._welcomeDeviceId) this.loadHistorySessions?.();
       return;
     }
 
@@ -819,6 +831,11 @@ Object.assign(CodemanApp.prototype, {
       hint.classList.remove('is-offline');
     }
     this._applyWelcomeDeviceRunState(selDevice);
+
+    // Vanished-selection revert (selectedId forced to 'local' above): refresh the
+    // Resume list + title to the merged local view. Guarded on an actual change
+    // so unchanged SSE ticks don't spam loadHistorySessions.
+    if (prevSelected !== this._welcomeDeviceId) this.loadHistorySessions?.();
   },
 
   /**
