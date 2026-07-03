@@ -335,6 +335,8 @@ Object.assign(CodemanApp.prototype, {
     document.getElementById('appSettingsCjkInput').checked = settings.cjkInputEnabled ?? defaults.cjkInputEnabled ?? false;
     document.getElementById('appSettingsExtendedKeyboardBar').checked = settings.extendedKeyboardBar ?? false;
     document.getElementById('appSettingsTabTwoRows').checked = settings.tabTwoRows ?? defaults.tabTwoRows ?? false;
+    document.getElementById('appSettingsSessionListPosition').value =
+      settings.sessionListPosition ?? defaults.sessionListPosition ?? 'top';
     // Claude CLI settings
     const claudeModeSelect = document.getElementById('appSettingsClaudeMode');
     const allowedToolsRow = document.getElementById('allowedToolsRow');
@@ -1428,6 +1430,7 @@ Object.assign(CodemanApp.prototype, {
       cjkInputEnabled: document.getElementById('appSettingsCjkInput').checked,
       extendedKeyboardBar: document.getElementById('appSettingsExtendedKeyboardBar').checked,
       tabTwoRows: document.getElementById('appSettingsTabTwoRows').checked,
+      sessionListPosition: document.getElementById('appSettingsSessionListPosition').value,
       skin: document.getElementById('appSettingsSkin').value,
       // Claude CLI settings
       claudeMode: document.getElementById('appSettingsClaudeMode').value,
@@ -1555,6 +1558,7 @@ Object.assign(CodemanApp.prototype, {
     this.applyHeaderVisibilitySettings();
     this.applySkin();
     this.applyTabWrapSettings();
+    this.applySessionListPosition();
     this._updateTokensImmediate();  // Re-render token display (picks up showCost change)
     this.applyMonitorVisibility();
     this.renderProjectInsightsPanel();  // Re-render to apply visibility setting
@@ -1580,6 +1584,7 @@ Object.assign(CodemanApp.prototype, {
       skin: _skin,
       showPlanUsageLimits: _pul,
       showAttachmentsButton: _ahb,
+      sessionListPosition: _slp,
       ...serverSettings
     } = settings;
     try {
@@ -1745,6 +1750,7 @@ Object.assign(CodemanApp.prototype, {
         imageWatcherEnabled: false,
         ralphTrackerEnabled: false,
         tabTwoRows: false,
+        sessionListPosition: 'top',
         cjkInputEnabled: false,
         skin: 'daylight-blue',
       };
@@ -1914,6 +1920,40 @@ Object.assign(CodemanApp.prototype, {
     // Re-render tabs if folder visibility changed (folder spans are generated in JS)
     if (prevTallTabs !== undefined && prevTallTabs !== twoRows) {
       this._fullRenderSessionTabs();
+    }
+  },
+
+  // Session list layout (spec §12.4, per-device): 'top' = native tab strip
+  // (default), 'left' = fixed-width vertical sidebar mirroring the SAME tabs.
+  // The body class is driven purely by the setting; the CSS `:not(.device-mobile)`
+  // guard keeps phones on the top strip regardless (phone ignores the setting).
+  applySessionListPosition() {
+    const settings = this.loadAppSettingsFromStorage();
+    const defaults = this.getDefaultSettings();
+    const raw = settings.sessionListPosition ?? defaults.sessionListPosition ?? 'top';
+    const pos = raw === 'left' ? 'left' : 'top';
+    const prev = this._sessionListPosition;
+    this._sessionListPosition = pos;
+    document.body.classList.toggle('session-list-left', pos === 'left');
+    // The visible list is the canonical tablist; expose exactly one to a11y —
+    // the hidden strip (display:none) drops out on its own, so only un-hide the
+    // sidebar when it is the one actually shown.
+    const sidebar = document.getElementById('sessionListSidebar');
+    if (sidebar) sidebar.setAttribute('aria-hidden', pos === 'left' ? 'false' : 'true');
+    // Mirror the current tabs into the sidebar (strict no-op unless 'left').
+    this._mirrorSessionListSidebar();
+    // The terminal area width just changed — refit the active native terminal and
+    // push new PTY dims (grid tiles refit via their OWN ResizeObservers). Only on
+    // an actual flip, so unrelated setting saves stay byte-identical in top mode.
+    if (prev !== undefined && prev !== pos) {
+      requestAnimationFrame(() => {
+        try {
+          this.fitAddon?.fit();
+          if (this.activeSessionId) this.sendResize(this.activeSessionId);
+        } catch {
+          /* ignore refit errors */
+        }
+      });
     }
   },
 
@@ -2118,7 +2158,7 @@ Object.assign(CodemanApp.prototype, {
           'showLifecycleLog', 'showResponseViewer', 'showRedrawButton',
           'showMonitor', 'showProjectInsights', 'showFileBrowser', 'showSubagents',
           'subagentActiveTabOnly', 'tabTwoRows', 'localEchoEnabled', 'cjkInputEnabled', 'extendedKeyboardBar',
-          'skin', 'showPlanUsageLimits', 'showAttachmentsButton',
+          'skin', 'showPlanUsageLimits', 'showAttachmentsButton', 'sessionListPosition',
         ]);
         // The plan-usage chip is a PER-DEVICE display setting (default OFF): desktop
         // can show it while mobile stays hidden. It used to sync, so an older

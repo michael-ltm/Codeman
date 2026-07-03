@@ -195,7 +195,7 @@ Object.assign(CodemanApp.prototype, {
     `;
 
     // Position: spawn from the parent tab if we can find it, else cascade.
-    const parentTab = parentSessionId ? document.querySelector(`.session-tab[data-id="${parentSessionId}"]`) : null;
+    const parentTab = parentSessionId ? this.tabElementFor(parentSessionId) : null;
     if (parentTab) {
       const r = parentTab.getBoundingClientRect();
       const left = Math.max(8, Math.min(r.left, window.innerWidth - 392));
@@ -308,7 +308,7 @@ Object.assign(CodemanApp.prototype, {
 
   /** Genie the window toward the center of its tab, then invoke `done` to tear it down. */
   _animateUltracodeWindowToTab(element, sessionId, done) {
-    const tab = sessionId ? document.querySelector(`.session-tab[data-id="${sessionId}"]`) : null;
+    const tab = sessionId ? this.tabElementFor(sessionId) : null;
     if (!tab || !element) {
       done();
       return;
@@ -774,7 +774,7 @@ Object.assign(CodemanApp.prototype, {
       if (!parentSessionId) continue;
       const tabKey = 'tab:' + parentSessionId;
       if (!rects.has(tabKey)) {
-        const tab = document.querySelector(`.session-tab[data-id="${parentSessionId}"]`);
+        const tab = this.tabElementFor(parentSessionId);
         if (tab) rects.set(tabKey, tab.getBoundingClientRect());
       }
       winList.push({ runId, parentSessionId, winRect: data.element.getBoundingClientRect() });
@@ -826,7 +826,7 @@ Object.assign(CodemanApp.prototype, {
         if (!parentSessionId) continue;
         const tabKey = 'tab:' + parentSessionId;
         if (!rects.has(tabKey)) {
-          const tab = document.querySelector(`.session-tab[data-id="${parentSessionId}"]`);
+          const tab = this.tabElementFor(parentSessionId);
           if (tab) rects.set(tabKey, tab.getBoundingClientRect());
         }
         const tabRect = rects.get(tabKey);

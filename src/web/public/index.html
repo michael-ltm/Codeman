@@ -287,6 +287,11 @@
 
     <!-- Main Terminal Area -->
     <main class="main">
+      <!-- Left session-list sidebar (spec §12.4): mirror of the top tab strip,
+           shown only when the per-device sessionListPosition setting is 'left'
+           (desktop/tablet). Empty + display:none by default so the top layout is
+           byte-identical. Populated by app._mirrorSessionListSidebar(). -->
+      <aside class="session-list-sidebar" id="sessionListSidebar" role="tablist" aria-label="Session list" aria-hidden="true"></aside>
       <div class="terminal-wrap">
         <div class="terminal-container" id="terminalContainer"></div>
         <textarea id="cjkInput" rows="1" placeholder="CJK input (Enter = send, Esc = clear)"
@@ -1209,6 +1214,13 @@
                   <input type="checkbox" id="appSettingsTabTwoRows">
                   <span class="slider"></span>
                 </label>
+              </div>
+              <div class="settings-item" title="Where the session list appears on this device (not synced; ignored on phones)">
+                <span class="settings-item-label">Session List</span>
+                <select id="appSettingsSessionListPosition" class="form-select">
+                  <option value="top">Top (tab strip)</option>
+                  <option value="left">Left (sidebar)</option>
+                </select>
               </div>
 
               <!-- Panels Section -->

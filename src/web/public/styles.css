@@ -46,6 +46,8 @@
   --ring-glow: 0 0 12px -2px rgba(56, 182, 240, 0.55);
   --header-height: 36px;
   --toolbar-height: 42px;
+  /* Left session-list sidebar width (spec §12.4, desktop/tablet) */
+  --session-list-width: 220px;
   --glass-bg: rgba(31, 38, 48, 0.85);
   --glass-border: rgba(255, 255, 255, 0.08);
   --subtle-shadow: 0 -1px 3px rgba(0, 0, 0, 0.3), 0 -4px 16px rgba(0, 0, 0, 0.15);
@@ -2238,6 +2240,64 @@ body.solo-mode .btn-lifecycle-log {
 
 .terminal-container .xterm-viewport {
   background: transparent !important;
+}
+
+/* ── Left session-list layout (spec §12.4; desktop/tablet, per-device) ──────
+   Default (top) layout: the sidebar is display:none and #sessionTabs renders in
+   the header exactly as before — byte-identical, no layout shift. When the
+   per-device `sessionListPosition` setting is 'left', body.session-list-left
+   swaps to a fixed-width vertical sidebar that mirrors the SAME tab DOM. The
+   `:not(.device-mobile)` guard makes phones ignore the setting entirely (they
+   keep the top strip regardless), which also holds live as the viewport crosses
+   the phone breakpoint (MobileDetection.updateBodyClass maintains the class). */
+.session-list-sidebar {
+  display: none;
+}
+body.session-list-left:not(.device-mobile) #sessionTabs {
+  display: none;
+}
+body.session-list-left:not(.device-mobile) .session-list-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--session-list-width);
+  width: var(--session-list-width);
+  gap: 3px;
+  padding: 6px 6px 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  /* Above the fleet-grid overlay (z-index 11) so the sidebar stays clickable
+     while the grid is active. The grid is offset by the sidebar width below,
+     so they never actually overlap — this is belt-and-suspenders. */
+  position: relative;
+  z-index: 12;
+  contain: layout;
+}
+/* Vertical tabs fill the sidebar width; long names ellipsize via .tab-info. */
+body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab {
+  width: 100%;
+  flex: 0 0 auto;
+}
+body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-info {
+  flex: 1;
+}
+/* Grid overlay yields the sidebar width in left mode (was inset:0 of .main). */
+body.session-list-left:not(.device-mobile) .fleet-grid.active {
+  left: var(--session-list-width);
+}
+.session-list-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+.session-list-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.session-list-sidebar::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+.session-list-sidebar::-webkit-scrollbar-thumb:hover {
+  background: var(--border-light);
 }
 
 /* Touch devices: prevent browser from claiming the touch gesture before

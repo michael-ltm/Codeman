@@ -626,6 +626,7 @@ class CodemanApp {
     this.restorePlanUsageChip();
     this.applySkin();
     this.applyTabWrapSettings();
+    this.applySessionListPosition();
     this.applyMonitorVisibility();
     // Remove mobile-init class now that JS has applied visibility settings.
     // The inline <script> in <head> added this to prevent flash-of-content on mobile.
@@ -688,6 +689,7 @@ class CodemanApp {
       this.applyHeaderVisibilitySettings();
       this.applySkin();
       this.applyTabWrapSettings();
+      this.applySessionListPosition();
       this.applyMonitorVisibility();
       // ultracodeFloatingWindows syncs from the server (non-display key), but on a
       // FRESH device the getLightState run snapshot can seed workflowRuns BEFORE this
@@ -2748,6 +2750,8 @@ class CodemanApp {
         tab.classList.remove('active');
       }
     }
+    // Reflect the active-class flip into the left sidebar (no-op in top layout).
+    this._mirrorSessionListSidebar();
   }
 
   _setTerminalLoadState(sessionId, selectGen, phase) {
@@ -2939,6 +2943,7 @@ class CodemanApp {
     }
 
     this.updateTabOverflowMode();
+    this._mirrorSessionListSidebar();
   }
 
   // Auto-wrap desktop session tabs to a second row when they overflow one row,
@@ -3066,6 +3071,35 @@ class CodemanApp {
     // toggle (applyTabWrapSettings calls this) which would otherwise leave a stale
     // tabs-auto-wrap class until the next content render.
     this.updateTabOverflowMode();
+    this._mirrorSessionListSidebar();
+  }
+
+  // Mirror the top tab strip into the left session-list sidebar (spec §12.4).
+  // Strict no-op in the default 'top' layout, so every top-mode render path is
+  // byte-identical. In 'left' mode the strip is hidden and we copy the SAME tab
+  // DOM the strip just rendered (local + fleet, identical order/data). Tabs carry
+  // inline onclick handlers (handleSessionTabClick / requestCloseSession), so a
+  // plain innerHTML copy preserves click + close semantics with no re-wiring.
+  _mirrorSessionListSidebar() {
+    if (this._sessionListPosition !== 'left') return;
+    const sidebar = document.getElementById('sessionListSidebar');
+    const strip = this.$('sessionTabs');
+    if (!sidebar || !strip) return;
+    sidebar.innerHTML = strip.innerHTML;
+  }
+
+  // Resolve the currently-visible .session-tab element for a session id / fleet
+  // key. In the default 'top' layout the sidebar is empty, so this returns the
+  // top-strip tab exactly as a direct querySelector would (red line: identical
+  // selection). In 'left' layout the strip is hidden, so prefer the sidebar copy
+  // — keeps subagent/ultracode connector geometry anchored to a visible tab.
+  tabElementFor(sessionId) {
+    if (this._sessionListPosition === 'left') {
+      const sidebar = document.getElementById('sessionListSidebar');
+      const el = sidebar && sidebar.querySelector(`.session-tab[data-id="${sessionId}"]`);
+      if (el) return el;
+    }
+    return document.querySelector(`.session-tab[data-id="${sessionId}"]`);
   }
 
   // Set up arrow key navigation for session tabs (accessibility)

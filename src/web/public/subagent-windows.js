@@ -288,7 +288,7 @@ Object.assign(CodemanApp.prototype, {
       for (const { agentId } of visibleSubagentWindows) {
         const parentSessionId = this.subagentParentMap.get(agentId);
         if (!parentSessionId || rects.has('tab:' + parentSessionId)) continue;
-        const tab = document.querySelector(`.session-tab[data-id="${parentSessionId}"]`);
+        const tab = this.tabElementFor(parentSessionId);
         if (tab) rects.set('tab:' + parentSessionId, tab.getBoundingClientRect());
       }
     }
@@ -686,7 +686,7 @@ Object.assign(CodemanApp.prototype, {
     }
 
     // Get parent TAB element for spawn animation
-    const parentTab = parentSessionId ? document.querySelector(`.session-tab[data-id="${parentSessionId}"]`) : null;
+    const parentTab = parentSessionId ? this.tabElementFor(parentSessionId) : null;
 
     // Create window element
     const win = document.createElement('div');
