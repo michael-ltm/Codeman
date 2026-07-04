@@ -686,7 +686,7 @@ class CodemanApp {
       addKeyboardTapFix(document.querySelector('.toolbar'));
       addKeyboardTapFix(document.querySelector('.welcome-overlay'));
     }
-    // System stats polling deferred until sessions exist (started in handleInit/session:created)
+    // System stats polling follows the header visibility setting.
     // Setup online/offline detection
     this.setupOnlineDetection();
     // Load server-stored settings (async, re-applies visibility after load)
@@ -1277,8 +1277,7 @@ class CodemanApp {
     }
     this.renderSessionTabs();
     this.updateCost();
-    // Start stats polling when first session appears
-    if (this.sessions.size === 1) this.startSystemStatsPolling();
+    this.syncSystemStatsPolling?.();
   }
 
   _onSessionUpdated(data) {
@@ -2630,12 +2629,10 @@ class CodemanApp {
     this.updateCost();
     this.renderSessionTabs();
 
-    // Start/stop system stats polling based on session count
-    if (this.sessions.size > 0) {
-      this.startSystemStatsPolling();
-    } else {
-      this.stopSystemStatsPolling();
-    }
+    // System stats are a header display surface, not a session lifecycle
+    // feature. Keep polling in sync with its visibility so the welcome screen
+    // does not sit at "--" until a session is opened.
+    this.syncSystemStatsPolling?.();
 
     // CRITICAL: Clean up all floating windows before loading new subagents
     // This prevents memory leaks from ResizeObservers, EventSources, and DOM elements

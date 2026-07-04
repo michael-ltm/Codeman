@@ -3950,6 +3950,20 @@ Object.assign(CodemanApp.prototype, {
   // System Stats
   // ═══════════════════════════════════════════════════════════════
 
+  syncSystemStatsPolling() {
+    const statsEl = document.getElementById('headerSystemStats');
+    const visible = !!statsEl && statsEl.style.display !== 'none';
+    if (!visible) {
+      this.stopSystemStatsPolling();
+      return;
+    }
+    if (this.systemStatsInterval) {
+      this.fetchSystemStats();
+      return;
+    }
+    this.startSystemStatsPolling();
+  },
+
   startSystemStatsPolling() {
     // Clear any existing interval to prevent duplicates
     this.stopSystemStatsPolling();
@@ -3977,8 +3991,9 @@ Object.assign(CodemanApp.prototype, {
 
     try {
       const res = await fetch('/api/system/stats');
-      const stats = await res.json();
-      this.updateSystemStatsDisplay(stats.data);
+      const payload = await res.json();
+      const stats = payload?.success === true && payload.data ? payload.data : payload;
+      this.updateSystemStatsDisplay(stats);
     } catch (err) {
       // Silently fail - system stats are not critical
     }
@@ -3989,6 +4004,8 @@ Object.assign(CodemanApp.prototype, {
     const cpuBar = this.$('statCpuBar');
     const memEl = this.$('statMem');
     const memBar = this.$('statMemBar');
+
+    if (!stats || typeof stats.cpu !== 'number' || !stats.memory) return;
 
     if (cpuEl && cpuBar) {
       cpuEl.textContent = `${stats.cpu}%`;

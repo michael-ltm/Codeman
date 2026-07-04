@@ -1943,6 +1943,7 @@ Object.assign(CodemanApp.prototype, {
     if (systemStatsEl) {
       systemStatsEl.style.display = showSystemStats ? '' : 'none';
     }
+    this.syncSystemStatsPolling?.();
     if (tokenCountEl) {
       tokenCountEl.style.display = showTokenCount ? '' : 'none';
     }
