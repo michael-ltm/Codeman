@@ -454,6 +454,7 @@ Object.assign(CodemanApp.prototype, {
       : '';
     const keyJson = escapeHtml(JSON.stringify(key));
     const primaryLabel = tab.sessionLabel || tab.sessionId || key;
+    const gitSummary = codemanGitSummaryHtml(tab.gitSummary);
     const titleAttr = [tab.deviceName, mode, remark, tab.sessionLabel, tab.workingDir].filter(Boolean).join(' · ');
     return `<div class="session-tab fleet-tab ${isActive ? 'active' : ''}${tab.online === false ? ' fleet-offline' : ''}" data-id="${escapeHtml(key)}" data-fleet="1" onclick="app.handleSessionTabClick(event, ${keyJson})" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-label="${escapeHtml(tab.title || key)} remote session" title="${escapeHtml(titleAttr)}">
         <span class="tab-status ${dotClass}" aria-hidden="true"></span>
@@ -466,6 +467,7 @@ Object.assign(CodemanApp.prototype, {
             ${primaryLabel ? `<span class="tab-name">${escapeHtml(primaryLabel)}</span>` : ''}
           </span>
           ${tab.workingDir ? `<span class="tab-folder">\u{1F4C1} ${escapeHtml(tab.workingDir)}</span>` : ''}
+          ${gitSummary}
         </span>
         <span class="tab-close" onclick="event.stopPropagation(); app.requestCloseSession(${keyJson})" title="Close tab (session keeps running)" aria-label="Close remote tab" tabindex="0">&times;</span>
       </div>`;

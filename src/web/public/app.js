@@ -3081,6 +3081,7 @@ class CodemanApp {
       const devicePill = codemanDevicePillHtml(deviceName, 'local');
       const modeBadge = codemanModeBadgeHtml(mode);
       const remarkBadge = this._tabRemarkHtml(remark);
+      const gitSummary = codemanGitSummaryHtml(session.gitSummary);
       const titleParts = [deviceName, mode, remark, name, session.workingDir].filter(Boolean);
 
       parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${loadState ? ' tab-loading' : ''}" data-id="${id}" data-color="${color}" data-session-name-raw="${escapeHtml(session.name || '')}" data-session-remark="${escapeHtml(remark)}" data-session-mode="${escapeHtml(mode)}" ${loadState ? `data-load-phase="${escapeHtml(loadState.phase)}"` : ''} onclick="app.handleSessionTabClick(event, ${escapeHtml(JSON.stringify(id))})" oncontextmenu="event.preventDefault(); app.startInlineRename(${escapeHtml(JSON.stringify(id))})" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-busy="${loadState ? 'true' : 'false'}" aria-label="${escapeHtml([deviceName, remark, name].filter(Boolean).join(' / '))} session" title="${escapeHtml(titleParts.join(' · '))}">
@@ -3097,6 +3098,7 @@ class CodemanApp {
               <span class="tab-detached-badge" aria-hidden="true">detached</span>
             </span>
             ${showFolder ? `<span class="tab-folder">\u{1F4C1} ${escapeHtml(folderName)}</span>` : ''}
+            ${gitSummary}
           </span>
           ${hasRunningTasks ? `<span class="tab-badge" onclick="event.stopPropagation(); app.toggleTaskPanel()" aria-label="${taskStats.running} running tasks">${taskStats.running}</span>` : ''}
           ${subagentBadge}

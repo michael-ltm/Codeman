@@ -21,6 +21,7 @@
 
 import { basename } from 'node:path';
 import { z } from 'zod';
+import type { GitSummary } from '../git-summary.js';
 
 /** Fleet wire protocol version. Bump on breaking frame-shape changes. */
 export const FLEET_PROTOCOL_VERSION = 1;
@@ -80,6 +81,8 @@ export interface FleetSessionSummary {
   pid: number | null;
   createdAt: number;
   lastActivityAt: number;
+  /** Best-effort live Git status for the session working directory. */
+  gitSummary?: GitSummary;
   /**
    * True when this session ADOPTED a foreign (user-owned) tmux session (Rev5
    * §13.2 / Task 28). Codeman only attaches to it — the tab is detach-only and
@@ -100,6 +103,7 @@ export interface FleetSessionTab {
   mode: FleetSessionMode;
   status: FleetSessionStatus;
   workingDir: string;
+  gitSummary?: GitSummary;
 }
 
 /** Payload for creating a new session on a remote device. */
@@ -210,6 +214,21 @@ const FleetDeviceSummarySchema: z.ZodType<FleetDeviceSummary> = z.object({
   capabilities: FleetCapabilitiesSchema,
 });
 
+const GitSummarySchema: z.ZodType<GitSummary> = z.object({
+  isRepo: z.literal(true),
+  branch: z.string(),
+  upstream: z.string().optional(),
+  ahead: z.number(),
+  behind: z.number(),
+  pushable: z.boolean(),
+  syncStatus: z.enum(['pushable', 'behind', 'diverged', 'synced', 'no-upstream']),
+  dirty: z.boolean(),
+  changedFiles: z.number(),
+  untrackedFiles: z.number(),
+  insertions: z.number(),
+  deletions: z.number(),
+});
+
 /** = FleetDeviceSummary minus the fields the controller derives (id/status/lastSeenAt/activeSessionCount). */
 export const FleetDeviceJoinInfoSchema: z.ZodType<FleetDeviceJoinInfo> = z.object({
   name: z.string(),
@@ -232,6 +251,7 @@ const FleetSessionSummarySchema: z.ZodType<FleetSessionSummary> = z.object({
   pid: z.number().nullable(),
   createdAt: z.number(),
   lastActivityAt: z.number(),
+  gitSummary: GitSummarySchema.optional(),
   adopted: z.boolean().optional(),
 });
 
@@ -411,5 +431,6 @@ export function buildFleetSessionTab(device: FleetDeviceSummary, session: FleetS
     mode: session.mode,
     status: session.status,
     workingDir: session.workingDir,
+    gitSummary: session.gitSummary,
   };
 }

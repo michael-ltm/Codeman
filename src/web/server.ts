@@ -45,6 +45,7 @@ import { getHookSecret } from '../config/hook-secret.js';
 import { isPasswordConfigured, getConfiguredUsername } from '../config/auth-store.js';
 import { EventEmitter } from 'node:events';
 import { Session, isExternalCliMode, type BackgroundTask } from '../session.js';
+import { collectGitSummary } from '../git-summary.js';
 import type { ClaudeMode, SessionAttachmentHistoryItem, SessionState, WorkflowRunInfo } from '../types.js';
 import { RespawnController, RespawnConfig } from '../respawn-controller.js';
 import type { TerminalMultiplexer } from '../mux-interface.js';
@@ -1693,8 +1694,10 @@ export class WebServer extends EventEmitter {
    */
   private getSessionStateWithRespawn(session: Session) {
     const controller = this.respawnControllers.get(session.id);
+    const gitSummary = collectGitSummary(session.workingDir);
     return {
       ...session.toLightDetailedState(),
+      ...(gitSummary ? { gitSummary } : {}),
       respawnEnabled: controller?.getConfig()?.enabled ?? false,
       respawnConfig: controller?.getConfig() ?? null,
       respawn: controller?.getStatus() ?? null,

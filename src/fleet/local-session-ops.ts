@@ -17,6 +17,7 @@
 
 import { basename } from 'node:path';
 import type { Session } from '../session.js';
+import { collectGitSummary } from '../git-summary.js';
 import {
   createSessionCore,
   deleteSessionCore,
@@ -105,6 +106,7 @@ export function createLocalSessionOps(
     pid: s.pid ?? null,
     createdAt: s.createdAt,
     lastActivityAt: s.lastActivityAt,
+    gitSummary: collectGitSummary(s.workingDir),
     adopted: s.isAdopted || undefined,
   });
 

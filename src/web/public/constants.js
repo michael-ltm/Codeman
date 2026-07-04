@@ -488,3 +488,33 @@ function codemanDevicePillHtml(deviceName, kind) {
   const safeKind = kind === 'remote' ? 'remote' : 'local';
   return `<span class="tab-device-pill tab-device-${safeKind}" title="Device: ${safeName}" aria-label="Device ${safeName}"><span class="tab-device-name">${safeLabel}</span></span>`;
 }
+
+function codemanGitSummaryHtml(summary) {
+  if (!summary || summary.isRepo !== true || !summary.branch) return '';
+  const branch = escapeHtml(String(summary.branch));
+  const upstream = summary.upstream ? escapeHtml(String(summary.upstream)) : '';
+  const insertions = Number(summary.insertions || 0);
+  const deletions = Number(summary.deletions || 0);
+  const untracked = Number(summary.untrackedFiles || 0);
+  const ahead = Number(summary.ahead || 0);
+  const behind = Number(summary.behind || 0);
+  const parts = [`<span class="tab-git-branch" title="${upstream ? `Branch ${branch} → ${upstream}` : `Branch ${branch}`}">⑂ ${branch}</span>`];
+
+  if (insertions > 0 || deletions > 0 || untracked > 0) {
+    const lineBits = [];
+    if (insertions > 0) lineBits.push(`<span class="tab-git-add">+${insertions}</span>`);
+    if (deletions > 0) lineBits.push(`<span class="tab-git-del">-${deletions}</span>`);
+    if (untracked > 0) lineBits.push(`<span class="tab-git-untracked">?${untracked}</span>`);
+    parts.push(`<span class="tab-git-lines" title="Working tree changes">${lineBits.join(' ')}</span>`);
+  }
+
+  if (ahead > 0 && behind > 0) {
+    parts.push(`<span class="tab-git-diverged" title="Local and remote have diverged">↕${ahead}/${behind}</span>`);
+  } else if (ahead > 0 && summary.pushable) {
+    parts.push(`<span class="tab-git-push" title="Can push ${ahead} local commit${ahead === 1 ? '' : 's'}">↑${ahead}</span>`);
+  } else if (behind > 0) {
+    parts.push(`<span class="tab-git-pull" title="Remote is ahead by ${behind} commit${behind === 1 ? '' : 's'}">↓${behind}</span>`);
+  }
+
+  return `<span class="tab-git" aria-label="Git status">${parts.join('')}</span>`;
+}

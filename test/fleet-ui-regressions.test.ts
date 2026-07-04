@@ -322,20 +322,12 @@ describe('fleet and settings UI regressions', () => {
     const CodemanApp = function CodemanApp(this: unknown) {};
     const context = vm.createContext({
       CodemanApp,
-      escapeHtml: (value: unknown) =>
-        String(value)
-          .replaceAll('&', '&amp;')
-          .replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;')
-          .replaceAll('"', '&quot;')
-          .replaceAll("'", '&#039;'),
-      codemanModeBadgeHtml: (mode: string) =>
-        `<span class="tab-mode tab-mode-logo tab-mode-openai" title="${mode}"><svg aria-hidden="true"></svg></span>`,
-      codemanDevicePillHtml: (deviceName: string, kind: string) =>
-        `<span class="tab-device-pill tab-device-${kind}"><span>${deviceName}</span></span>`,
+      window: {},
       console,
     });
+    const constantsSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/constants.js'), 'utf8');
     const source = readFileSync(resolve(import.meta.dirname, '../src/web/public/fleet-tabs.js'), 'utf8');
+    vm.runInContext(constantsSource, context, { filename: 'constants.js' });
     vm.runInContext(source, context, { filename: 'fleet-tabs.js' });
 
     const app = new (CodemanApp as any)();
@@ -349,6 +341,19 @@ describe('fleet and settings UI regressions', () => {
       status: 'busy',
       online: true,
       workingDir: '/Users/ming/project',
+      gitSummary: {
+        isRepo: true,
+        branch: 'main',
+        upstream: 'origin/main',
+        ahead: 2,
+        behind: 0,
+        pushable: true,
+        dirty: true,
+        changedFiles: 3,
+        untrackedFiles: 1,
+        insertions: 28,
+        deletions: 4,
+      },
     });
 
     expect(html).toContain('tab-device-pill tab-device-remote');
@@ -358,6 +363,13 @@ describe('fleet and settings UI regressions', () => {
     expect(html).toContain('打包机');
     expect(html).toContain('tab-name');
     expect(html).toContain('xianmi-assistant');
+    expect(html).toContain('tab-git');
+    expect(html).toContain('tab-git-branch');
+    expect(html).toContain('main');
+    expect(html).toContain('+28');
+    expect(html).toContain('-4');
+    expect(html).toContain('tab-git-push');
+    expect(html).toContain('↑2');
     expect(html).not.toContain('>cx</span>');
   });
 
@@ -390,7 +402,7 @@ describe('fleet and settings UI regressions', () => {
     expect(html).toContain('type="hidden" id="appSettingsSessionListPosition" value="left"');
   });
 
-  it('styles the left session list as full-width Warp-like rows with the session name first', () => {
+  it('styles the left session list as compact full-width Warp-like rows with git metadata', () => {
     const css = readFileSync(resolve(import.meta.dirname, '../src/web/public/styles.css'), 'utf8');
     const sidebar = cssRuleBody(css, 'body.session-list-left:not(.device-mobile) .session-list-sidebar');
     const sidebarTab = cssRuleBody(
@@ -405,13 +417,21 @@ describe('fleet and settings UI regressions', () => {
       css,
       'body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-folder'
     );
+    const sidebarGit = cssRuleBody(
+      css,
+      'body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-git'
+    );
 
-    expect(sidebar).toContain('padding: 10px 8px 12px');
-    expect(sidebarTab).toContain('min-height: 78px');
+    expect(sidebar).toContain('padding: 6px 6px 10px');
+    expect(sidebarTab).toContain('min-height: 64px');
     expect(sidebarTab).toContain('max-width: none');
     expect(sidebarName).toContain('order: 1');
-    expect(sidebarName).toContain('font-size: 0.84rem');
+    expect(sidebarName).toContain('font-size: 0.8rem');
+    expect(sidebarName).toContain('white-space: normal');
+    expect(sidebarName).toContain('overflow-wrap: anywhere');
     expect(sidebarFolder).toContain('display: block');
+    expect(sidebarGit).toContain('display: flex');
+    expect(sidebarGit).toContain('min-width: 0');
   });
 
   it('routes remote tab close through the stop-or-hide confirmation modal', () => {

@@ -34,6 +34,20 @@ const session = {
   createdAt: 1,
   lastActivityAt: 2,
 };
+const gitSummary = {
+  isRepo: true as const,
+  branch: 'main',
+  upstream: 'origin/main',
+  ahead: 2,
+  behind: 0,
+  pushable: true,
+  syncStatus: 'pushable' as const,
+  dirty: true,
+  changedFiles: 3,
+  untrackedFiles: 1,
+  insertions: 28,
+  deletions: 4,
+};
 
 describe('fleet protocol', () => {
   it('exports protocol version 1', () => expect(FLEET_PROTOCOL_VERSION).toBe(1));
@@ -119,6 +133,16 @@ describe('fleet protocol', () => {
       remark: 'pc-e5 打包机',
       sessionLabel: 'xianmi-assistant',
       title: 'macmini / pc-e5 打包机',
+    });
+  });
+
+  it('carries git summaries into fleet session tabs', () => {
+    const withGit = { ...session, gitSummary };
+    const frame = { t: 'heartbeat', sessions: [withGit] };
+
+    expect(parseNodeToCentralFrame(JSON.stringify(frame))).toEqual(frame);
+    expect(buildFleetSessionTab(device, withGit)).toMatchObject({
+      gitSummary,
     });
   });
 

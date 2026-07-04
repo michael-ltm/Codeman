@@ -28,6 +28,7 @@
 
 import type { RespawnConfig } from './respawn.js';
 import type { AttachmentDetectedType } from './tools.js';
+import type { GitSummary } from '../git-summary.js';
 
 /** Status of a Claude session */
 export type SessionStatus = 'idle' | 'busy' | 'stopped' | 'error';
@@ -170,6 +171,8 @@ export interface SessionState {
   name?: string;
   /** User-facing session remark shown beside the session name */
   remark?: string;
+  /** Best-effort live Git status for the working directory. Omitted outside git repos. */
+  gitSummary?: GitSummary;
   /** Session mode */
   mode?: SessionMode;
   /** Auto-clear enabled */
