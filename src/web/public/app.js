@@ -1727,7 +1727,7 @@ class CodemanApp {
     // Skip if buffer load already in progress — avoids competing clear+rewrite cycles
     if (this._isLoadingBuffer) return;
     try {
-      const data = await this._loadTerminalBuffer(this.activeSessionId, TERMINAL_TAIL_SIZE);
+      const data = await this._loadTerminalBuffer(this.activeSessionId);
       if (data.terminalBuffer) {
         this.terminal.clear();
         this.terminal.reset();
@@ -3774,9 +3774,10 @@ class CodemanApp {
       }
     }
 
-    // Load terminal buffer for this session
+    // Load the full retained terminal buffer for this session.
     // Show cached content instantly while fetching fresh data in background.
-    // Use tail mode for faster initial load (128KB is enough for recent visible content).
+    // The server-side buffer is already bounded; adding a client-side tail here
+    // makes scroll-to-top look like older output vanished.
     //
     // Protect flushed state during buffer load: terminal.write() can trigger
     // xterm.js onData responses (DA, OSC, etc.) that would otherwise clear
@@ -3900,9 +3901,9 @@ class CodemanApp {
 
       this._setTerminalLoadState(sessionId, selectGen, 'fetching');
       _crashDiag.log('FETCH_START');
-      // Parameterized by tab type: local `/api/sessions/:id/terminal?tail=N` or
+      // Parameterized by tab type: local `/api/sessions/:id/terminal` or
       // remote `/api/fleet/.../terminal`, normalized to { terminalBuffer, truncated }.
-      const data = await this._loadTerminalBuffer(sessionId, TERMINAL_TAIL_SIZE);
+      const data = await this._loadTerminalBuffer(sessionId);
       if (this._isStaleSelect(selectGen)) {
         this._clearTerminalLoadState(sessionId, selectGen);
         return;

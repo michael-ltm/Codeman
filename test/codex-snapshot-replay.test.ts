@@ -61,6 +61,19 @@ describe('xterm snapshot/replay (codex tab-switch)', () => {
     expect(postSnapshotRestore).toContain('restoredSnapshot || clearedForBusy || data.terminalBuffer !== cachedBuffer');
   });
 
+  it('loads the full retained terminal buffer instead of a 1MB tail when selecting a tab', () => {
+    const source = appSource();
+    const selectStart = source.indexOf('async selectSession(sessionId, options = {})');
+    const fetchStart = source.indexOf("FETCH_START'", selectStart);
+    const fetchBlock = source.slice(fetchStart, fetchStart + 700);
+
+    expect(selectStart).toBeGreaterThan(-1);
+    expect(fetchStart).toBeGreaterThan(selectStart);
+    expect(fetchBlock).toContain('this._loadTerminalBuffer(sessionId)');
+    expect(source).not.toContain('TERMINAL_TAIL_SIZE');
+    expect(source).not.toContain('?tail=1048576');
+  });
+
   it('forces replay after clearing a busy tab even when the fetched frame matches cache', () => {
     const source = appSource();
     const cacheRestore = source.indexOf('Instant cache restore');
