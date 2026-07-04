@@ -535,6 +535,11 @@ export const SessionNameSchema = z.object({
   name: z.string().min(0).max(128),
 });
 
+/** PUT /api/sessions/:id/remark */
+export const SessionRemarkSchema = z.object({
+  remark: z.string().min(0).max(160),
+});
+
 /** PUT /api/sessions/:id/color */
 export const SessionColorSchema = z.object({
   color: z.string().max(30),

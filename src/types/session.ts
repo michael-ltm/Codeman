@@ -168,6 +168,8 @@ export interface SessionState {
   lastActivityAt: number;
   /** Session display name */
   name?: string;
+  /** User-facing session remark shown beside the session name */
+  remark?: string;
   /** Session mode */
   mode?: SessionMode;
   /** Auto-clear enabled */

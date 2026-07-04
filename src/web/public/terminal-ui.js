@@ -1241,14 +1241,16 @@ Object.assign(CodemanApp.prototype, {
       const session = this.sessions?.get?.(id);
       if (!session || session.status === 'ended' || session.status === 'stopped') continue;
       const title = this.getSessionName ? this.getSessionName(session) : session.name || id.slice(0, 8);
+      const remark = typeof session.remark === 'string' ? session.remark.trim() : '';
       rows.push({
         kind: 'local',
         key: id,
-        title,
+        title: remark || title,
         subtitle: this._shortenHomePath(session.workingDir || ''),
         deviceName: localName,
         mode: session.mode || 'claude',
         status: session.status || 'idle',
+        remark,
       });
     }
 
@@ -1272,14 +1274,17 @@ Object.assign(CodemanApp.prototype, {
       const status = summary.status || tab.status || 'idle';
       if (status === 'ended' || status === 'stopped') continue;
       const workingDir = summary.workingDir || tab.workingDir || '';
+      const remark = (summary.remark || tab.remark || '').trim();
       rows.push({
         kind: 'fleet',
         key: tab.key,
-        title: tab.sessionLabel || summary.name || tab.title || this._basenameFromPath(workingDir) || tab.sessionId || tab.key,
+        title:
+          remark || tab.sessionLabel || summary.name || tab.title || this._basenameFromPath(workingDir) || tab.sessionId || tab.key,
         subtitle: this._shortenHomePath(workingDir),
         deviceName: tab.deviceName || device?.name || device?.hostname || String(tab.deviceId).slice(0, 8),
         mode: summary.mode || tab.mode || 'claude',
         status,
+        remark,
         adopted: !!summary.adopted || !!tab.adopted,
       });
     }

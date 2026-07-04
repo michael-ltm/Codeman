@@ -1194,6 +1194,8 @@ Object.assign(CodemanApp.prototype, {
       document.getElementById('modalSessionName').value = session.name || '';
       document.getElementById('modalSessionName').placeholder = 'Auto (directory name)';
     }
+    const remarkInput = document.getElementById('modalSessionRemark');
+    if (remarkInput) remarkInput.value = session.remark || '';
 
     // Initialize color picker with current session color
     const currentColor = session.color || 'default';
@@ -1255,6 +1257,17 @@ Object.assign(CodemanApp.prototype, {
       await this._apiPut(`/api/sessions/${this.editingSessionId}/name`, { name });
     } catch (err) {
       this.showToast('Failed to save session name: ' + err.message, 'error');
+    }
+  },
+
+  async saveSessionRemark() {
+    if (!this.editingSessionId) return;
+    const input = document.getElementById('modalSessionRemark');
+    const remark = input ? input.value.trim() : '';
+    try {
+      await this._apiPut(`/api/sessions/${this.editingSessionId}/remark`, { remark });
+    } catch (err) {
+      this.showToast('Failed to save session remark: ' + err.message, 'error');
     }
   },
 

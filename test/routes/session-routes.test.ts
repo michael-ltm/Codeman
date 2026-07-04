@@ -236,6 +236,43 @@ describe('session-routes', () => {
     });
   });
 
+  // ========== PUT /api/sessions/:id/remark ==========
+
+  describe('PUT /api/sessions/:id/remark', () => {
+    it('saves a session remark and returns it in light session state', async () => {
+      const res = await harness.app.inject({
+        method: 'PUT',
+        url: `/api/sessions/${harness.ctx._sessionId}/remark`,
+        payload: { remark: 'pc-e5 打包窗口' },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.data.remark).toBe('pc-e5 打包窗口');
+      expect(harness.ctx._session.toState().remark).toBe('pc-e5 打包窗口');
+      expect(harness.ctx.persistSessionState).toHaveBeenCalled();
+      expect(harness.ctx.broadcast).toHaveBeenCalledWith(
+        'session:updated',
+        expect.objectContaining({
+          remark: 'pc-e5 打包窗口',
+        })
+      );
+    });
+
+    it('trims empty remarks back to an omitted public field', async () => {
+      const res = await harness.app.inject({
+        method: 'PUT',
+        url: `/api/sessions/${harness.ctx._sessionId}/remark`,
+        payload: { remark: '   ' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.data.remark).toBe('');
+      expect(harness.ctx._session.toState()).not.toHaveProperty('remark');
+    });
+  });
+
   // ========== PUT /api/sessions/:id/color ==========
 
   describe('PUT /api/sessions/:id/color', () => {

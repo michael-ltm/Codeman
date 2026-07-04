@@ -344,6 +344,7 @@ class CodemanApp {
     this.editingSessionId = null; // Session being edited in options modal
     this.pendingCloseSessionId = null; // Session pending close confirmation
     this.muxSessions = []; // Screen sessions for process monitor
+    this.localDeviceName = 'local';
 
     // Ralph loop/todo state per session
     this.ralphStates = new Map(); // Map<sessionId, { loop, todos }>
@@ -2467,6 +2468,24 @@ class CodemanApp {
     if (typeof KeyboardHandler !== 'undefined') KeyboardHandler.updateLayoutForKeyboard();
   }
 
+  _localDeviceTabName() {
+    const localDevice = this._fleetState?.devices?.find?.((d) => d && d.id === 'local');
+    return localDevice?.name || localDevice?.hostname || this.localDeviceName || 'local';
+  }
+
+  _tabDisplayNameHtml(name) {
+    const parsed = parseSessionPrefix(name);
+    if (parsed && parsed.suffix) {
+      return `<span class="tab-prefix">${escapeHtml(parsed.prefix)}</span><span class="tab-suffix">: ${escapeHtml(parsed.suffix)}</span>`;
+    }
+    return escapeHtml(name);
+  }
+
+  _tabRemarkHtml(remark) {
+    const text = typeof remark === 'string' ? remark.trim() : '';
+    return text ? `<span class="tab-remark" title="Session remark">${escapeHtml(text)}</span>` : '';
+  }
+
   /**
    * Reset all app state maps, timers, and handlers to a clean baseline.
    * Called by handleInit() on SSE reconnect / page reload to prevent
@@ -2567,6 +2586,7 @@ class CodemanApp {
     // CJK input form: controlled by user setting (with server env as override)
     this._serverCjkOverride = data.inputCjkForm || false;
     this._updateCjkInputState();
+    this.localDeviceName = data.deviceName || this.localDeviceName || 'local';
 
     // Custom-login/change-password availability signal (see getLightState() in
     // server.ts) — passwordless loopback instances get `authActive: false` so
@@ -2840,6 +2860,7 @@ class CodemanApp {
         const isActive = id === this.activeSessionId;
         const status = session.status || 'idle';
         const name = this.getSessionName(session);
+        const remark = (session.remark || '').trim();
         const taskStats = session.taskStats || { running: 0, total: 0 };
         const hasRunningTasks = taskStats.running > 0;
         const loadState = this.terminalLoadStates.get(id);
@@ -2899,15 +2920,13 @@ class CodemanApp {
           statusEl.className = `tab-status ${status}`;
         }
 
-        // Update name if changed
-        const nameEl = tab.querySelector('.tab-name');
-        if (nameEl && nameEl.textContent !== name) {
-          const _p = parseSessionPrefix(name);
-          if (_p && _p.suffix) {
-            nameEl.innerHTML = '<span class="tab-prefix">' + escapeHtml(_p.prefix) + '</span><span class="tab-suffix">: ' + escapeHtml(_p.suffix) + '</span>';
-          } else {
-            nameEl.textContent = name;
-          }
+        if (
+          tab.dataset.sessionNameRaw !== (session.name || '') ||
+          tab.dataset.sessionRemark !== remark ||
+          tab.dataset.sessionMode !== (session.mode || 'claude')
+        ) {
+          this._fullRenderSessionTabs();
+          return;
         }
 
         // Update task badge
@@ -3031,6 +3050,8 @@ class CodemanApp {
       const name = this.getSessionName(session);
       const mode = session.mode || 'claude';
       const color = session.color || 'default';
+      const remark = (session.remark || '').trim();
+      const deviceName = this._localDeviceTabName();
       const taskStats = session.taskStats || { running: 0, total: 0 };
       const hasRunningTasks = taskStats.running > 0;
       const alertType = this.tabAlerts.get(id);
@@ -3056,16 +3077,22 @@ class CodemanApp {
       const adoptedBadge = session.adopted
         ? '<span class="tab-adopted-badge" title="收编的外部 tmux 会话 · Adopted external tmux session" aria-hidden="true">\u{1F517}</span>'
         : '';
+      const devicePill = codemanDevicePillHtml(deviceName, 'local');
+      const modeBadge = codemanModeBadgeHtml(mode);
+      const remarkBadge = this._tabRemarkHtml(remark);
+      const titleParts = [deviceName, mode, remark, name, session.workingDir].filter(Boolean);
 
-      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${loadState ? ' tab-loading' : ''}" data-id="${id}" data-color="${color}" ${loadState ? `data-load-phase="${escapeHtml(loadState.phase)}"` : ''} onclick="app.handleSessionTabClick(event, ${escapeHtml(JSON.stringify(id))})" oncontextmenu="event.preventDefault(); app.startInlineRename(${escapeHtml(JSON.stringify(id))})" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-busy="${loadState ? 'true' : 'false'}" aria-label="${escapeHtml(name)} session" ${session.workingDir ? `title="${escapeHtml(session.workingDir)}"` : ''}>
+      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${loadState ? ' tab-loading' : ''}" data-id="${id}" data-color="${color}" data-session-name-raw="${escapeHtml(session.name || '')}" data-session-remark="${escapeHtml(remark)}" data-session-mode="${escapeHtml(mode)}" ${loadState ? `data-load-phase="${escapeHtml(loadState.phase)}"` : ''} onclick="app.handleSessionTabClick(event, ${escapeHtml(JSON.stringify(id))})" oncontextmenu="event.preventDefault(); app.startInlineRename(${escapeHtml(JSON.stringify(id))})" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-busy="${loadState ? 'true' : 'false'}" aria-label="${escapeHtml([deviceName, remark, name].filter(Boolean).join(' / '))} session" title="${escapeHtml(titleParts.join(' · '))}">
           ${_tabIdx < 9 ? '<span class="tab-number">' + (_tabIdx + 1) + '</span>' : ''}
           ${loadState ? '<span class="tab-load-spinner" aria-hidden="true"></span>' : ''}
           <span class="tab-status ${status}" aria-hidden="true"></span>
           <span class="tab-info">
             <span class="tab-name-row">
-              ${mode === 'shell' ? '<span class="tab-mode shell" aria-hidden="true">sh</span>' : mode === 'opencode' ? '<span class="tab-mode opencode" aria-hidden="true">oc</span>' : mode === 'codex' ? '<span class="tab-mode codex" aria-hidden="true">cx</span>' : mode === 'gemini' ? '<span class="tab-mode gemini" aria-hidden="true">gm</span>' : ''}
+              ${devicePill}
+              ${modeBadge}
               ${adoptedBadge}
-              <span class="tab-name" data-session-id="${id}">${(() => { const p = parseSessionPrefix(name); return p && p.suffix ? '<span class="tab-prefix">' + escapeHtml(p.prefix) + '</span><span class="tab-suffix">: ' + escapeHtml(p.suffix) + '</span>' : escapeHtml(name); })()}</span>
+              ${remarkBadge}
+              <span class="tab-name" data-session-id="${id}">${this._tabDisplayNameHtml(name)}</span>
               <span class="tab-detached-badge" aria-hidden="true">detached</span>
             </span>
             ${showFolder ? `<span class="tab-folder">\u{1F4C1} ${escapeHtml(folderName)}</span>` : ''}
@@ -4152,7 +4179,7 @@ class CodemanApp {
       this.pendingCloseSessionId = sessionId;
 
       const name = tab
-        ? `${tab.deviceName || tab.deviceId || 'Remote'} / ${tab.sessionLabel || tab.title || tab.sessionId}`
+        ? `${tab.deviceName || tab.deviceId || 'Remote'} / ${tab.remark || tab.sessionLabel || tab.title || tab.sessionId}`
         : sessionId;
       const sessionNameEl = document.getElementById('closeConfirmSessionName');
       if (sessionNameEl) sessionNameEl.textContent = name;

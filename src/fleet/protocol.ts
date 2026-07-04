@@ -73,6 +73,7 @@ export interface FleetSessionSummary {
   deviceId: string;
   id: string;
   name?: string;
+  remark?: string;
   mode: FleetSessionMode;
   status: FleetSessionStatus;
   workingDir: string;
@@ -94,6 +95,7 @@ export interface FleetSessionTab {
   sessionId: string;
   deviceName: string;
   sessionLabel: string;
+  remark?: string;
   title: string;
   mode: FleetSessionMode;
   status: FleetSessionStatus;
@@ -223,6 +225,7 @@ const FleetSessionSummarySchema: z.ZodType<FleetSessionSummary> = z.object({
   deviceId: z.string(),
   id: z.string(),
   name: z.string().optional(),
+  remark: z.string().optional(),
   mode: FleetSessionModeSchema,
   status: FleetSessionStatusSchema,
   workingDir: z.string(),
@@ -396,13 +399,15 @@ function parseFrame<T>(schema: z.ZodType<T>, raw: unknown): T | null {
 export function buildFleetSessionTab(device: FleetDeviceSummary, session: FleetSessionSummary): FleetSessionTab {
   const deviceName = device.name || device.hostname || device.id.slice(0, 8);
   const sessionLabel = session.name || basename(session.workingDir) || session.id.slice(0, 8);
+  const remark = session.remark?.trim() || undefined;
   return {
     key: `${session.deviceId}:${session.id}`,
     deviceId: session.deviceId,
     sessionId: session.id,
     deviceName,
     sessionLabel,
-    title: `${deviceName} / ${sessionLabel}`,
+    remark,
+    title: `${deviceName} / ${remark || sessionLabel}`,
     mode: session.mode,
     status: session.status,
     workingDir: session.workingDir,

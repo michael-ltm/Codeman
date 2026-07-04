@@ -98,6 +98,7 @@ export function createLocalSessionOps(
     deviceId,
     id: s.id,
     name: s.name || undefined,
+    remark: s.remark || undefined,
     mode: s.mode as FleetSessionMode,
     status: sessionStatusForFleet(s),
     workingDir: s.workingDir,

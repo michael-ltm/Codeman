@@ -404,6 +404,7 @@ export class Session extends EventEmitter {
 
   // Session color for visual differentiation
   private _color: import('./types.js').SessionColor = 'default';
+  private _remark = '';
 
   // Store handler references for cleanup (prevents memory leaks)
   private _taskTrackerHandlers: {
@@ -446,6 +447,8 @@ export class Session extends EventEmitter {
       name?: string;
       /** Terminal multiplexer instance (tmux) */
       mux?: TerminalMultiplexer;
+      /** User-facing session remark shown beside the session name */
+      remark?: string;
       /** Whether to use multiplexer wrapping */
       useMux?: boolean;
       /** Existing mux session for restored sessions */
@@ -497,6 +500,7 @@ export class Session extends EventEmitter {
     this.createdAt = config.createdAt || Date.now();
     this.mode = config.mode || 'claude';
     this._name = config.name || '';
+    this._remark = config.remark || '';
     this._resumeSessionId = config.resumeSessionId;
     this._lastActivityAt = this.createdAt;
     // Set claudeSessionId — when resuming, the Claude conversation ID is the resumed one.
@@ -914,6 +918,14 @@ export class Session extends EventEmitter {
     this._name = value;
   }
 
+  get remark(): string {
+    return this._remark;
+  }
+
+  set remark(value: string) {
+    this._remark = value;
+  }
+
   setAutoClear(enabled: boolean, threshold?: number): void {
     // Adopted (foreign-tmux) sessions are exempt from Claude automation — this
     // would eventually inject '/clear' into a session Codeman doesn't own
@@ -1031,7 +1043,7 @@ export class Session extends EventEmitter {
   }
 
   toState(): SessionState {
-    return {
+    const state: SessionState = {
       id: this.id,
       pid: this.pid,
       status: this._status,
@@ -1077,6 +1089,8 @@ export class Session extends EventEmitter {
       // can carry secrets). For disk persistence, session-manager calls
       // getEnvOverridesForPersist() and writes alongside state.
     };
+    if (this._remark) state.remark = this._remark;
+    return state;
   }
 
   /**

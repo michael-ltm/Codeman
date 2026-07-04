@@ -445,29 +445,28 @@ Object.assign(CodemanApp.prototype, {
     // online → the session's own idle/busy/error color. All existing CSS vars.
     const dotClass = tab.online === false ? 'ended' : status;
     const mode = tab.mode || 'claude';
-    const modeBadge =
-      mode === 'shell'
-        ? '<span class="tab-mode shell" aria-hidden="true">sh</span>'
-        : mode === 'opencode'
-          ? '<span class="tab-mode opencode" aria-hidden="true">oc</span>'
-          : mode === 'codex'
-            ? '<span class="tab-mode codex" aria-hidden="true">cx</span>'
-            : mode === 'gemini'
-              ? '<span class="tab-mode gemini" aria-hidden="true">gm</span>'
-              : '';
+    const modeBadge = codemanModeBadgeHtml(mode);
+    const devicePill = codemanDevicePillHtml(tab.deviceName || tab.deviceId || 'remote', 'remote');
+    const remark = typeof tab.remark === 'string' ? tab.remark.trim() : '';
+    const remarkBadge = remark ? `<span class="tab-remark" title="Session remark">${escapeHtml(remark)}</span>` : '';
     const adoptedBadge = tab.adopted
       ? '<span class="tab-adopted-badge" title="收编的外部 tmux 会话 · Adopted external tmux session" aria-hidden="true">\u{1F517}</span>'
       : '';
     const keyJson = escapeHtml(JSON.stringify(key));
-    const titleAttr = tab.workingDir ? `${tab.deviceName} · ${tab.workingDir}` : tab.deviceName || '';
+    const primaryLabel = remark ? '' : tab.sessionLabel || tab.sessionId || key;
+    const secondary = remark && tab.sessionLabel ? tab.sessionLabel : '';
+    const titleAttr = [tab.deviceName, mode, remark, tab.sessionLabel, tab.workingDir].filter(Boolean).join(' · ');
     return `<div class="session-tab fleet-tab ${isActive ? 'active' : ''}${tab.online === false ? ' fleet-offline' : ''}" data-id="${escapeHtml(key)}" data-fleet="1" onclick="app.handleSessionTabClick(event, ${keyJson})" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-label="${escapeHtml(tab.title || key)} remote session" title="${escapeHtml(titleAttr)}">
         <span class="tab-status ${dotClass}" aria-hidden="true"></span>
         <span class="tab-info">
           <span class="tab-name-row">
-            <span class="tab-fleet-dev" aria-hidden="true">\u{1F5A5}</span>
-            ${modeBadge}${adoptedBadge}
-            <span class="tab-name"><span class="tab-prefix">${escapeHtml(tab.deviceName || '')}</span><span class="tab-suffix"> / ${escapeHtml(tab.sessionLabel || '')}</span></span>
+            ${devicePill}
+            ${modeBadge}
+            ${adoptedBadge}
+            ${remarkBadge}
+            ${primaryLabel ? `<span class="tab-name">${escapeHtml(primaryLabel)}</span>` : ''}
           </span>
+          ${secondary ? `<span class="tab-session-secondary">${escapeHtml(secondary)}</span>` : ''}
         </span>
         <span class="tab-close" onclick="event.stopPropagation(); app.requestCloseSession(${keyJson})" title="Close tab (session keeps running)" aria-label="Close remote tab" tabindex="0">&times;</span>
       </div>`;

@@ -182,6 +182,9 @@ export class MockSession extends EventEmitter {
   /** Session display name */
   name: string = 'test-session';
 
+  /** Session remark shown beside the session name */
+  remark: string = '';
+
   /** Session color tag */
   color: string = 'default';
 
@@ -224,7 +227,7 @@ export class MockSession extends EventEmitter {
 
   /** Return a state-like object for route handlers */
   toState(): Record<string, unknown> {
-    return {
+    const state: Record<string, unknown> = {
       id: this.id,
       workingDir: this.workingDir,
       status: this.status,
@@ -233,6 +236,8 @@ export class MockSession extends EventEmitter {
       mode: this.mode,
       muxName: this._muxName,
     };
+    if (this.remark) state.remark = this.remark;
+    return state;
   }
 
   /** Auto-resume on usage limit (token pause control) */

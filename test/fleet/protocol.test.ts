@@ -106,6 +106,22 @@ describe('fleet protocol', () => {
     expect(parsed).toEqual(frame);
   });
 
+  it('carries session remarks into fleet summaries and derived tab labels', () => {
+    const withRemark = {
+      ...session,
+      remark: 'pc-e5 打包机',
+      name: 'xianmi-assistant',
+    };
+    const frame = { t: 'heartbeat', sessions: [withRemark] };
+
+    expect(parseNodeToCentralFrame(JSON.stringify(frame))).toEqual(frame);
+    expect(buildFleetSessionTab(device, withRemark)).toMatchObject({
+      remark: 'pc-e5 打包机',
+      sessionLabel: 'xianmi-assistant',
+      title: 'macmini / pc-e5 打包机',
+    });
+  });
+
   it('validates a ResumeCandidate shape', () => {
     const ok = { sessionId: 's1', workingDir: '/tmp', title: 'fix the thing', updatedAt: 123, projectKey: '-tmp' };
     expect(ResumeCandidateSchema.safeParse(ok).success).toBe(true);

@@ -23,6 +23,7 @@ import { SseEvent } from '../sse-events.js';
 import {
   CreateSessionSchema,
   SessionNameSchema,
+  SessionRemarkSchema,
   SessionColorSchema,
   RunPromptSchema,
   SessionInputWithLimitSchema,
@@ -317,6 +318,21 @@ export function registerSessionRoutes(
     ctx.mux.updateSessionName(id, session.name);
     persistAndBroadcastSession(ctx, session);
     return { name: session.name };
+  });
+
+  // ========== Set Session Remark ==========
+
+  app.put('/api/sessions/:id/remark', async (req) => {
+    const { id } = req.params as { id: string };
+    const body = parseBody(SessionRemarkSchema, req.body, 'Invalid request body');
+    const session = findSessionOrFail(ctx, id);
+
+    const remark = String(body.remark || '')
+      .trim()
+      .slice(0, 160);
+    session.remark = remark;
+    persistAndBroadcastSession(ctx, session);
+    return { remark };
   });
 
   // ========== Set Session Color ==========

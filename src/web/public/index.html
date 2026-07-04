@@ -973,6 +973,10 @@
               <span class="form-hint">Custom name shown in the tab (right-click tab to rename inline)</span>
             </div>
             <div class="form-row">
+              <label>Session Remark</label>
+              <input type="text" id="modalSessionRemark" maxlength="160" placeholder="pc-e5 builder / Claude main" onblur="app.saveSessionRemark()">
+            </div>
+            <div class="form-row">
               <label>Session Color</label>
               <div class="color-picker" id="sessionColorPicker">
                 <button type="button" class="color-swatch" data-color="default" title="Default">

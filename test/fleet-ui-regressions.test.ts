@@ -318,6 +318,49 @@ describe('fleet and settings UI regressions', () => {
     expect(app.badgeUpdated).toBe(true);
   });
 
+  it('renders remote tabs with prominent device, remark, and official provider icon structure', () => {
+    const CodemanApp = function CodemanApp(this: unknown) {};
+    const context = vm.createContext({
+      CodemanApp,
+      escapeHtml: (value: unknown) =>
+        String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;'),
+      codemanModeBadgeHtml: (mode: string) =>
+        `<span class="tab-mode tab-mode-logo tab-mode-openai" title="${mode}"><svg aria-hidden="true"></svg></span>`,
+      codemanDevicePillHtml: (deviceName: string, kind: string) =>
+        `<span class="tab-device-pill tab-device-${kind}"><span>${deviceName}</span></span>`,
+      console,
+    });
+    const source = readFileSync(resolve(import.meta.dirname, '../src/web/public/fleet-tabs.js'), 'utf8');
+    vm.runInContext(source, context, { filename: 'fleet-tabs.js' });
+
+    const app = new (CodemanApp as any)();
+    const html = app._fleetTabHtml('pc-e5:s1', {
+      deviceId: 'pc-e5',
+      sessionId: 's1',
+      deviceName: 'pc-e5',
+      sessionLabel: 'xianmi-assistant',
+      remark: '打包机',
+      mode: 'codex',
+      status: 'busy',
+      online: true,
+      workingDir: '/Users/ming/project',
+    });
+
+    expect(html).toContain('tab-device-pill tab-device-remote');
+    expect(html).toContain('pc-e5');
+    expect(html).toContain('tab-mode-logo tab-mode-openai');
+    expect(html).toContain('tab-remark');
+    expect(html).toContain('打包机');
+    expect(html).toContain('tab-session-secondary');
+    expect(html).toContain('xianmi-assistant');
+    expect(html).not.toContain('>cx</span>');
+  });
+
   it('routes remote tab close through the stop-or-hide confirmation modal', () => {
     const appSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/app.js'), 'utf8');
     const html = readFileSync(resolve(import.meta.dirname, '../src/web/public/index.html'), 'utf8');

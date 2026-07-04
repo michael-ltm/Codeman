@@ -1784,6 +1784,7 @@ export class WebServer extends EventEmitter {
 
     const result = {
       version: APP_VERSION,
+      deviceName: this.titleHostname,
       sessions: this.getLightSessionsState(),
       scheduledRuns: Array.from(this.scheduledRuns.values()),
       respawnStatus,
@@ -2236,6 +2237,7 @@ export class WebServer extends EventEmitter {
               workingDir: muxSession.workingDir,
               mode: muxSession.mode,
               name: sessionName,
+              remark: savedState?.remark,
               mux: this.mux,
               useMux: true,
               muxSession: muxSession, // Pass the existing session so startInteractive() can attach to it
