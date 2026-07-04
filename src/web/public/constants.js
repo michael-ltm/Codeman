@@ -468,10 +468,23 @@ function codemanModeBadgeHtml(mode) {
   return `<span class="tab-mode" title="${escapeHtml(normalized)}">${escapeHtml(normalized.slice(0, 2))}</span>`;
 }
 
+function codemanCompactDeviceName(deviceName) {
+  const raw = String(deviceName || 'device').trim() || 'device';
+  const base = raw.split('.')[0] || raw;
+  const appleMatch = base.match(/(?:^|[-_\s])(MacBook[-_\s](?:Air|Pro)|Mac[-_\s]?mini|iMac)(?:$|[-_\s])/i);
+  const label = appleMatch ? appleMatch[1].replace(/[-_\s]+/g, ' ') : base;
+  return label
+    .replace(/\bmacbook\b/gi, 'MacBook')
+    .replace(/\bmac mini\b/gi, 'Mac mini')
+    .replace(/\bair\b/gi, 'Air')
+    .replace(/\bpro\b/gi, 'Pro')
+    .replace(/\bimac\b/gi, 'iMac');
+}
+
 function codemanDevicePillHtml(deviceName, kind) {
-  const safeName = escapeHtml(deviceName || 'local');
+  const fullName = String(deviceName || 'device').trim() || 'device';
+  const safeName = escapeHtml(fullName);
+  const safeLabel = escapeHtml(codemanCompactDeviceName(fullName));
   const safeKind = kind === 'remote' ? 'remote' : 'local';
-  const kindText = safeKind === 'remote' ? 'REMOTE' : 'THIS';
-  const title = safeKind === 'remote' ? `Remote device: ${safeName}` : `Current device: ${safeName}`;
-  return `<span class="tab-device-pill tab-device-${safeKind}" title="${title}"><span class="tab-device-kind">${kindText}</span><span class="tab-device-name">${safeName}</span></span>`;
+  return `<span class="tab-device-pill tab-device-${safeKind}" title="Device: ${safeName}" aria-label="Device ${safeName}"><span class="tab-device-name">${safeLabel}</span></span>`;
 }

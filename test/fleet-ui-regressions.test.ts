@@ -361,6 +361,25 @@ describe('fleet and settings UI regressions', () => {
     expect(html).not.toContain('>cx</span>');
   });
 
+  it('keeps session tabs compact by removing perspective labels and shortening device names', () => {
+    const context = vm.createContext({ window: {}, console });
+    const constantsSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/constants.js'), 'utf8');
+    vm.runInContext(constantsSource, context, { filename: 'constants.js' });
+
+    const localHtml = (context as any).codemanDevicePillHtml('Elons-Mac-mini.local', 'local');
+    const remoteHtml = (context as any).codemanDevicePillHtml('pc-e5', 'remote');
+    const css = readFileSync(resolve(import.meta.dirname, '../src/web/public/styles.css'), 'utf8');
+    const sessionTab = cssRuleBody(css, '.session-tab');
+    const devicePill = cssRuleBody(css, '.session-tab .tab-device-pill');
+
+    expect(localHtml).toContain('Mac mini');
+    expect(localHtml).not.toContain('THIS');
+    expect(remoteHtml).toContain('pc-e5');
+    expect(remoteHtml).not.toContain('REMOTE');
+    expect(sessionTab).toContain('max-width: min(34vw, 340px)');
+    expect(devicePill).toContain('max-width: 82px');
+  });
+
   it('routes remote tab close through the stop-or-hide confirmation modal', () => {
     const appSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/app.js'), 'utf8');
     const html = readFileSync(resolve(import.meta.dirname, '../src/web/public/index.html'), 'utf8');
