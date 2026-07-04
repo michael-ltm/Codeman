@@ -116,6 +116,22 @@ export function registerFleetRoutes(
     return { devices, sessions };
   });
 
+  app.get<{ Params: { deviceId: string } }>('/api/fleet/devices/:deviceId/system-stats', async (req) => {
+    const { deviceId } = req.params;
+    const handle = controller.getHandle(deviceId);
+    if (!handle || !controller.isOnline(deviceId)) {
+      throwFleetError(409, ApiErrorCode.CONFLICT, DEVICE_OFFLINE_MESSAGE);
+    }
+    try {
+      return await handle.getSystemStats();
+    } catch (err) {
+      if (err && typeof err === 'object' && 'statusCode' in err) throw err;
+      const message = getErrorMessage(err);
+      if (message === NODE_TIMEOUT_MESSAGE) throwFleetError(504, ApiErrorCode.OPERATION_FAILED, message);
+      throw err;
+    }
+  });
+
   // Discovered external (foreign-tmux) AI sessions across the whole fleet, keyed
   // by deviceId (Rev5 §13.1). Read-only aggregate of the controller's per-device
   // cache — populated by node `external-sessions` frames + the central's own

@@ -738,6 +738,7 @@ Object.assign(CodemanApp.prototype, {
     this._welcomeDeviceId = id || 'local';
     this.renderWelcomeDeviceRow();
     this.loadHistorySessions?.();
+    this.syncSystemStatsPolling?.();
   },
 
   /**

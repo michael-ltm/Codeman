@@ -83,6 +83,9 @@ Object.assign(CodemanApp.prototype, {
       this.renderFleetPanel();
       this.refreshFleetState();
       this._refreshFleetExternalSessions();
+      this.syncSystemStatsPolling?.();
+    } else {
+      this.syncSystemStatsPolling?.();
     }
   },
 
@@ -91,6 +94,7 @@ Object.assign(CodemanApp.prototype, {
     const panel = this.$('fleetPanel');
     if (panel) panel.classList.remove('visible');
     this.fleetPanelVisible = false;
+    this.syncSystemStatsPolling?.();
   },
 
   /**
@@ -448,6 +452,7 @@ Object.assign(CodemanApp.prototype, {
     const dev = (state.devices || []).find((d) => d.id === deviceId);
     if (sel && dev && dev.status === 'online') sel.value = deviceId;
     this.renderFleetPanel();
+    this.syncSystemStatsPolling?.();
   },
 
   /** Segmented mode control click handler. */

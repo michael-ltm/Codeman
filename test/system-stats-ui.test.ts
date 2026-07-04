@@ -9,6 +9,9 @@ class FakeElement {
   readonly classList = {
     add() {},
     remove() {},
+    contains() {
+      return false;
+    },
   };
 }
 
@@ -53,5 +56,50 @@ describe('system stats header UI', () => {
     expect(elements.statCpuBar.style.width).toBe('37%');
     expect(elements.statMem.textContent).toBe('8.0G');
     expect(elements.statMemBar.style.width).toBe('50%');
+  });
+
+  it('fetches stats from the selected fleet device when a remote device is selected', async () => {
+    const CodemanApp = function CodemanApp(this: unknown) {};
+    const elements: Record<string, FakeElement> = {
+      welcomeOverlay: new FakeElement(),
+      headerSystemStats: new FakeElement(),
+      statCpu: new FakeElement(),
+      statCpuBar: new FakeElement(),
+      statMem: new FakeElement(),
+      statMemBar: new FakeElement(),
+    };
+    elements.welcomeOverlay.classList.contains = (cls: string) => cls === 'visible';
+    const context = vm.createContext({
+      CodemanApp,
+      document: { getElementById: (id: string) => elements[id] ?? null },
+      fetch: async () => {
+        throw new Error('local stats endpoint should not be used');
+      },
+      console,
+      setInterval,
+      clearInterval,
+    });
+
+    const source = readFileSync(resolve(import.meta.dirname, '../src/web/public/panels-ui.js'), 'utf8');
+    vm.runInContext(source, context, { filename: 'panels-ui.js' });
+    const app = new (CodemanApp as any)();
+    app.$ = (id: string) => elements[id] ?? null;
+    app._fleetState = {
+      devices: [{ id: 'macmini', name: 'Mac mini', status: 'online' }],
+      sessions: [],
+      sessionTabs: [],
+    };
+    app._welcomeDeviceId = 'macmini';
+    let requestedDeviceId = '';
+    app.fleetSystemStats = async (deviceId: string) => {
+      requestedDeviceId = deviceId;
+      return { cpu: 22, memory: { usedMB: 4096, totalMB: 8192, percent: 50 } };
+    };
+
+    await app.fetchSystemStats();
+
+    expect(requestedDeviceId).toBe('macmini');
+    expect(elements.statCpu.textContent).toBe('22%');
+    expect(elements.statMem.textContent).toBe('4.0G');
   });
 });

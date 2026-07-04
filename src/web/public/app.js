@@ -3624,6 +3624,7 @@ class CodemanApp {
     // Instant active-class toggle (no 100ms debounce), then schedule full render for badges/status
     this._updateActiveTabImmediate(sessionId);
     this.renderSessionTabs();
+    this.syncSystemStatsPolling?.();
     this.updateAttachmentHistoryBadge?.();
     if (this.attachmentHistoryDrawerOpen) {
       this.loadAttachmentHistory?.(sessionId);

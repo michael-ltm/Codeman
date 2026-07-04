@@ -243,6 +243,7 @@ Object.assign(CodemanApp.prototype, {
     // remote device exists, so single-machine users are unaffected.
     this.renderWelcomeDeviceRow?.();
     this.renderWelcomeActiveSessions?.();
+    this.syncSystemStatsPolling?.();
 
     // One-shot re-render: on a fresh page load, the welcome screen's Resume
     // Conversation list can render (loadHistorySessions in terminal-ui.js)

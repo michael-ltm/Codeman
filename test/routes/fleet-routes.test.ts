@@ -89,6 +89,7 @@ function makeHandle(overrides: Partial<FleetDeviceHandle> = {}): FleetDeviceHand
     getTerminalBuffer: vi.fn(async () => 'buffered-output'),
     listResumeCandidates: vi.fn(async () => []),
     listDirs: vi.fn(async () => ({ path: '/home/runner', dirs: [] })),
+    getSystemStats: vi.fn(async () => ({ cpu: 44, memory: { usedMB: 4096, totalMB: 8192, percent: 50 } })),
     ...overrides,
   } as FleetDeviceHandle;
 }
@@ -193,6 +194,47 @@ describe('fleet-routes', () => {
       expect(res.statusCode).toBe(200);
       const body = res.json();
       expect(body.data).toEqual({ devices: state.devices, sessions: state.sessions });
+    });
+  });
+
+  // ========== GET /api/fleet/devices/:deviceId/system-stats ==========
+
+  describe('GET /api/fleet/devices/:deviceId/system-stats', () => {
+    it('returns stats from the selected online device handle', async () => {
+      const handle = makeHandle();
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+
+      const res = await harness.app.inject({ method: 'GET', url: '/api/fleet/devices/dev_1/system-stats' });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data).toEqual({ cpu: 44, memory: { usedMB: 4096, totalMB: 8192, percent: 50 } });
+      expect(handle.getSystemStats).toHaveBeenCalled();
+    });
+
+    it('409s when the device is offline', async () => {
+      harness.controller.getHandle.mockReturnValueOnce(null);
+      harness.controller.isOnline.mockReturnValueOnce(false);
+
+      const res = await harness.app.inject({ method: 'GET', url: '/api/fleet/devices/dev_1/system-stats' });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json().success).toBe(false);
+    });
+
+    it('504s when the node stats request times out', async () => {
+      const handle = makeHandle({
+        getSystemStats: vi.fn(async () => {
+          throw new Error('Fleet node request timed out');
+        }),
+      });
+      harness.controller.getHandle.mockReturnValueOnce(handle);
+      harness.controller.isOnline.mockReturnValueOnce(true);
+
+      const res = await harness.app.inject({ method: 'GET', url: '/api/fleet/devices/dev_1/system-stats' });
+
+      expect(res.statusCode).toBe(504);
+      expect(res.json().success).toBe(false);
     });
   });
 

@@ -338,6 +338,26 @@ describe('FleetNodeAgent', () => {
     expect(err.message).toContain('Path outside home');
   });
 
+  // 3e. get-system-stats -> ack with this node's current stats
+  it('replies with an ack carrying local system stats', async () => {
+    agent = newAgent();
+    agent.start();
+    await waitFor(() => expect(central.serverSocket).not.toBeNull());
+
+    sendToAgent(central, { t: 'get-system-stats', requestId: 'stats-1' });
+
+    await waitFor(() => expect(framesOfType(central, 'ack').some((f) => f.requestId === 'stats-1')).toBe(true));
+    const ack = framesOfType(central, 'ack').find((f) => f.requestId === 'stats-1')!;
+    expect(ack.data).toMatchObject({
+      cpu: expect.any(Number),
+      memory: {
+        usedMB: expect.any(Number),
+        totalMB: expect.any(Number),
+        percent: expect.any(Number),
+      },
+    });
+  });
+
   // 4. terminal:subscribe -> sink data -> terminal:data on the wire (+ idempotent)
   it('subscribes and forwards sink data as terminal:data (subscribe is idempotent)', async () => {
     agent = newAgent();

@@ -51,6 +51,7 @@ import { collectDeviceJoinInfo, readFleetNodeConfig, type FleetNodeConfig } from
 import { createLocalSessionOps } from './local-session-ops.js';
 import { ExternalSessionScanner } from './external-session-scanner.js';
 import { resolveConfiguredTmuxSocket } from '../tmux-manager.js';
+import { getSystemStats } from '../system-stats.js';
 
 /**
  * The subset of ExternalSessionScanner the agent drives — injectable so tests
@@ -367,6 +368,14 @@ export class FleetNodeAgent {
         try {
           const data = await this.ops.listDirs(frame.path);
           this.send({ t: 'ack', requestId: frame.requestId, data });
+        } catch (err) {
+          this.send({ t: 'error', requestId: frame.requestId, message: getErrorMessage(err) });
+        }
+        break;
+
+      case 'get-system-stats':
+        try {
+          this.send({ t: 'ack', requestId: frame.requestId, data: getSystemStats() });
         } catch (err) {
           this.send({ t: 'error', requestId: frame.requestId, message: getErrorMessage(err) });
         }

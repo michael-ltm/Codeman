@@ -172,6 +172,7 @@ export type CentralToNodeFrame =
   | { t: 'get-buffer'; requestId: string; sessionId: string }
   | { t: 'list-resume-candidates'; requestId: string }
   | { t: 'list-dirs'; requestId: string; path: string }
+  | { t: 'get-system-stats'; requestId: string }
   | { t: 'terminal:subscribe'; requestId: string; sessionId: string }
   | { t: 'terminal:unsubscribe'; requestId: string; sessionId: string }
   | { t: 'terminal:input'; sessionId: string; data: string; seq?: number; cid?: string }
@@ -327,6 +328,10 @@ export const CentralToNodeFrameSchema = z.discriminatedUnion('t', [
     t: z.literal('list-dirs'),
     requestId: z.string(),
     path: z.string(),
+  }),
+  z.object({
+    t: z.literal('get-system-stats'),
+    requestId: z.string(),
   }),
   z.object({
     t: z.literal('terminal:subscribe'),

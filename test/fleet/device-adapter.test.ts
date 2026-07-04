@@ -57,6 +57,19 @@ describe('LocalDeviceAdapter', () => {
     expect(adapter.summary().activeSessionCount).toBe(3);
   });
 
+  it('getSystemStats returns local CPU and memory stats', async () => {
+    const adapter = new LocalDeviceAdapter(identity, makeOps());
+    const stats = await adapter.getSystemStats();
+    expect(stats).toMatchObject({
+      cpu: expect.any(Number),
+      memory: {
+        usedMB: expect.any(Number),
+        totalMB: expect.any(Number),
+        percent: expect.any(Number),
+      },
+    });
+  });
+
   it('listSessions delegates to ops.listSessions and resolves to the same array', async () => {
     const list = [{ id: 's1' }] as FleetSessionSummary[];
     const ops = makeOps({ listSessions: vi.fn(() => list) });

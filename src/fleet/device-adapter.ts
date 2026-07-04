@@ -17,6 +17,7 @@
  */
 
 import { arch, hostname, platform, userInfo } from 'node:os';
+import { getSystemStats, type SystemStats } from '../system-stats.js';
 import type {
   CreateFleetSessionRequest,
   ExternalSessionCandidate,
@@ -46,6 +47,7 @@ export interface FleetDeviceHandle {
   getTerminalBuffer(sessionId: string): Promise<string>;
   listResumeCandidates(): Promise<ResumeCandidate[]>;
   listDirs(path?: string): Promise<{ path: string; dirs: string[] }>;
+  getSystemStats(): Promise<SystemStats>;
 }
 
 /**
@@ -118,5 +120,9 @@ export class LocalDeviceAdapter implements FleetDeviceHandle {
 
   listDirs(path?: string): Promise<{ path: string; dirs: string[] }> {
     return this.ops.listDirs(path);
+  }
+
+  getSystemStats(): Promise<SystemStats> {
+    return Promise.resolve(getSystemStats());
   }
 }

@@ -90,6 +90,12 @@ describe('fleet protocol', () => {
     expect(CentralToNodeFrameSchema.safeParse({ t: 'list-dirs', requestId: 'r3' }).success).toBe(false);
   });
 
+  it('round-trips the get-system-stats frame', () => {
+    const frame = { t: 'get-system-stats', requestId: 'r5' };
+    expect(parseCentralToNodeFrame(JSON.stringify(frame))).toEqual(frame);
+    expect(CentralToNodeFrameSchema.safeParse({ t: 'get-system-stats' }).success).toBe(false);
+  });
+
   it('accepts resumeSessionId on a create-session payload', () => {
     const frame = {
       t: 'create-session',

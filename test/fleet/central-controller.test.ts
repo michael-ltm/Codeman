@@ -108,6 +108,7 @@ function makeLocalHandle(overrides: Partial<FleetDeviceHandle> = {}): FleetDevic
     getTerminalBuffer: vi.fn(async () => ''),
     listResumeCandidates: vi.fn(async () => []),
     listDirs: vi.fn(async () => ({ path: '/home', dirs: [] })),
+    getSystemStats: vi.fn(async () => ({ cpu: 12, memory: { usedMB: 2048, totalMB: 8192, percent: 25 } })),
     ...overrides,
   };
 }
@@ -191,6 +192,25 @@ describe('FleetCentralController', () => {
       data: { path: '/home/ming/projects', dirs: [] },
     });
     await expect(ld2).resolves.toEqual({ path: '/home/ming/projects', dirs: [] });
+  });
+
+  it('2c. getSystemStats sends an RPC frame and resolves with the remote stats', async () => {
+    const reg = makeRegistry();
+    const deviceId = pairDevice(reg);
+    const controller = new FleetCentralController(reg);
+    const socket = makeSocket();
+    controller.connectNode(deviceId, socket, helloFrame(deviceId));
+    const handle = controller.getHandle(deviceId)!;
+
+    const promise = handle.getSystemStats();
+    const sent = framesSent(socket, 'get-system-stats');
+    expect(sent).toHaveLength(1);
+    expect(typeof sent[0].requestId).toBe('string');
+
+    const stats = { cpu: 33, memory: { usedMB: 4096, totalMB: 16384, percent: 25 } };
+    controller.handleNodeFrame(deviceId, { t: 'ack', requestId: sent[0].requestId as string, data: stats });
+
+    await expect(promise).resolves.toEqual(stats);
   });
 
   it('3. error frame rejects with its message; no ack within 10s rejects with a timeout error', async () => {

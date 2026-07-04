@@ -9,8 +9,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import fs from 'node:fs/promises';
-import { totalmem, freemem, loadavg, cpus } from 'node:os';
-import { execSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { dataPath } from '../../config/instance.js';
 import { ApiErrorCode, createErrorResponse, getErrorMessage, type NiceConfig } from '../../types.js';
@@ -50,65 +49,17 @@ import { AUTH_COOKIE_NAME } from '../middleware/auth.js';
 import { QR_AUTH_FAILURE_MAX } from '../../config/tunnel-config.js';
 import { AUTH_SESSION_TTL_MS } from '../../config/auth-config.js';
 import { resolveTerminalHistoryConfig } from '../../config/terminal-history.js';
+import { getSystemStats } from '../../system-stats.js';
 
 // Maximum screenshot upload size (10MB)
 const MAX_SCREENSHOT_SIZE = 10 * 1024 * 1024;
 // Screenshots directory
 const SCREENSHOTS_DIR = dataPath('screenshots');
 
-/** Cached CPU count — doesn't change at runtime */
-const CPU_COUNT = cpus().length;
-
 function parseOptionalNumber(value: string | undefined): number | undefined {
   if (value === undefined || value.trim() === '') return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
-}
-
-/** Get system CPU and memory usage */
-function getSystemStats(): {
-  cpu: number;
-  memory: { usedMB: number; totalMB: number; percent: number };
-} {
-  try {
-    const totalMem = totalmem();
-
-    // macOS: os.freemem() only returns truly free pages, not cached/purgeable memory.
-    // Use vm_stat to get accurate used memory (wired + active + compressed).
-    let usedMem: number;
-    if (process.platform === 'darwin') {
-      try {
-        const vmstat = execSync('vm_stat', { encoding: 'utf-8', timeout: 2000 });
-        const pageSize = parseInt(vmstat.match(/page size of (\d+)/)?.[1] || '4096', 10);
-        const wired = parseInt(vmstat.match(/Pages wired down:\s+(\d+)/)?.[1] || '0', 10);
-        const active = parseInt(vmstat.match(/Pages active:\s+(\d+)/)?.[1] || '0', 10);
-        const compressed = parseInt(vmstat.match(/Pages occupied by compressor:\s+(\d+)/)?.[1] || '0', 10);
-        usedMem = (wired + active + compressed) * pageSize;
-      } catch {
-        usedMem = totalMem - freemem();
-      }
-    } else {
-      usedMem = totalMem - freemem();
-    }
-
-    // CPU load average (1 min) as percentage (rough approximation)
-    const load = loadavg()[0];
-    const cpuPercent = Math.min(100, Math.round((load / CPU_COUNT) * 100));
-
-    return {
-      cpu: cpuPercent,
-      memory: {
-        usedMB: Math.round(usedMem / (1024 * 1024)),
-        totalMB: Math.round(totalMem / (1024 * 1024)),
-        percent: Math.round((usedMem / totalMem) * 100),
-      },
-    };
-  } catch {
-    return {
-      cpu: 0,
-      memory: { usedMB: 0, totalMB: 0, percent: 0 },
-    };
-  }
 }
 
 /**

@@ -23,6 +23,7 @@ import { EventEmitter } from 'node:events';
 import type { FleetDeviceHandle } from './device-adapter.js';
 import type { FleetTerminalEvent, TerminalSink } from './local-session-ops.js';
 import type { DeviceRegistry } from './device-registry.js';
+import type { SystemStats } from '../system-stats.js';
 import {
   buildFleetSessionTab,
   type CentralToNodeFrame,
@@ -209,6 +210,11 @@ class RemoteDeviceHandle implements FleetDeviceHandle {
     // (the node's listDirsSafe treats '' as undefined).
     const data = await this.request((requestId) => ({ t: 'list-dirs', requestId, path: path ?? '' }));
     return data as { path: string; dirs: string[] };
+  }
+
+  async getSystemStats(): Promise<SystemStats> {
+    const data = await this.request((requestId) => ({ t: 'get-system-stats', requestId }));
+    return data as SystemStats;
   }
 
   // ---- internal: driven only by FleetCentralController ----

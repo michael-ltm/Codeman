@@ -109,6 +109,17 @@ Object.assign(CodemanApp.prototype, {
   },
 
   /**
+   * Fetch current CPU/memory stats for a selected fleet device. The server
+   * resolves local vs remote behind one route; callers only pass a device id.
+   * @param {string} deviceId
+   * @returns {Promise<{cpu:number,memory:{usedMB:number,totalMB:number,percent:number}}|null>}
+   */
+  async fleetSystemStats(deviceId) {
+    if (!deviceId) return null;
+    return this._apiJson(`/api/fleet/devices/${encodeURIComponent(deviceId)}/system-stats`);
+  },
+
+  /**
    * Fetch discovered external (foreign-tmux) AI-CLI session candidates across
    * the whole fleet (Rev5 §13.3, Task 29). `_apiJson` unwraps the envelope to
    * `{ byDevice }`; this returns the bare map (empty object on any failure so

@@ -3984,28 +3984,119 @@ Object.assign(CodemanApp.prototype, {
     }
   },
 
+  _systemStatsDeviceTarget() {
+    const devices = (this._fleetState && Array.isArray(this._fleetState.devices)) ? this._fleetState.devices : [];
+    const byId = new Map(devices.map((d) => [d.id, d]));
+    const nameFor = (device) => {
+      if (!device) return '';
+      return device.name || device.hostname || String(device.id || '').slice(0, 8);
+    };
+    const remoteTarget = (deviceId, fallbackName = '') => {
+      if (!deviceId || deviceId === 'local') return null;
+      const device = byId.get(deviceId);
+      return {
+        deviceId,
+        deviceName: nameFor(device) || fallbackName || String(deviceId).slice(0, 8),
+        online: device ? device.status === 'online' : true,
+      };
+    };
+
+    const welcomeVisible = document.getElementById('welcomeOverlay')?.classList.contains('visible');
+    if (welcomeVisible) {
+      const target = remoteTarget(this._welcomeDeviceId || 'local');
+      if (target) return target;
+    }
+
+    if (this.fleetPanelVisible) {
+      const target = remoteTarget(this._fleetSelectedDeviceId || 'local');
+      if (target) return target;
+    }
+
+    if (this.activeSessionId && this.isFleetKey?.(this.activeSessionId)) {
+      const tab = this.fleetTabs?.get?.(this.activeSessionId);
+      const target = remoteTarget(tab?.deviceId, tab?.deviceName || '');
+      if (target) return target;
+    }
+
+    return null;
+  },
+
   async fetchSystemStats() {
     // Skip polling when system stats display is hidden
     const statsEl = document.getElementById('headerSystemStats');
     if (!statsEl || statsEl.style.display === 'none') return;
 
+    const target = this._systemStatsDeviceTarget();
+    const requestSeq = (this._systemStatsRequestSeq || 0) + 1;
+    this._systemStatsRequestSeq = requestSeq;
+
+    if (target && target.online === false) {
+      this.clearSystemStatsDisplay(target);
+      return;
+    }
+
     try {
-      const res = await fetch('/api/system/stats');
-      const payload = await res.json();
-      const stats = payload?.success === true && payload.data ? payload.data : payload;
-      this.updateSystemStatsDisplay(stats);
+      let stats;
+      if (target && typeof this.fleetSystemStats === 'function') {
+        stats = await this.fleetSystemStats(target.deviceId);
+      } else {
+        const res = await fetch('/api/system/stats');
+        const payload = await res.json();
+        stats = payload?.success === true && payload.data ? payload.data : payload;
+      }
+      if (requestSeq !== this._systemStatsRequestSeq) return;
+      if (!stats) {
+        this.clearSystemStatsDisplay(target);
+        return;
+      }
+      this.updateSystemStatsDisplay(stats, target);
     } catch (err) {
-      // Silently fail - system stats are not critical
+      if (requestSeq === this._systemStatsRequestSeq) this.clearSystemStatsDisplay(target);
     }
   },
 
-  updateSystemStatsDisplay(stats) {
+  clearSystemStatsDisplay(target = null) {
     const cpuEl = this.$('statCpu');
     const cpuBar = this.$('statCpuBar');
     const memEl = this.$('statMem');
     const memBar = this.$('statMemBar');
+    const statsEl = document.getElementById('headerSystemStats');
+
+    if (statsEl) {
+      const label = target?.deviceName ? `System resource usage · ${target.deviceName}` : 'System resource usage';
+      statsEl.title = label;
+    }
+    if (cpuEl) {
+      cpuEl.textContent = '--%';
+      cpuEl.classList.remove('high');
+    }
+    if (cpuBar) {
+      cpuBar.style.width = '0%';
+      cpuBar.classList.remove('medium', 'high');
+    }
+    if (memEl) {
+      memEl.textContent = '--';
+      memEl.classList.remove('high');
+    }
+    if (memBar) {
+      memBar.style.width = '0%';
+      memBar.classList.remove('medium', 'high');
+    }
+  },
+
+  updateSystemStatsDisplay(stats, target = null) {
+    const cpuEl = this.$('statCpu');
+    const cpuBar = this.$('statCpuBar');
+    const memEl = this.$('statMem');
+    const memBar = this.$('statMemBar');
+    const statsEl = document.getElementById('headerSystemStats');
 
     if (!stats || typeof stats.cpu !== 'number' || !stats.memory) return;
+
+    if (statsEl) {
+      const label = target?.deviceName ? `System resource usage · ${target.deviceName}` : 'System resource usage';
+      statsEl.title = label;
+    }
 
     if (cpuEl && cpuBar) {
       cpuEl.textContent = `${stats.cpu}%`;
