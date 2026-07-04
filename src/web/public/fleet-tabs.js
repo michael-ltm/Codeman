@@ -331,6 +331,11 @@ Object.assign(CodemanApp.prototype, {
       }
     }
     this._fullRenderSessionTabs();
+    this._updateFleetBadge?.();
+    this._renderFleetPanelIfOpen?.();
+    this.renderWelcomeDeviceRow?.();
+    this.renderWelcomeActiveSessions?.();
+    this.showToast?.('Tab hidden, session still running', 'info');
   },
 
   /**

@@ -213,6 +213,61 @@ describe('fleet and settings UI regressions', () => {
     expect(app.activeRendered).toBe(true);
   });
 
+  it('hides a fleet tab without deleting the cached active session and refreshes attach surfaces', () => {
+    const CodemanApp = function CodemanApp(this: unknown) {};
+    const context = vm.createContext({ CodemanApp, localStorage: { setItem() {} }, console });
+    const source = readFileSync(resolve(import.meta.dirname, '../src/web/public/fleet-tabs.js'), 'utf8');
+    vm.runInContext(source, context, { filename: 'fleet-tabs.js' });
+
+    const app = new (CodemanApp as any)();
+    const key = 'macmini:session-1';
+    app.fleetTabs = new Map([
+      [
+        key,
+        {
+          deviceId: 'macmini',
+          sessionId: 'session-1',
+          deviceName: 'macmini',
+          sessionLabel: 'codeman',
+          online: true,
+        },
+      ],
+    ]);
+    app._fleetHidden = new Set();
+    app._fleetState = {
+      devices: [{ id: 'macmini', status: 'online', activeSessionCount: 1 }],
+      sessions: [{ deviceId: 'macmini', id: 'session-1', name: 'codeman' }],
+      sessionTabs: [{ key, deviceId: 'macmini', sessionId: 'session-1' }],
+    };
+    app.activeSessionId = 'local-session';
+    app.sessionOrder = ['local-session'];
+    app.sessions = new Map([['local-session', { id: 'local-session' }]]);
+    app._fullRenderSessionTabs = () => {
+      app.tabsRendered = true;
+    };
+    app._renderFleetPanelIfOpen = () => {
+      app.panelRendered = true;
+    };
+    app.renderWelcomeActiveSessions = () => {
+      app.activeRendered = true;
+    };
+    app._updateFleetBadge = () => {
+      app.badgeUpdated = true;
+    };
+
+    app.closeFleetTab(key);
+
+    expect(app.fleetTabs.has(key)).toBe(false);
+    expect(app._fleetHidden.has(key)).toBe(true);
+    expect(app._fleetState.sessions).toHaveLength(1);
+    expect(app._fleetState.sessionTabs).toHaveLength(1);
+    expect(app._fleetState.devices[0].activeSessionCount).toBe(1);
+    expect(app.tabsRendered).toBe(true);
+    expect(app.panelRendered).toBe(true);
+    expect(app.activeRendered).toBe(true);
+    expect(app.badgeUpdated).toBe(true);
+  });
+
   it('routes remote tab close through the stop-or-hide confirmation modal', () => {
     const appSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/app.js'), 'utf8');
     const html = readFileSync(resolve(import.meta.dirname, '../src/web/public/index.html'), 'utf8');
