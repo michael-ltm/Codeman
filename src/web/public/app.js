@@ -3627,6 +3627,7 @@ class CodemanApp {
       if (this._raiseDetached(sessionId)) return;
     }
     const forceReload = options?.forceReload === true;
+    const forceResize = options?.forceResize === true;
     if (this.activeSessionId === sessionId && !forceReload) return;
     if (this.activeSessionId === sessionId && forceReload) {
       this.terminalBufferCache?.delete(sessionId);
@@ -3751,7 +3752,7 @@ class CodemanApp {
       // a small region with empty rows below the status bar.
       // sendResize is a no-op on the server when dims haven't changed, so
       // calling it every tab switch is cheap.
-      const dimsChanged = await this.sendResize(sessionId, { forceHttp: true }).catch(() => false);
+      const dimsChanged = await this.sendResize(sessionId, { forceHttp: true, force: forceResize }).catch(() => false);
       if (this._isStaleSelect(selectGen)) {
         this._clearTerminalLoadState(sessionId, selectGen);
         return;

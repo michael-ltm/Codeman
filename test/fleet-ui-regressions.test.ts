@@ -112,6 +112,52 @@ describe('fleet and settings UI regressions', () => {
     expect(grid.getAttribute('data-layout')).toBeNull();
   });
 
+  it('forces the native terminal to resize before reloading when leaving split grid', () => {
+    const CodemanApp = function CodemanApp(this: unknown) {};
+    const grid = new FakeElement('fleetGrid');
+    grid.classList.add('active');
+    grid.setAttribute('data-layout', '4');
+    const seg = new FakeElement('gridLayoutSeg');
+    const elements: Record<string, FakeElement> = { fleetGrid: grid, gridLayoutSeg: seg };
+    const context = vm.createContext({
+      CodemanApp,
+      document: { getElementById: (id: string) => elements[id] ?? null },
+      MobileDetection: { getDeviceType: () => 'desktop' },
+      console,
+    });
+
+    const source = readFileSync(resolve(import.meta.dirname, '../src/web/public/fleet-tabs.js'), 'utf8');
+    vm.runInContext(source, context, { filename: 'fleet-tabs.js' });
+    const app = new (CodemanApp as any)();
+    app.activeSessionId = 'session-1';
+    app._fleetGridLayout = 4;
+    app._fleetGridPinned = ['session-1', null, null, null];
+    app._fleetGridTerms = new Map([['session-1', {}]]);
+    app._fleetGridLru = new Map([['session-1', 1]]);
+    app.closeFleetGridTerminal = (key: string) => {
+      app.closedKey = key;
+      app._fleetGridTerms.delete(key);
+    };
+    app.fitAddon = {
+      fit: () => {
+        app.fitCalled = true;
+      },
+    };
+    app.selectSession = (id: string, options: unknown) => {
+      app.selected = { id, options };
+      return Promise.resolve();
+    };
+
+    app.setFleetGridLayout(1);
+
+    expect(app.closedKey).toBe('session-1');
+    expect(app.fitCalled).toBe(true);
+    expect(app.selected).toEqual({
+      id: 'session-1',
+      options: { forceReload: true, forceResize: true },
+    });
+  });
+
   it('keeps local welcome history from rendering remote subdrive rows by default', async () => {
     const CodemanApp = function CodemanApp(this: unknown) {};
     const elements: Record<string, FakeElement> = {
@@ -276,6 +322,15 @@ describe('fleet and settings UI regressions', () => {
     expect(appSource).not.toContain('Remote fleet tab: close = hide locally (no confirm, session keeps running).');
     expect(appSource).not.toContain('this.closeFleetTab(sessionId);\n      return;');
     expect(html).toContain('id="closeConfirmRemoteNote"');
+  });
+
+  it('treats forced session resize as a redraw-worthy resize before buffer fetch', () => {
+    const appSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/app.js'), 'utf8');
+    const terminalSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/terminal-ui.js'), 'utf8');
+
+    expect(appSource).toContain('const forceResize = options?.forceResize === true');
+    expect(appSource).toContain('this.sendResize(sessionId, { forceHttp: true, force: forceResize })');
+    expect(terminalSource).toContain('const changed = options.force === true ||');
   });
 
   it('adds a welcome active-session section for attaching to online sessions', () => {

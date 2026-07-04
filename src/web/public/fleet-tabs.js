@@ -567,7 +567,7 @@ Object.assign(CodemanApp.prototype, {
       // the state it would be in had the user just clicked it. No-op if the
       // grid was opened with no active session (e.g. from the welcome screen).
       if (this.activeSessionId) {
-        this.selectSession(this.activeSessionId, { forceReload: true }).catch(() => {});
+        this.selectSession(this.activeSessionId, { forceReload: true, forceResize: true }).catch(() => {});
       }
       return;
     }

@@ -2555,7 +2555,7 @@ Object.assign(CodemanApp.prototype, {
     // real SIGWINCH was triggered — switching tabs at the same browser size is
     // a no-op on the server and needs no redraw grace.
     const prev = this._lastResizeDims;
-    const changed = !prev || prev.cols !== dims.cols || prev.rows !== dims.rows;
+    const changed = options.force === true || !prev || prev.cols !== dims.cols || prev.rows !== dims.rows;
     // Update _lastResizeDims so the throttledResize handler won't redundantly
     // clear the terminal for the same dimensions (which would blank the screen
     // without a subsequent Ink redraw to repaint it).
