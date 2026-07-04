@@ -11901,6 +11901,11 @@ html[data-skin="daylight-blue"] .welcome-btn-tunnel.active:hover {
   border-color: var(--accent);
 }
 
+/* Empty-required flash on the quick-start dir chooser (Task B, no native alert) */
+.fleet-input.input-error {
+  border-color: var(--red);
+}
+
 .fleet-mode-seg {
   display: flex;
   flex-wrap: wrap;

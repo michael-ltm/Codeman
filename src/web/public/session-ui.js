@@ -920,6 +920,200 @@ Object.assign(CodemanApp.prototype, {
   },
 
   // ═══════════════════════════════════════════════════════════════
+  // Welcome quick-start with a working-directory chooser (Task B, spec §#3)
+  //
+  // The welcome Run buttons (Claude / OpenCode / Gemini) route here instead of
+  // straight into runClaude/runOpenCode/runGemini: pop a dir chooser
+  // (pickWorkingDir, in fleet-panel.js) targeting the selected device, then
+  // create+start ONE session in the chosen dir on that device and open it.
+  //
+  // The TOOLBAR Run button (run() → runClaude/…) is untouched — it keeps its
+  // case-select + tab-count multi-session flow (red line: local start behavior
+  // is preserved; the chooser is additive on the welcome surface only).
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Welcome Run button entry: choose a working dir, then start `mode` on the
+   * selected device (`_welcomeDeviceId`, default 'local'). Cancel → no-op.
+   */
+  async quickStartWithDir(mode) {
+    const deviceId = this._welcomeDeviceId || 'local';
+
+    // Remote target must be a known, online device (mirrors _quickStartRemote /
+    // _applyWelcomeDeviceRunState — offline pills also disable the buttons).
+    if (deviceId !== 'local') {
+      const device = this._welcomeDevice(deviceId);
+      if (!device) {
+        this.showToast?.('设备不可用', 'error');
+        return;
+      }
+      if (device.status !== 'online') {
+        this.showToast?.('设备离线', 'error');
+        return;
+      }
+    }
+
+    const defaultDir = this._loadLastWorkdir(deviceId);
+    const dir = await this.pickWorkingDir(deviceId, { mode, defaultDir });
+    if (!dir) return; // cancelled — no session created
+
+    this._saveLastWorkdir(deviceId, dir);
+
+    if (deviceId === 'local') {
+      await this._startLocalSessionInDir(mode, dir);
+    } else {
+      await this._quickStartRemoteInDir(mode, deviceId, dir);
+    }
+  },
+
+  /**
+   * Create + start a single LOCAL session of `mode` in `workingDir`, then open
+   * it. Uses the same createSessionCore-backed POST /api/sessions path the app
+   * already uses for local sessions (workingDir + mode), followed by the mode's
+   * start endpoint — NOT the case-bound /api/quick-start. Global App Settings
+   * (env overrides / effort / model / statusLine) are applied for parity with
+   * the toolbar Run path; the chosen dir is not a "case" so no case settings.
+   */
+  async _startLocalSessionInDir(mode, workingDir) {
+    this.terminal.clear();
+    this.terminal.writeln(`\x1b[1;32m Starting ${mode} session in ${workingDir}...\x1b[0m`);
+    this.terminal.writeln('');
+    // Focus in the sync gesture context (see runClaude comment) for iOS keyboard.
+    this.terminal.focus();
+
+    try {
+      // Availability gate for external CLIs (mirrors runOpenCode/runCodex/runGemini).
+      if (mode === 'opencode') {
+        const status = (await (await fetch('/api/opencode/status')).json()).data;
+        if (!status.available) {
+          this.terminal.writeln('\x1b[1;31m OpenCode CLI not found.\x1b[0m');
+          this.terminal.writeln('\x1b[90m Install with: curl -fsSL https://opencode.ai/install | bash\x1b[0m');
+          return;
+        }
+      } else if (mode === 'codex') {
+        const status = (await (await fetch('/api/codex/status')).json()).data;
+        if (!status.available) {
+          this.terminal.writeln('\x1b[1;31m Codex CLI not found.\x1b[0m');
+          this.terminal.writeln('\x1b[90m Install with: npm install -g @openai/codex\x1b[0m');
+          return;
+        }
+      } else if (mode === 'gemini') {
+        const status = (await (await fetch('/api/gemini/status')).json()).data;
+        if (!status.available) {
+          this.terminal.writeln('\x1b[1;31m Gemini CLI not found.\x1b[0m');
+          this.terminal.writeln('\x1b[90m Install with: npm install -g @google/gemini-cli\x1b[0m');
+          return;
+        }
+      }
+
+      const globalSettings = this.loadAppSettingsFromStorage();
+      const envOverrides = this.buildEnvOverrides({}, globalSettings);
+      const hasEnvOverrides = Object.keys(envOverrides).length > 0;
+      const name = this._deriveResumeName ? this._deriveResumeName(workingDir) : undefined;
+
+      const payload = { workingDir, mode, ...(name ? { name } : {}) };
+      if (hasEnvOverrides) payload.envOverrides = envOverrides;
+
+      if (mode === 'claude') {
+        const effort = this.getEffortSetting(globalSettings);
+        if (effort) payload.effort = effort;
+        // Explicit Claude Model wins over the legacy 1M Opus toggle (see runClaude).
+        const useOpus1m = globalSettings.opusContext1mEnabled;
+        payload.modelOverride = globalSettings.claudeModel || (useOpus1m ? 'opus[1m]' : '');
+        payload.statusLineTelemetry = globalSettings.showPlanUsageLimits === true;
+      } else if (mode === 'opencode') {
+        payload.openCodeConfig = { autoAllowTools: true };
+      } else if (mode === 'codex') {
+        payload.codexConfig = {
+          dangerouslyBypassApprovals: globalSettings.codexDangerouslyBypassApprovals ?? false,
+          renderMode: 'hybrid',
+        };
+      } else if (mode === 'gemini') {
+        payload.geminiConfig = { approvalMode: 'yolo' };
+      }
+
+      this.terminal.writeln('\x1b[90m Creating session...\x1b[0m');
+      const createRes = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const createData = await createRes.json();
+      if (!createData.success) throw new Error(createData.error || 'Failed to create session');
+      const sessionId = createData.data.session.id;
+
+      // Ralph tracker default (Claude only — mirrors runClaude).
+      if (mode === 'claude') {
+        const ralphEnabled = this.isRalphTrackerEnabledByDefault();
+        await fetch(`/api/sessions/${sessionId}/ralph-config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: ralphEnabled, disableAutoEnable: !ralphEnabled }),
+        });
+      }
+
+      this.terminal.writeln('\x1b[90m Starting session...\x1b[0m');
+      if (mode === 'shell') {
+        await fetch(`/api/sessions/${sessionId}/shell`, { method: 'POST' });
+        const dims = this.getTerminalDimensions();
+        if (dims) {
+          await fetch(`/api/sessions/${sessionId}/resize`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dims),
+          });
+        }
+      } else {
+        // claude / opencode / codex / gemini all start via /interactive.
+        await fetch(`/api/sessions/${sessionId}/interactive`, { method: 'POST' });
+      }
+
+      await this.selectSession(sessionId);
+      this.loadQuickStartCases?.();
+      this.terminal.focus();
+    } catch (err) {
+      this.terminal.writeln(`\x1b[1;31m Error: ${err.message}\x1b[0m`);
+    }
+  },
+
+  /**
+   * Create + start a session of `mode` in `workingDir` on a REMOTE device, then
+   * open+select its tab. Mirrors _quickStartRemote (and submitFleetCreateSession's
+   * create → refresh → select idiom) but uses the caller-chosen dir instead of
+   * defaulting to the device $HOME.
+   */
+  async _quickStartRemoteInDir(mode, deviceId, workingDir) {
+    const device = this._welcomeDevice(deviceId);
+    const deviceName = this._welcomeDeviceName(device) || String(deviceId || '');
+
+    this.terminal.clear();
+    this.terminal.writeln(`\x1b[1;32m Creating ${mode} session on ${deviceName}...\x1b[0m`);
+    this.terminal.writeln('');
+    this.terminal.focus();
+
+    try {
+      const created = await this.fleetCreateSession(deviceId, {
+        workingDir,
+        mode,
+        ...(this._deriveResumeName ? { name: this._deriveResumeName(workingDir) } : {}),
+      });
+      if (!created || !created.id) throw new Error('远程会话创建失败');
+
+      await this.refreshFleetState();
+      const key = `${deviceId}:${created.id}`;
+      if (this.isFleetKey(key)) {
+        this.selectSession(key, { forceReload: true });
+      } else {
+        this.showToast?.(`已在 ${deviceName} 上创建`, 'success');
+      }
+      this.terminal.focus();
+    } catch (err) {
+      this.terminal.writeln(`\x1b[1;31m Error: ${err.message}\x1b[0m`);
+      this.showToast?.(`在 ${deviceName} 上创建失败`, 'error');
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════════
   // Session Options Modal
   // ═══════════════════════════════════════════════════════════════
 

@@ -315,7 +315,7 @@
                only when a remote fleet device exists. -->
           <div class="welcome-devices" id="welcomeDeviceRow" role="tablist" aria-label="Target device" style="display:none"></div>
           <div class="welcome-actions">
-            <button class="welcome-btn welcome-btn-claude" onclick="app.setRunMode('claude'); app.runClaude()">
+            <button class="welcome-btn welcome-btn-claude" onclick="app.setRunMode('claude'); app.quickStartWithDir('claude')">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               Run Claude Code
             </button>
@@ -323,11 +323,11 @@
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
               Cloudflare Tunnel
             </button>
-            <button class="welcome-btn welcome-btn-opencode" onclick="app.setRunMode('opencode'); app.runOpenCode()">
+            <button class="welcome-btn welcome-btn-opencode" onclick="app.setRunMode('opencode'); app.quickStartWithDir('opencode')">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               Run OpenCode
             </button>
-            <button class="welcome-btn welcome-btn-gemini" onclick="app.setRunMode('gemini'); app.runGemini()">
+            <button class="welcome-btn welcome-btn-gemini" onclick="app.setRunMode('gemini'); app.quickStartWithDir('gemini')">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               Run Gemini
             </button>
@@ -784,6 +784,34 @@
         </div>
         <div class="modal-footer-cancel">
           <button class="btn-toolbar btn-sm" onclick="app.cancelStopFleetSession()">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick-start working-directory chooser (Task B, spec §#3) — app modal
+         convention (NO native prompt). Popped by the welcome Run buttons before
+         a session is created: text input + smart candidate datalist + "浏览…"
+         (reuses #fleetDirModal). Placed BEFORE #fleetDirModal so the breadcrumb
+         browser stacks above it (equal z-index → later DOM wins). -->
+    <div class="modal" id="quickStartDirModal">
+      <div class="modal-backdrop" onclick="app._closeQuickStartDir(null)"></div>
+      <div class="modal-content modal-sm">
+        <div class="modal-header">
+          <h3>选择工作目录</h3>
+          <button class="modal-close" onclick="app._closeQuickStartDir(null)" aria-label="Close directory chooser">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="welcome-device-hint" id="quickStartDirHint" style="display:block;margin-bottom:0.6rem"></div>
+          <label class="fleet-field-label" for="quickStartDirInput">工作目录 <span class="fleet-req" aria-hidden="true">*</span></label>
+          <div class="fleet-dir-row">
+            <input type="text" class="fleet-input" id="quickStartDirInput" list="quickStartDirCandidates" placeholder="/path/to/project" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+            <datalist id="quickStartDirCandidates"></datalist>
+            <button type="button" class="btn-toolbar btn-sm fleet-browse-btn" onclick="app.openQuickStartDirBrowse()">浏览&hellip;</button>
+          </div>
+        </div>
+        <div class="modal-footer-cancel">
+          <button class="btn-toolbar btn-sm" onclick="app._closeQuickStartDir(null)">取消</button>
+          <button class="btn-toolbar btn-run btn-sm" id="quickStartDirStartBtn" onclick="app._confirmQuickStartDir()">启动</button>
         </div>
       </div>
     </div>

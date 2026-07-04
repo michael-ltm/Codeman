@@ -556,8 +556,8 @@ Object.assign(CodemanApp.prototype, {
    * the list is unaffected either way. Manual typing into the input always
    * works regardless of what's in the datalist.
    */
-  async _refreshFleetDirCandidates(deviceId) {
-    this._renderFleetDirDatalist(deviceId);
+  async _refreshFleetDirCandidates(deviceId, listElId = 'fleetDirCandidates') {
+    this._renderFleetDirDatalist(deviceId, listElId);
     if (!deviceId) return;
     if (!this._fleetDirCandCache) this._fleetDirCandCache = new Map();
     if (this._fleetDirCandCache.has(deviceId)) return; // cached (or an in-flight fetch already placeheld below)
@@ -569,8 +569,16 @@ Object.assign(CodemanApp.prototype, {
       /* silent-fail to empty */
     }
     this._fleetDirCandCache.set(deviceId, Array.isArray(candidates) ? candidates : []);
-    const sel = this.$('fleetCreateDevice');
-    if (sel && sel.value === deviceId) this._renderFleetDirDatalist(deviceId);
+    // Re-paint the target list once the resume fetch resolves — but only if it's
+    // still the relevant device (create-form: the <select> hasn't moved on;
+    // quick-start chooser: still choosing for this device), so a mid-fetch device
+    // switch can't paint stale options into a datalist the user has moved past.
+    if (listElId === 'fleetDirCandidates') {
+      const sel = this.$('fleetCreateDevice');
+      if (sel && sel.value === deviceId) this._renderFleetDirDatalist(deviceId, listElId);
+    } else if (this._quickStartDirDeviceId === deviceId) {
+      this._renderFleetDirDatalist(deviceId, listElId);
+    }
   },
 
   /**
@@ -578,8 +586,8 @@ Object.assign(CodemanApp.prototype, {
    * recent timestamp, sort most-recent-first, cap at 15, and paint the
    * `<datalist>`. All values escaped (remote workingDirs are untrusted).
    */
-  _renderFleetDirDatalist(deviceId) {
-    const list = this.$('fleetDirCandidates');
+  _renderFleetDirDatalist(deviceId, listElId = 'fleetDirCandidates') {
+    const list = this.$(listElId);
     if (!list) return;
     if (!deviceId) {
       list.innerHTML = '';
@@ -742,14 +750,36 @@ Object.assign(CodemanApp.prototype, {
   // state.
 
   /** "浏览…" button — open the modal for the create-form's currently-selected device. */
-  openFleetDirBrowser() {
-    const sel = this.$('fleetCreateDevice');
-    const deviceId = sel && sel.value;
+  openFleetDirBrowser(opts) {
+    // Two call shapes: (1) no args from the panel create-form "浏览…" button —
+    // browse the create-form's selected device and fill #fleetCreateDir on pick;
+    // (2) { deviceId, onSelect } from the quick-start chooser — browse an
+    // explicit device (incl. 'local') and hand the picked absolute path to a
+    // callback instead. The onclick attribute calls this with NO args, so the
+    // create-form path is byte-identical.
+    let deviceId;
+    let onSelect = null;
+    if (opts && typeof opts === 'object' && opts.deviceId) {
+      deviceId = opts.deviceId;
+      onSelect = typeof opts.onSelect === 'function' ? opts.onSelect : null;
+    } else {
+      const sel = this.$('fleetCreateDevice');
+      deviceId = sel && sel.value;
+    }
     if (!deviceId) {
       this.showToast('请先选择一个在线设备', 'warning');
       return;
     }
-    this._fleetDirBrowser = { deviceId, relPath: '', absPath: '', dirs: [], loading: false, error: null, reqId: 0 };
+    this._fleetDirBrowser = {
+      deviceId,
+      relPath: '',
+      absPath: '',
+      dirs: [],
+      loading: false,
+      error: null,
+      reqId: 0,
+      onSelect,
+    };
     const modal = this.$('fleetDirModal');
     if (modal) modal.classList.add('active');
     this._fleetDirEscHandler = (ev) => {
@@ -854,8 +884,162 @@ Object.assign(CodemanApp.prototype, {
   selectFleetDirCurrent() {
     const browser = this._fleetDirBrowser;
     if (!browser || !browser.absPath || browser.loading || browser.error) return;
-    const dirEl = this.$('fleetCreateDir');
-    if (dirEl) dirEl.value = browser.absPath;
+    // Capture before closeFleetDirBrowser() nulls out this._fleetDirBrowser.
+    const absPath = browser.absPath;
+    const onSelect = browser.onSelect;
     this.closeFleetDirBrowser();
+    if (onSelect) {
+      onSelect(absPath);
+      return;
+    }
+    const dirEl = this.$('fleetCreateDir');
+    if (dirEl) dirEl.value = absPath;
+  },
+
+  // ─── Quick-start working-directory chooser (Task B, spec §#3) ────────────────
+  //
+  // A small app modal (#quickStartDirModal — NO native prompt) popped by the
+  // welcome Run buttons before a session is created: a text input with the same
+  // smart candidate datalist as the panel create-form (existing-session dirs ∪
+  // resume-candidate dirs for the target device) plus a "浏览…" button that
+  // reuses the #fleetDirModal breadcrumb browser. Works for the local device
+  // and remotes identically (fleetListDirs/fleetResumeCandidates accept 'local').
+  // pickWorkingDir() wraps it as a Promise<dir|null> — resolve(dir) on Start,
+  // resolve(null) on Cancel/backdrop/Escape — so callers can `await` a choice.
+
+  /**
+   * Open the chooser for `deviceId` and resolve with the selected absolute dir
+   * (or null if cancelled). `opts.mode` labels the hint; `opts.defaultDir`
+   * pre-fills the input (last-used dir, resolved by the caller).
+   * @returns {Promise<string|null>}
+   */
+  pickWorkingDir(deviceId, opts = {}) {
+    return new Promise((resolve) => {
+      // Only one chooser at a time — resolve any prior open one as a cancel.
+      if (this._quickStartDirResolve) {
+        const prev = this._quickStartDirResolve;
+        this._quickStartDirResolve = null;
+        prev(null);
+      }
+      const modal = this.$('quickStartDirModal');
+      const input = this.$('quickStartDirInput');
+      if (!modal || !input) {
+        resolve(null);
+        return;
+      }
+      this._quickStartDirResolve = resolve;
+      this._quickStartDirDeviceId = deviceId || 'local';
+
+      input.value = opts.defaultDir || '';
+
+      const hint = this.$('quickStartDirHint');
+      if (hint) hint.textContent = this._quickStartDirHintText(this._quickStartDirDeviceId, opts.mode);
+
+      // Smart candidate datalist for this device (session dirs ∪ resume dirs).
+      this._refreshFleetDirCandidates(this._quickStartDirDeviceId, 'quickStartDirCandidates');
+
+      modal.classList.add('active');
+      this._quickStartDirKeyHandler = (ev) => {
+        if (ev.key === 'Escape') {
+          ev.preventDefault();
+          this._closeQuickStartDir(null);
+        } else if (ev.key === 'Enter' && ev.target === input) {
+          ev.preventDefault();
+          this._confirmQuickStartDir();
+        }
+      };
+      document.addEventListener('keydown', this._quickStartDirKeyHandler);
+      // Focus synchronously (still inside the click gesture) so iOS opens the
+      // keyboard — mirrors the terminal.focus() rationale in runClaude.
+      try {
+        input.focus();
+      } catch {
+        /* focus is best-effort */
+      }
+    });
+  },
+
+  /** Hint line for the chooser — real device name when known (never "本机"). */
+  _quickStartDirHintText(deviceId, mode) {
+    const devices = (this._fleetState && this._fleetState.devices) || [];
+    const d = devices.find((x) => x.id === deviceId);
+    const name = d && (d.name || d.hostname);
+    const modeLabel = mode ? ` ${mode}` : '';
+    return name ? `→ 在 ${name} 上启动${modeLabel}` : `选择工作目录后启动${modeLabel}`;
+  },
+
+  /** "浏览…" in the chooser — open the breadcrumb browser, fill the input on pick. */
+  openQuickStartDirBrowse() {
+    const deviceId = this._quickStartDirDeviceId || 'local';
+    this.openFleetDirBrowser({
+      deviceId,
+      onSelect: (absPath) => {
+        const input = this.$('quickStartDirInput');
+        if (input) input.value = absPath;
+      },
+    });
+  },
+
+  /** "启动" — require a non-empty dir (no native dialog), then resolve with it. */
+  _confirmQuickStartDir() {
+    const input = this.$('quickStartDirInput');
+    const dir = input && input.value.trim();
+    if (!dir) {
+      if (input) {
+        input.classList.add('input-error');
+        input.focus();
+        setTimeout(() => input.classList.remove('input-error'), 1200);
+      }
+      return;
+    }
+    this._closeQuickStartDir(dir);
+  },
+
+  /** Close the chooser and resolve its promise with `result` (null = cancel). */
+  _closeQuickStartDir(result) {
+    const modal = this.$('quickStartDirModal');
+    if (modal) modal.classList.remove('active');
+    if (this._quickStartDirKeyHandler) {
+      document.removeEventListener('keydown', this._quickStartDirKeyHandler);
+      this._quickStartDirKeyHandler = null;
+    }
+    const resolve = this._quickStartDirResolve;
+    this._quickStartDirResolve = null;
+    if (resolve) resolve(result || null);
+  },
+
+  /** Per-device last-used working dir (localStorage `codeman:last-workdir`). */
+  _loadLastWorkdir(deviceId) {
+    try {
+      const raw = localStorage.getItem('codeman:last-workdir');
+      if (!raw) return '';
+      const obj = JSON.parse(raw);
+      if (obj && typeof obj === 'object') return obj[deviceId] || obj.__last || '';
+      if (typeof obj === 'string') return obj; // legacy single-string value
+    } catch {
+      /* ignore malformed / unavailable storage */
+    }
+    return '';
+  },
+
+  _saveLastWorkdir(deviceId, dir) {
+    if (!dir) return;
+    try {
+      let obj = {};
+      const raw = localStorage.getItem('codeman:last-workdir');
+      if (raw) {
+        try {
+          const p = JSON.parse(raw);
+          if (p && typeof p === 'object') obj = p;
+        } catch {
+          /* overwrite malformed */
+        }
+      }
+      obj[deviceId] = dir;
+      obj.__last = dir;
+      localStorage.setItem('codeman:last-workdir', JSON.stringify(obj));
+    } catch {
+      /* storage may be unavailable (private mode) — non-fatal */
+    }
   },
 });
