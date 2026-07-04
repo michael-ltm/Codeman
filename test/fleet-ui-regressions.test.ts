@@ -445,6 +445,30 @@ describe('fleet and settings UI regressions', () => {
     expect(appSource).toContain('this._tabDisplayNameHtml(primaryName)');
   });
 
+  it('renders the left sidebar as collapsible device groups with pin and drag ordering state', () => {
+    const appSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/app.js'), 'utf8');
+    const css = readFileSync(resolve(import.meta.dirname, '../src/web/public/styles.css'), 'utf8');
+
+    expect(appSource).toContain('_renderGroupedSessionListSidebar');
+    expect(appSource).toContain('_sessionDeviceGroups');
+    expect(appSource).toContain('codeman-sidebar-collapsed-devices');
+    expect(appSource).toContain('codeman-sidebar-pinned-sessions');
+    expect(appSource).toContain('codeman-sidebar-session-order');
+    expect(appSource).toContain('toggleSidebarDeviceGroup');
+    expect(appSource).toContain('toggleSidebarSessionPin');
+    expect(appSource).toContain('setupSidebarSessionDragHandlers');
+    expect(appSource).toContain('data-device-key');
+    expect(appSource).toContain('data-sidebar-pin');
+    expect(appSource).toContain('session-device-group');
+    expect(appSource).toContain('session-device-header');
+    expect(appSource).toContain('session-device-collapse');
+
+    expect(css).toContain('.session-device-group');
+    expect(css).toContain('.session-device-header');
+    expect(css).toContain('.session-sidebar-pin');
+    expect(css).toContain('.session-device-sessions');
+  });
+
   it('routes remote tab close through the stop-or-hide confirmation modal', () => {
     const appSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/app.js'), 'utf8');
     const html = readFileSync(resolve(import.meta.dirname, '../src/web/public/index.html'), 'utf8');

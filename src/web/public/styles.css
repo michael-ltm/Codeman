@@ -2539,6 +2539,137 @@ body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .t
   flex: 0 0 auto;
   gap: 3px;
 }
+.session-device-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.session-device-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  min-width: 0;
+}
+.session-device-header:hover,
+.session-device-group.active-device .session-device-header {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+.session-device-collapse {
+  width: 14px;
+  flex: 0 0 14px;
+  text-align: center;
+  font-size: 0.68rem;
+}
+.session-device-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.session-device-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+.session-device-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.session-device-group.collapsed .session-device-sessions {
+  display: none;
+}
+.session-sidebar-item {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+.session-sidebar-item .session-tab {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 34px;
+}
+.session-sidebar-item[draggable="true"] {
+  cursor: grab;
+}
+.session-sidebar-item.dragging {
+  opacity: 0.55;
+  cursor: grabbing;
+}
+.session-sidebar-item.drag-over-before::before,
+.session-sidebar-item.drag-over-after::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  z-index: 3;
+}
+.session-sidebar-item.drag-over-before::before {
+  top: -3px;
+}
+.session-sidebar-item.drag-over-after::after {
+  bottom: -3px;
+}
+.session-sidebar-pin {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  background: rgba(18, 23, 31, 0.82);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease-out, color 0.12s ease-out, border-color 0.12s ease-out;
+}
+.session-sidebar-item:hover .session-sidebar-pin,
+.session-sidebar-item.pinned .session-sidebar-pin,
+.session-sidebar-pin:focus-visible {
+  opacity: 1;
+}
+.session-sidebar-item.pinned .session-sidebar-pin {
+  color: var(--yellow);
+  border-color: rgba(234, 179, 8, 0.32);
+}
+.session-sidebar-pin:hover {
+  color: var(--text);
+  border-color: rgba(var(--accent-rgb), 0.38);
+}
 /* Grid overlay yields the sidebar width in left mode (was inset:0 of .main). */
 body.session-list-left:not(.device-mobile) .fleet-grid.active {
   left: var(--session-list-width);
@@ -2584,6 +2715,33 @@ body.session-list-left.device-mobile .session-list-sidebar .session-tab .tab-inf
 body.session-list-left.device-mobile .session-list-sidebar .session-tab .tab-name {
   max-width: none;
   white-space: nowrap;
+}
+body.session-list-left.device-mobile .session-list-sidebar .session-device-header {
+  min-height: 26px;
+}
+body.session-list-left.device-mobile .session-list-sidebar .session-tab {
+  min-height: 58px;
+  padding-right: 34px;
+}
+body.session-list-left.device-mobile .session-list-sidebar .session-tab .tab-name-row {
+  flex-wrap: wrap;
+}
+body.session-list-left.device-mobile .session-list-sidebar .session-tab .tab-name {
+  flex: 1 1 calc(100% - 30px);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+body.session-list-left.device-mobile .session-list-sidebar .session-tab .tab-folder {
+  display: block;
+  font-size: 0.62rem;
+  line-height: 1.18;
+}
+body.session-list-left.device-mobile .session-list-sidebar .session-tab .tab-git {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  font-size: 0.62rem;
 }
 body.session-list-left.device-mobile .session-list-sidebar .session-tab.active .tab-gear,
 body.session-list-left.device-mobile .session-list-sidebar .session-tab.active .tab-close {

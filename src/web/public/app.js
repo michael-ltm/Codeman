@@ -345,6 +345,10 @@ class CodemanApp {
     this.pendingCloseSessionId = null; // Session pending close confirmation
     this.muxSessions = []; // Screen sessions for process monitor
     this.localDeviceName = 'local';
+    this.sidebarCollapsedDevices = this._loadStringSet('codeman-sidebar-collapsed-devices');
+    this.sidebarPinnedSessions = this._loadStringSet('codeman-sidebar-pinned-sessions');
+    this.sidebarSessionOrder = this._loadSidebarSessionOrder();
+    this.sidebarDraggedSessionId = null;
 
     // Ralph loop/todo state per session
     this.ralphStates = new Map(); // Map<sessionId, { loop, todos }>
@@ -3142,12 +3146,8 @@ class CodemanApp {
     this._mirrorSessionListSidebar();
   }
 
-  // Mirror the top tab strip into the left session-list sidebar (spec §12.4).
-  // Strict no-op in the default 'top' layout, so every top-mode render path is
-  // byte-identical. In 'left' mode the strip is hidden and we copy the SAME tab
-  // DOM the strip just rendered (local + fleet, identical order/data). Tabs carry
-  // inline onclick handlers (handleSessionTabClick / requestCloseSession), so a
-  // plain innerHTML copy preserves click + close semantics with no re-wiring.
+  // Render the left session-list sidebar (spec §12.4) from the same tab markup
+  // used by the top strip, grouped by device with sidebar-only ordering controls.
   _mirrorSessionListSidebar() {
     // Skip rebuild while renaming to avoid destroying the input without firing blur.
     if (this._inlineRenameActive) return;
@@ -3155,8 +3155,124 @@ class CodemanApp {
     const sidebar = document.getElementById('sessionListSidebar');
     const strip = this.$('sessionTabs');
     if (!sidebar || !strip) return;
-    sidebar.innerHTML = strip.innerHTML;
+    sidebar.innerHTML = this._renderGroupedSessionListSidebar(strip);
+    this.setupSidebarSessionDragHandlers(sidebar);
     this.syncSessionListControls();
+  }
+
+  _renderGroupedSessionListSidebar(strip) {
+    const tabHtmlById = new Map();
+    strip.querySelectorAll('.session-tab[data-id]').forEach((tab) => {
+      if (tab.dataset.id) tabHtmlById.set(tab.dataset.id, tab.outerHTML);
+    });
+
+    const groups = this._sessionDeviceGroups(tabHtmlById);
+    if (!groups.length) return '';
+
+    return groups.map((group) => {
+      const collapsed = this.sidebarCollapsedDevices.has(group.deviceKey);
+      const active = group.items.some((item) => item.id === this.activeSessionId);
+      const itemsHtml = this._orderedSidebarItems(group.deviceKey, group.items).map((item) => {
+        const pinned = this.sidebarPinnedSessions.has(item.id);
+        const pinLabel = pinned ? 'Unpin session' : 'Pin session';
+        return `<div class="session-sidebar-item ${pinned ? 'pinned' : ''}" data-id="${escapeHtml(item.id)}" data-device-key="${escapeHtml(group.deviceKey)}" draggable="true">
+          ${item.html}
+          <button class="session-sidebar-pin" type="button" data-sidebar-pin="${escapeHtml(item.id)}" onclick="event.stopPropagation(); app.toggleSidebarSessionPin(${escapeHtml(JSON.stringify(item.id))})" title="${pinLabel}" aria-label="${pinLabel}" aria-pressed="${pinned ? 'true' : 'false'}">${pinned ? '&#9733;' : '&#9734;'}</button>
+        </div>`;
+      }).join('');
+
+      return `<section class="session-device-group ${collapsed ? 'collapsed' : ''}${active ? ' active-device' : ''}" data-device-key="${escapeHtml(group.deviceKey)}">
+        <button class="session-device-header" type="button" onclick="app.toggleSidebarDeviceGroup(${escapeHtml(JSON.stringify(group.deviceKey))})" aria-expanded="${collapsed ? 'false' : 'true'}" title="${escapeHtml(group.deviceName)}">
+          <span class="session-device-collapse" aria-hidden="true">${collapsed ? '&#9656;' : '&#9662;'}</span>
+          <span class="session-device-title">${escapeHtml(group.deviceName)}</span>
+          <span class="session-device-count">${group.items.length}</span>
+        </button>
+        <div class="session-device-sessions">
+          ${itemsHtml}
+        </div>
+      </section>`;
+    }).join('');
+  }
+
+  _sessionDeviceGroups(tabHtmlById) {
+    const groups = [];
+    const localItems = [];
+    this.sessionOrder.forEach((id, index) => {
+      const session = this.sessions.get(id);
+      const html = tabHtmlById.get(id);
+      if (session && html) {
+        localItems.push({ id, html, index, kind: 'local' });
+      }
+    });
+    if (localItems.length) {
+      groups.push({
+        deviceKey: 'local',
+        deviceName: this._localDeviceTabName(),
+        kind: 'local',
+        items: localItems,
+      });
+    }
+
+    const remoteGroups = new Map();
+    if (this.fleetTabs && this.fleetTabs.size > 0) {
+      let remoteIndex = 0;
+      for (const [key, tab] of this.fleetTabs) {
+        const html = tabHtmlById.get(key);
+        if (!html) continue;
+        const deviceId = tab.deviceId || 'remote';
+        const deviceKey = `fleet:${deviceId}`;
+        const deviceName = tab.deviceName || tab.deviceHostname || deviceId;
+        if (!remoteGroups.has(deviceKey)) {
+          remoteGroups.set(deviceKey, {
+            deviceKey,
+            deviceName,
+            kind: 'fleet',
+            items: [],
+          });
+        }
+        remoteGroups.get(deviceKey).items.push({ id: key, html, index: remoteIndex++, kind: 'fleet' });
+      }
+    }
+
+    groups.push(...remoteGroups.values());
+    return groups;
+  }
+
+  _orderedSidebarItems(deviceKey, items) {
+    const saved = Array.isArray(this.sidebarSessionOrder?.[deviceKey])
+      ? this.sidebarSessionOrder[deviceKey]
+      : [];
+    const rank = new Map(saved.map((id, index) => [id, index]));
+    const orderValue = (item) => rank.has(item.id) ? rank.get(item.id) : saved.length + item.index;
+
+    return [...items].sort((a, b) => {
+      const aPinned = this.sidebarPinnedSessions.has(a.id);
+      const bPinned = this.sidebarPinnedSessions.has(b.id);
+      if (aPinned !== bPinned) return aPinned ? -1 : 1;
+      return orderValue(a) - orderValue(b);
+    });
+  }
+
+  toggleSidebarDeviceGroup(deviceKey) {
+    if (!deviceKey) return;
+    if (this.sidebarCollapsedDevices.has(deviceKey)) {
+      this.sidebarCollapsedDevices.delete(deviceKey);
+    } else {
+      this.sidebarCollapsedDevices.add(deviceKey);
+    }
+    this._saveStringSet('codeman-sidebar-collapsed-devices', this.sidebarCollapsedDevices);
+    this._mirrorSessionListSidebar();
+  }
+
+  toggleSidebarSessionPin(sessionId) {
+    if (!sessionId) return;
+    if (this.sidebarPinnedSessions.has(sessionId)) {
+      this.sidebarPinnedSessions.delete(sessionId);
+    } else {
+      this.sidebarPinnedSessions.add(sessionId);
+    }
+    this._saveStringSet('codeman-sidebar-pinned-sessions', this.sidebarPinnedSessions);
+    this._mirrorSessionListSidebar();
   }
 
   _isMobileSessionListDrawer() {
@@ -3327,6 +3443,118 @@ class CodemanApp {
     } catch {
       // Ignore storage errors
     }
+  }
+
+  _loadStringSet(key) {
+    try {
+      const saved = localStorage.getItem(key);
+      const parsed = saved ? JSON.parse(saved) : [];
+      return new Set(Array.isArray(parsed) ? parsed.filter((value) => typeof value === 'string') : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  _saveStringSet(key, set) {
+    try {
+      localStorage.setItem(key, JSON.stringify(Array.from(set || [])));
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
+  _loadSidebarSessionOrder() {
+    try {
+      const saved = localStorage.getItem('codeman-sidebar-session-order');
+      const parsed = saved ? JSON.parse(saved) : {};
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      return Object.fromEntries(
+        Object.entries(parsed).map(([deviceKey, ids]) => [
+          deviceKey,
+          Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [],
+        ])
+      );
+    } catch {
+      return {};
+    }
+  }
+
+  _saveSidebarSessionOrder() {
+    try {
+      localStorage.setItem('codeman-sidebar-session-order', JSON.stringify(this.sidebarSessionOrder || {}));
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
+  setupSidebarSessionDragHandlers(sidebar) {
+    if (!sidebar) return;
+    const items = sidebar.querySelectorAll('.session-sidebar-item[data-id]');
+    items.forEach((item) => {
+      item.addEventListener('dragstart', (e) => {
+        this.sidebarDraggedSessionId = item.dataset.id;
+        item.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', item.dataset.id);
+      });
+
+      item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+        this.sidebarDraggedSessionId = null;
+        sidebar.querySelectorAll('.session-sidebar-item').forEach((entry) => {
+          entry.classList.remove('drag-over-before', 'drag-over-after');
+        });
+      });
+
+      item.addEventListener('dragover', (e) => {
+        if (!this.sidebarDraggedSessionId || this.sidebarDraggedSessionId === item.dataset.id) return;
+        const dragged = sidebar.querySelector(`.session-sidebar-item[data-id="${this.sidebarDraggedSessionId}"]`);
+        if (!dragged || dragged.dataset.deviceKey !== item.dataset.deviceKey) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = item.getBoundingClientRect();
+        const before = e.clientY < rect.top + rect.height / 2;
+        item.classList.toggle('drag-over-before', before);
+        item.classList.toggle('drag-over-after', !before);
+      });
+
+      item.addEventListener('dragleave', () => {
+        item.classList.remove('drag-over-before', 'drag-over-after');
+      });
+
+      item.addEventListener('drop', (e) => {
+        e.preventDefault();
+        item.classList.remove('drag-over-before', 'drag-over-after');
+        if (!this.sidebarDraggedSessionId || this.sidebarDraggedSessionId === item.dataset.id) return;
+
+        const dragged = sidebar.querySelector(`.session-sidebar-item[data-id="${this.sidebarDraggedSessionId}"]`);
+        const deviceKey = item.dataset.deviceKey;
+        if (!dragged || dragged.dataset.deviceKey !== deviceKey) return;
+
+        const ids = [...sidebar.querySelectorAll(`.session-sidebar-item[data-device-key="${deviceKey}"]`)]
+          .map((entry) => entry.dataset.id)
+          .filter(Boolean);
+        const fromIndex = ids.indexOf(this.sidebarDraggedSessionId);
+        let toIndex = ids.indexOf(item.dataset.id);
+        if (fromIndex === -1 || toIndex === -1) return;
+
+        ids.splice(fromIndex, 1);
+        toIndex = ids.indexOf(item.dataset.id);
+        const rect = item.getBoundingClientRect();
+        const insertBefore = e.clientY < rect.top + rect.height / 2;
+        ids.splice(insertBefore ? toIndex : toIndex + 1, 0, this.sidebarDraggedSessionId);
+
+        this.sidebarSessionOrder[deviceKey] = ids;
+        this._saveSidebarSessionOrder();
+        if (deviceKey === 'local') {
+          const orderedLocal = ids.filter((id) => this.sessions.has(id));
+          const visible = new Set(orderedLocal);
+          this.sessionOrder = [...orderedLocal, ...this.sessionOrder.filter((id) => !visible.has(id))];
+          this.saveSessionOrder();
+        }
+        this._fullRenderSessionTabs();
+      });
+    });
   }
 
   // Set up drag-and-drop handlers on tab elements
