@@ -47,7 +47,7 @@
   --header-height: 36px;
   --toolbar-height: 42px;
   /* Left session-list sidebar width (spec §12.4, desktop/tablet) */
-  --session-list-width: 220px;
+  --session-list-width: clamp(260px, 22vw, 340px);
   --glass-bg: rgba(31, 38, 48, 0.85);
   --glass-border: rgba(255, 255, 255, 0.08);
   --subtle-shadow: 0 -1px 3px rgba(0, 0, 0, 0.3), 0 -4px 16px rgba(0, 0, 0, 0.15);
@@ -2413,8 +2413,8 @@ body.session-list-left:not(.device-mobile) .session-list-sidebar {
   flex-direction: column;
   flex: 0 0 var(--session-list-width);
   width: var(--session-list-width);
-  gap: 3px;
-  padding: 6px 6px 10px;
+  gap: 8px;
+  padding: 10px 8px 12px;
   overflow-x: hidden;
   overflow-y: auto;
   background: var(--bg-card);
@@ -2429,10 +2429,52 @@ body.session-list-left:not(.device-mobile) .session-list-sidebar {
 /* Vertical tabs fill the sidebar width; long names ellipsize via .tab-info. */
 body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab {
   width: 100%;
+  max-width: none;
+  min-height: 78px;
   flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 10px 12px;
+  white-space: normal;
 }
 body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-info {
   flex: 1;
+  gap: 3px;
+}
+body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-number,
+body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-status {
+  margin-top: 3px;
+}
+body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-name-row {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-mode-logo {
+  order: 0;
+}
+body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-name {
+  order: 1;
+  flex: 1 1 calc(100% - 30px);
+  font-size: 0.84rem;
+  line-height: 1.25;
+  color: var(--text);
+}
+body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-device-pill {
+  order: 2;
+  max-width: 96px;
+}
+body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-remark,
+body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-detached-badge {
+  order: 3;
+}
+body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-folder {
+  display: block;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  color: var(--text-muted);
+  max-width: 100%;
+  margin-top: 1px;
 }
 /* Grid overlay yields the sidebar width in left mode (was inset:0 of .main). */
 body.session-list-left:not(.device-mobile) .fleet-grid.active {

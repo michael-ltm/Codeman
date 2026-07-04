@@ -1874,7 +1874,23 @@ Object.assign(CodemanApp.prototype, {
     }
     // Desktop defaults - rely on ?? operators in apply functions
     // This allows desktop to have different defaults without duplication
-    return {};
+    return {
+      sessionListPosition: 'left',
+    };
+  },
+
+  _migrateDesktopSessionListDefault(settings) {
+    if (MobileDetection.getDeviceType() === 'mobile') return settings;
+    try {
+      const marker = 'codeman-session-list-left-default-v1';
+      if (localStorage.getItem(marker)) return settings;
+      const next = { ...settings, sessionListPosition: 'left' };
+      localStorage.setItem(marker, '1');
+      localStorage.setItem(this.getSettingsStorageKey(), JSON.stringify(next));
+      return next;
+    } catch {
+      return settings;
+    }
   },
 
   loadAppSettingsFromStorage() {
@@ -1885,14 +1901,14 @@ Object.assign(CodemanApp.prototype, {
       const key = this.getSettingsStorageKey();
       const saved = localStorage.getItem(key);
       if (saved) {
-        this._cachedAppSettings = JSON.parse(saved);
+        this._cachedAppSettings = this._migrateDesktopSessionListDefault(JSON.parse(saved));
         return this._cachedAppSettings;
       }
     } catch (err) {
       console.error('Failed to load app settings:', err);
     }
     // Return device-specific defaults
-    this._cachedAppSettings = this.getDefaultSettings();
+    this._cachedAppSettings = this._migrateDesktopSessionListDefault(this.getDefaultSettings());
     return this._cachedAppSettings;
   },
 

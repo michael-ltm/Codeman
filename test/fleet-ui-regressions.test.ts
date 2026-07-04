@@ -356,7 +356,7 @@ describe('fleet and settings UI regressions', () => {
     expect(html).toContain('tab-mode-logo tab-mode-openai');
     expect(html).toContain('tab-remark');
     expect(html).toContain('打包机');
-    expect(html).toContain('tab-session-secondary');
+    expect(html).toContain('tab-name');
     expect(html).toContain('xianmi-assistant');
     expect(html).not.toContain('>cx</span>');
   });
@@ -378,6 +378,40 @@ describe('fleet and settings UI regressions', () => {
     expect(remoteHtml).not.toContain('REMOTE');
     expect(sessionTab).toContain('max-width: min(34vw, 340px)');
     expect(devicePill).toContain('max-width: 82px');
+  });
+
+  it('defaults desktop session navigation to the left sidebar with a one-time top-tab migration', () => {
+    const settingsSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/settings-ui.js'), 'utf8');
+    const html = readFileSync(resolve(import.meta.dirname, '../src/web/public/index.html'), 'utf8');
+
+    expect(settingsSource).toContain("sessionListPosition: 'left'");
+    expect(settingsSource).toContain('codeman-session-list-left-default-v1');
+    expect(settingsSource).toContain('_migrateDesktopSessionListDefault');
+    expect(html).toContain('type="hidden" id="appSettingsSessionListPosition" value="left"');
+  });
+
+  it('styles the left session list as full-width Warp-like rows with the session name first', () => {
+    const css = readFileSync(resolve(import.meta.dirname, '../src/web/public/styles.css'), 'utf8');
+    const sidebar = cssRuleBody(css, 'body.session-list-left:not(.device-mobile) .session-list-sidebar');
+    const sidebarTab = cssRuleBody(
+      css,
+      'body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab'
+    );
+    const sidebarName = cssRuleBody(
+      css,
+      'body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-name'
+    );
+    const sidebarFolder = cssRuleBody(
+      css,
+      'body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .tab-folder'
+    );
+
+    expect(sidebar).toContain('padding: 10px 8px 12px');
+    expect(sidebarTab).toContain('min-height: 78px');
+    expect(sidebarTab).toContain('max-width: none');
+    expect(sidebarName).toContain('order: 1');
+    expect(sidebarName).toContain('font-size: 0.84rem');
+    expect(sidebarFolder).toContain('display: block');
   });
 
   it('routes remote tab close through the stop-or-hide confirmation modal', () => {

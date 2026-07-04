@@ -3070,7 +3070,8 @@ class CodemanApp {
       // Show folder name if session has a custom name AND tall tabs setting is enabled
       const folderName = session.workingDir ? session.workingDir.split('/').pop() || '' : '';
       const tallTabsEnabled = this._tallTabsEnabled ?? false;
-      const showFolder = tallTabsEnabled && session.name && folderName && folderName !== name;
+      const showFolder =
+        (this._sessionListPosition === 'left' || tallTabsEnabled) && session.name && folderName && folderName !== name;
 
       // Adopted (foreign-tmux) session marker (Rev5 §13.3, Task 29) — `adopted`
       // rides SessionState from the server (session.ts toState()).
