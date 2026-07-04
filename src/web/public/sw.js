@@ -1,10 +1,10 @@
 /**
  * @fileoverview Service worker for PWA install + Web Push notifications.
  *
- * App-shell caching: on install, precaches the core UI assets so the app
- * launches instantly and works offline (or on flaky connections). Uses a
- * network-first strategy for navigation and API calls, cache-first for
- * static assets.
+ * Runtime caching: same-origin static assets are fetched network-first and then
+ * cached as a fallback. HTML navigations are never cached; the app shell is
+ * content-hashed at build time, and replaying an old cached "/" can pair a stale
+ * index with missing CSS/JS after login.
  *
  * Push notifications: receives push events from the Codeman server (via
  * web-push library) and displays OS-level notifications. Handles notification
@@ -18,29 +18,12 @@
  * @see src/push-store.ts -- server-side VAPID key management and subscription CRUD
  */
 
-const CACHE_NAME = 'codeman-v1';
+const CACHE_NAME = 'codeman-runtime-v2';
 
-// Core app shell -- cached on install for instant startup
+// Keep the install cache tiny and immutable. The built app shell references
+// content-hashed JS/CSS filenames that are not known to this source file, so
+// runtime fetches cache the exact URLs the current index requests.
 const APP_SHELL = [
-  '/',
-  '/styles.css',
-  '/mobile.css',
-  '/constants.js',
-  '/app.js',
-  '/api-client.js',
-  '/terminal-ui.js',
-  '/session-ui.js',
-  '/settings-ui.js',
-  '/panels-ui.js',
-  '/notification-manager.js',
-  '/mobile-handlers.js',
-  '/keyboard-accessory.js',
-  '/voice-input.js',
-  '/vendor/xterm.min.js',
-  '/vendor/xterm-addon-fit.min.js',
-  '/vendor/xterm-addon-unicode11.min.js',
-  '/vendor/xterm-zerolag-input.js',
-  '/vendor/xterm.css',
   '/icon-192.png',
   '/icon-512.png',
   '/manifest.json',
@@ -51,10 +34,7 @@ const APP_SHELL = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      // Use addAll but don't fail install if some assets 404 (hashed filenames)
-      return Promise.allSettled(
-        APP_SHELL.map((url) => cache.add(url).catch(() => {}))
-      );
+      return Promise.allSettled(APP_SHELL.map((url) => cache.add(url).catch(() => {})));
     })
   );
   self.skipWaiting();
@@ -76,19 +56,34 @@ self.addEventListener('activate', (event) => {
 // Network-first ensures deploys take effect immediately when online.
 // Cache is only used when the network is unavailable (offline/flaky).
 
+function isHtmlNavigation(request) {
+  return request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html');
+}
+
+function isHtmlResponse(response) {
+  return (response.headers.get('content-type') || '').includes('text/html');
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+  const url = new URL(request.url);
 
   // Skip non-GET, WebSocket upgrades, and SSE streams
   if (request.method !== 'GET') return;
   if (request.headers.get('upgrade') === 'websocket') return;
   if (request.headers.get('accept') === 'text/event-stream') return;
   if (request.url.includes('/api/')) return;
+  if (url.pathname === '/sw.js') return;
+
+  if (isHtmlNavigation(request)) {
+    event.respondWith(fetch(request));
+    return;
+  }
 
   event.respondWith(
     fetch(request)
       .then((response) => {
-        if (response && response.ok) {
+        if (response && response.ok && !isHtmlResponse(response)) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         }
