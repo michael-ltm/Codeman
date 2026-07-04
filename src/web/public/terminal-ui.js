@@ -254,14 +254,17 @@ Object.assign(CodemanApp.prototype, {
     // Previously caused "page unresponsive" crashes from synchronous GPU stalls,
     // but the 48KB/frame flush cap in flushPendingWrites() now prevents
     // oversized terminal.write() calls that triggered the stalls.
-    // Disable with ?nowebgl URL param if GPU issues return.
+    // WebGL disabled by default: in some Chrome/GPU paths xterm's WebGL
+    // renderer paints the main terminal at a stale/scaled origin after refresh.
+    // Force-enable for diagnostics with ?webgl=force; ?nowebgl still wins.
     // Auto-fallback: _initWebGL installs a long-task watchdog that disables
     // WebGL sticky in localStorage after repeated GPU stalls (see app.js).
     // Force re-enable after sticky disable with ?webgl=force.
     // Lazy-loaded: script downloaded only on desktop (saves 244KB on mobile).
     this._webglAddon = null;
     const _params = new URLSearchParams(location.search);
-    if (_params.get('webgl') === 'force') {
+    const forceWebGL = _params.get('webgl') === 'force';
+    if (forceWebGL) {
       try { localStorage.removeItem('codeman-webgl-disabled'); } catch {}
     }
     const _stickyDisabled = (() => {
@@ -279,6 +282,7 @@ Object.assign(CodemanApp.prototype, {
       } catch { return false; }
     })();
     const skipWebGL =
+      !forceWebGL ||
       MobileDetection.getDeviceType() !== 'desktop' ||
       _params.has('nowebgl') ||
       _stickyDisabled;

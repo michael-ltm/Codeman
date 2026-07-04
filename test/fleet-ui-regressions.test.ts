@@ -337,6 +337,14 @@ describe('fleet and settings UI regressions', () => {
     expect(terminalSource).toContain('const changed = options.force === true ||');
   });
 
+  it('keeps main-terminal WebGL opt-in so refresh uses the stable renderer by default', () => {
+    const terminalSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/terminal-ui.js'), 'utf8');
+
+    expect(terminalSource).toContain("const forceWebGL = _params.get('webgl') === 'force';");
+    expect(terminalSource).toContain('!forceWebGL');
+    expect(terminalSource).toContain('WebGL disabled by default');
+  });
+
   it('adds a welcome active-session section for attaching to online sessions', () => {
     const html = readFileSync(resolve(import.meta.dirname, '../src/web/public/index.html'), 'utf8');
     const terminalSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/terminal-ui.js'), 'utf8');
