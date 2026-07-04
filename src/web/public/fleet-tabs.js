@@ -61,11 +61,76 @@ Object.assign(CodemanApp.prototype, {
    */
   initFleetTabs() {
     this.fleetTabs = new Map();
-    // Keys the user explicitly closed this browser session. `refreshFleetState`
-    // won't re-add them (close = local visibility only; a reload forgets it).
-    this._fleetHidden = new Set();
+    // Keys the user explicitly closed. PERSISTED to localStorage
+    // (`codeman:fleet-hidden-tabs`, per-device/client-only) so a close survives
+    // reloads — `refreshFleetState` won't re-add a hidden key, and it prunes any
+    // key whose session has since disappeared so the set can't grow unbounded.
+    this._fleetHidden = this._loadFleetHiddenKeys();
     this.initFleetGrid();
     this.refreshFleetState();
+  },
+
+  /** localStorage key for the persistent closed-tab set (per-device, client-only). */
+  _FLEET_HIDDEN_STORAGE_KEY: 'codeman:fleet-hidden-tabs',
+
+  /** Read the persisted closed-tab keys into a Set (empty/tolerant on any error). */
+  _loadFleetHiddenKeys() {
+    try {
+      const raw = localStorage.getItem(this._FLEET_HIDDEN_STORAGE_KEY);
+      if (!raw) return new Set();
+      const arr = JSON.parse(raw);
+      return new Set(Array.isArray(arr) ? arr.filter((k) => typeof k === 'string') : []);
+    } catch {
+      return new Set();
+    }
+  },
+
+  /** Persist the current closed-tab set as a JSON array (best-effort). */
+  _saveFleetHiddenKeys() {
+    try {
+      localStorage.setItem(this._FLEET_HIDDEN_STORAGE_KEY, JSON.stringify(Array.from(this._fleetHidden || [])));
+    } catch {
+      /* storage may be unavailable */
+    }
+  },
+
+  /**
+   * Drop hidden keys whose session is no longer present in the current fleet
+   * snapshot (stopped/removed) — bounds the persisted set. `presentKeys` is the
+   * set of every current remote (`deviceId:sessionId`) key from `sessionTabs`.
+   * Persists only when something actually changed.
+   */
+  _pruneFleetHiddenKeys(presentKeys) {
+    if (!this._fleetHidden || this._fleetHidden.size === 0) return;
+    let changed = false;
+    for (const key of Array.from(this._fleetHidden)) {
+      if (!presentKeys.has(key)) {
+        this._fleetHidden.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) this._saveFleetHiddenKeys();
+  },
+
+  /**
+   * Reopen a fleet session (from the device panel) whose tab was closed: drop it
+   * from the persistent hidden set, refresh so `refreshFleetState` re-adds it to
+   * the registry, then select it — the user's path back to a closed session.
+   * Fleet-only by construction (panel rows are remote sessions); a non-fleet key
+   * is ignored, so the local red line is untouched.
+   */
+  async openFleetSessionTab(key) {
+    if (!key || !this._looksLikeFleetKey(key)) return;
+    if (this._fleetHidden && this._fleetHidden.has(key)) {
+      this._fleetHidden.delete(key);
+      this._saveFleetHiddenKeys();
+    }
+    await this.refreshFleetState();
+    if (this.isFleetKey(key)) {
+      this.selectSession(key, { forceReload: true });
+    } else {
+      this.showToast?.('会话不可用', 'warning');
+    }
   },
 
   /** True iff `id` is a remote fleet tab key (present in the registry). */
@@ -129,9 +194,13 @@ Object.assign(CodemanApp.prototype, {
     }
 
     const next = new Map();
+    // Every current remote key — drives the hidden-set prune below so a closed
+    // tab whose session has since stopped/vanished is forgotten (bounded set).
+    const presentFleetKeys = new Set();
     for (const tab of state.sessionTabs || []) {
       // Central self device is already rendered as native local tabs.
       if (tab.deviceId === 'local') continue;
+      presentFleetKeys.add(tab.key);
       if (this._fleetHidden.has(tab.key)) continue;
       next.set(tab.key, {
         ...tab,
@@ -140,6 +209,7 @@ Object.assign(CodemanApp.prototype, {
       });
     }
     this.fleetTabs = next;
+    this._pruneFleetHiddenKeys(presentFleetKeys);
 
     // Cache the full snapshot for the device panel (Task 19) and drive its
     // header badge + open-panel re-render off the SAME refresh flow. All three
@@ -210,12 +280,14 @@ Object.assign(CodemanApp.prototype, {
   /**
    * Close (hide) a remote tab locally. Per spec §6.1 this only affects local
    * visibility — the remote session keeps running; stopping it is the explicit
-   * `stopFleetSession()`. The hidden key is remembered for the browser session
-   * so the next fleet refresh won't re-add it.
+   * `stopFleetSession()`. The hidden key is PERSISTED (localStorage) so the
+   * close survives reloads; the device panel offers a reopen path
+   * (`openFleetSessionTab`).
    */
   closeFleetTab(key) {
     if (!this.isFleetKey(key)) return;
     this._fleetHidden.add(key);
+    this._saveFleetHiddenKeys();
     this.fleetTabs.delete(key);
     if (this.activeSessionId === key) {
       this._disconnectWs();

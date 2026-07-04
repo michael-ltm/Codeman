@@ -160,7 +160,6 @@ Object.assign(CodemanApp.prototype, {
     const platform = escapeHtml(device.platform || '');
     const count = Number(device.activeSessionCount || 0);
     const noTmux = device.capabilities && device.capabilities.tmux === false;
-    const localTag = isLocal ? ' <span class="fleet-local-tag">本机</span>' : '';
     const capTag = noTmux
       ? '<span class="fleet-cap-warn" title="This device cannot run tmux sessions">⚠ 无 tmux</span>'
       : '';
@@ -180,7 +179,7 @@ Object.assign(CodemanApp.prototype, {
     return `<div class="fleet-device ${selected ? 'selected' : ''} ${online ? '' : 'offline'}" role="button" tabindex="0" aria-pressed="${selected ? 'true' : 'false'}" onclick="app.selectFleetDevice(${escapeHtml(JSON.stringify(device.id))})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();app.selectFleetDevice(${escapeHtml(JSON.stringify(device.id))})}">
         <span class="fleet-device-dot ${online ? 'online' : 'offline'}" aria-hidden="true"></span>
         <div class="fleet-device-main">
-          <div class="fleet-device-name">${name}${localTag}</div>
+          <div class="fleet-device-name">${name}</div>
           <div class="fleet-device-meta">
             ${platform ? `<span class="fleet-device-platform">${platform}</span>` : ''}
             <span class="fleet-device-sessions">${count} 会话</span>
@@ -214,7 +213,7 @@ Object.assign(CodemanApp.prototype, {
     const stopAria = adopted ? 'Remove adopted session (tmux keeps running)' : 'Stop remote session';
     return `<div class="fleet-session">
         <span class="fleet-session-dot ${status}" aria-hidden="true"></span>
-        <span class="fleet-session-label" title="${escapeHtml(session.workingDir || '')}">${modeBadge}${adoptedBadge}${escapeHtml(label)}</span>
+        <span class="fleet-session-label fleet-session-open" role="button" tabindex="0" title="${escapeHtml(session.workingDir || '')}" aria-label="打开会话 · Open session" onclick="app.openFleetSessionTab(${keyJson})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();app.openFleetSessionTab(${keyJson})}">${modeBadge}${adoptedBadge}${escapeHtml(label)}</span>
         <button type="button" class="fleet-session-stop" onclick="event.stopPropagation(); app.requestStopFleetSession(${keyJson}, ${labelJson}, ${adopted})" title="${stopTitle}" aria-label="${stopAria}">${stopLabel}</button>
       </div>`;
   },
@@ -224,6 +223,16 @@ Object.assign(CodemanApp.prototype, {
     if (!p || typeof p !== 'string') return '';
     const parts = p.split(/[\\/]/).filter(Boolean);
     return parts.length ? parts[parts.length - 1] : '';
+  },
+
+  /**
+   * Display name for a device id from the cached fleet snapshot — the real
+   * device name (local = os.hostname()), never "本机". Falls back to the raw id.
+   */
+  _fleetDeviceDisplayName(deviceId) {
+    const devices = (this._fleetState && this._fleetState.devices) || [];
+    const d = devices.find((x) => x.id === deviceId);
+    return (d && (d.name || d.hostname || String(d.id).slice(0, 8))) || String(deviceId || '');
   },
 
   // ─── External session discovery + adoption (Rev5 §13.3, Task 29) ───────────
@@ -401,9 +410,8 @@ Object.assign(CodemanApp.prototype, {
       .map((d) => {
         const online = d.status === 'online';
         const name = escapeHtml(d.name || d.hostname || d.id.slice(0, 8));
-        const local = d.id === 'local' ? ' (本机)' : '';
         const suffix = online ? '' : ' — offline';
-        return `<option value="${escapeHtml(d.id)}" ${online ? '' : 'disabled'}>${name}${local}${suffix}</option>`;
+        return `<option value="${escapeHtml(d.id)}" ${online ? '' : 'disabled'}>${name}${suffix}</option>`;
       })
       .join('');
     // Restore selection: prefer prior value, then in-panel selection, then first online.
@@ -631,8 +639,25 @@ Object.assign(CodemanApp.prototype, {
       return;
     }
     if (dirEl) dirEl.value = '';
-    this.showToast('远程会话已创建', 'success');
-    this.refreshFleetState();
+    const key = `${deviceId}:${created.id}`;
+    // A brand-new session id can't collide with a stale hidden entry, but drop
+    // it defensively so nothing suppresses the tab we're about to open.
+    if (this._fleetHidden && this._fleetHidden.has(key)) {
+      this._fleetHidden.delete(key);
+      this._saveFleetHiddenKeys?.();
+    }
+    const deviceName = this._fleetDeviceDisplayName(deviceId);
+    // Mirror _quickStartRemote: refresh so the new key lands in the registry,
+    // then open + select it (same experience as a local create). deviceName is
+    // rendered by showToast via textContent, which auto-escapes — passing the
+    // raw name (NOT escapeHtml) avoids double-escaping a name with special chars.
+    await this.refreshFleetState();
+    if (this.isFleetKey(key)) {
+      this.selectSession(key, { forceReload: true });
+      this.showToast(`已在 ${deviceName} 创建并打开`, 'success');
+    } else {
+      this.showToast(`已在 ${deviceName} 创建`, 'success');
+    }
   },
 
   // ─── Stop remote session (modal confirm — NO native confirm) ────────────────

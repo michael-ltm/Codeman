@@ -11720,6 +11720,15 @@ html[data-skin="daylight-blue"] .welcome-btn-tunnel.active:hover {
   white-space: nowrap;
 }
 
+/* Clicking a device-panel session row opens it as a tab (reopen path). */
+.fleet-session-open {
+  cursor: pointer;
+}
+
+.fleet-session-open:hover {
+  text-decoration: underline;
+}
+
 .fleet-session-mode {
   display: inline-block;
   font-size: 0.6rem;

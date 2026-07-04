@@ -712,10 +712,14 @@ Object.assign(CodemanApp.prototype, {
     return this._welcomeDevices().find((d) => d && d.id === id) || null;
   },
 
-  /** Human-readable device label; local shows '本机', mirroring the fleet panel fallback chain. */
+  /**
+   * Human-readable device label — the device's REAL name (local = os.hostname(),
+   * e.g. Elons-Mac-mini.local), never "本机": the central is always the same
+   * machine regardless of which device's browser is viewing, so "本机" would
+   * mislead a remote viewer. Mirrors the fleet panel fallback chain.
+   */
   _welcomeDeviceName(device) {
     if (!device) return '';
-    if (device.id === 'local') return '本机';
     return device.name || device.hostname || String(device.id).slice(0, 8);
   },
 
