@@ -3048,6 +3048,8 @@ class CodemanApp {
       const isActive = id === this.activeSessionId;
       const status = session.status || 'idle';
       const name = this.getSessionName(session);
+      const conversationTitle = typeof session.conversationTitle === 'string' ? session.conversationTitle.trim() : '';
+      const primaryName = conversationTitle || name;
       const mode = session.mode || 'claude';
       const color = session.color || 'default';
       const remark = (session.remark || '').trim();
@@ -3071,7 +3073,10 @@ class CodemanApp {
       const folderName = session.workingDir ? session.workingDir.split('/').pop() || '' : '';
       const tallTabsEnabled = this._tallTabsEnabled ?? false;
       const showFolder =
-        (this._sessionListPosition === 'left' || tallTabsEnabled) && session.name && folderName && folderName !== name;
+        (this._sessionListPosition === 'left' || tallTabsEnabled) &&
+        (session.name || conversationTitle) &&
+        folderName &&
+        folderName !== primaryName;
 
       // Adopted (foreign-tmux) session marker (Rev5 §13.3, Task 29) — `adopted`
       // rides SessionState from the server (session.ts toState()).
@@ -3082,9 +3087,9 @@ class CodemanApp {
       const modeBadge = codemanModeBadgeHtml(mode);
       const remarkBadge = this._tabRemarkHtml(remark);
       const gitSummary = codemanGitSummaryHtml(session.gitSummary);
-      const titleParts = [deviceName, mode, remark, name, session.workingDir].filter(Boolean);
+      const titleParts = [deviceName, mode, remark, conversationTitle, name, session.workingDir].filter(Boolean);
 
-      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${loadState ? ' tab-loading' : ''}" data-id="${id}" data-color="${color}" data-session-name-raw="${escapeHtml(session.name || '')}" data-session-remark="${escapeHtml(remark)}" data-session-mode="${escapeHtml(mode)}" ${loadState ? `data-load-phase="${escapeHtml(loadState.phase)}"` : ''} onclick="app.handleSessionTabClick(event, ${escapeHtml(JSON.stringify(id))})" oncontextmenu="event.preventDefault(); app.startInlineRename(${escapeHtml(JSON.stringify(id))})" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-busy="${loadState ? 'true' : 'false'}" aria-label="${escapeHtml([deviceName, remark, name].filter(Boolean).join(' / '))} session" title="${escapeHtml(titleParts.join(' · '))}">
+      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${loadState ? ' tab-loading' : ''}" data-id="${id}" data-color="${color}" data-session-name-raw="${escapeHtml(session.name || '')}" data-session-remark="${escapeHtml(remark)}" data-session-mode="${escapeHtml(mode)}" ${loadState ? `data-load-phase="${escapeHtml(loadState.phase)}"` : ''} onclick="app.handleSessionTabClick(event, ${escapeHtml(JSON.stringify(id))})" oncontextmenu="event.preventDefault(); app.startInlineRename(${escapeHtml(JSON.stringify(id))})" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-busy="${loadState ? 'true' : 'false'}" aria-label="${escapeHtml([deviceName, remark, primaryName].filter(Boolean).join(' / '))} session" title="${escapeHtml(titleParts.join(' · '))}">
           ${_tabIdx < 9 ? '<span class="tab-number">' + (_tabIdx + 1) + '</span>' : ''}
           ${loadState ? '<span class="tab-load-spinner" aria-hidden="true"></span>' : ''}
           <span class="tab-status ${status}" aria-hidden="true"></span>
@@ -3094,7 +3099,7 @@ class CodemanApp {
               ${modeBadge}
               ${adoptedBadge}
               ${remarkBadge}
-              <span class="tab-name" data-session-id="${id}">${this._tabDisplayNameHtml(name)}</span>
+              <span class="tab-name" data-session-id="${id}">${this._tabDisplayNameHtml(primaryName)}</span>
               <span class="tab-detached-badge" aria-hidden="true">detached</span>
             </span>
             ${showFolder ? `<span class="tab-folder">\u{1F4C1} ${escapeHtml(folderName)}</span>` : ''}

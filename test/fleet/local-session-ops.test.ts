@@ -19,6 +19,17 @@ describe('LocalSessionOps', () => {
     expect(summary.status).toBe('idle');
   });
 
+  it('includes a live conversation title in FleetSessionSummary when available', () => {
+    const ctx = createMockRouteContext();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (ctx._session as any).conversationTitle = '调查号码掉线问题';
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [summary] = createLocalSessionOps('dev_local', ctx as any).listSessions();
+
+    expect(summary.conversationTitle).toBe('调查号码掉线问题');
+  });
+
   it('writeInput applies shouldApplyInput dedup', () => {
     const ctx = createMockRouteContext();
     const s = ctx._session; // mock session

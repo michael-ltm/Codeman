@@ -146,6 +146,21 @@ describe('fleet protocol', () => {
     });
   });
 
+  it('carries conversation titles into fleet summaries and derived tab labels', () => {
+    const withConversationTitle = {
+      ...session,
+      conversationTitle: '调查号码掉线问题',
+    };
+    const frame = { t: 'heartbeat', sessions: [withConversationTitle] };
+
+    expect(parseNodeToCentralFrame(JSON.stringify(frame))).toEqual(frame);
+    expect(buildFleetSessionTab(device, withConversationTitle)).toMatchObject({
+      conversationTitle: '调查号码掉线问题',
+      sessionLabel: 'codex',
+      title: 'macmini / 调查号码掉线问题',
+    });
+  });
+
   it('validates a ResumeCandidate shape', () => {
     const ok = { sessionId: 's1', workingDir: '/tmp', title: 'fix the thing', updatedAt: 123, projectKey: '-tmp' };
     expect(ResumeCandidateSchema.safeParse(ok).success).toBe(true);

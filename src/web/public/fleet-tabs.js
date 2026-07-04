@@ -453,9 +453,12 @@ Object.assign(CodemanApp.prototype, {
       ? '<span class="tab-adopted-badge" title="收编的外部 tmux 会话 · Adopted external tmux session" aria-hidden="true">\u{1F517}</span>'
       : '';
     const keyJson = escapeHtml(JSON.stringify(key));
-    const primaryLabel = tab.sessionLabel || tab.sessionId || key;
+    const conversationTitle = typeof tab.conversationTitle === 'string' ? tab.conversationTitle.trim() : '';
+    const primaryLabel = conversationTitle || tab.sessionLabel || tab.sessionId || key;
     const gitSummary = codemanGitSummaryHtml(tab.gitSummary);
-    const titleAttr = [tab.deviceName, mode, remark, tab.sessionLabel, tab.workingDir].filter(Boolean).join(' · ');
+    const titleAttr = [tab.deviceName, mode, remark, conversationTitle, tab.sessionLabel, tab.workingDir]
+      .filter(Boolean)
+      .join(' · ');
     return `<div class="session-tab fleet-tab ${isActive ? 'active' : ''}${tab.online === false ? ' fleet-offline' : ''}" data-id="${escapeHtml(key)}" data-fleet="1" onclick="app.handleSessionTabClick(event, ${keyJson})" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-label="${escapeHtml(tab.title || key)} remote session" title="${escapeHtml(titleAttr)}">
         <span class="tab-status ${dotClass}" aria-hidden="true"></span>
         <span class="tab-info">

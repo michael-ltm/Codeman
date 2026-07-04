@@ -171,6 +171,8 @@ export interface SessionState {
   name?: string;
   /** User-facing session remark shown beside the session name */
   remark?: string;
+  /** Best-effort conversation title derived from the first meaningful user prompt. */
+  conversationTitle?: string;
   /** Best-effort live Git status for the working directory. Omitted outside git repos. */
   gitSummary?: GitSummary;
   /** Session mode */

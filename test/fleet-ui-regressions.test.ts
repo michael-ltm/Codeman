@@ -336,6 +336,7 @@ describe('fleet and settings UI regressions', () => {
       sessionId: 's1',
       deviceName: 'pc-e5',
       sessionLabel: 'xianmi-assistant',
+      conversationTitle: '调查号码掉线问题',
       remark: '打包机',
       mode: 'codex',
       status: 'busy',
@@ -362,6 +363,7 @@ describe('fleet and settings UI regressions', () => {
     expect(html).toContain('tab-remark');
     expect(html).toContain('打包机');
     expect(html).toContain('tab-name');
+    expect(html).toContain('调查号码掉线问题');
     expect(html).toContain('xianmi-assistant');
     expect(html).toContain('tab-git');
     expect(html).toContain('tab-git-branch');
@@ -432,6 +434,15 @@ describe('fleet and settings UI regressions', () => {
     expect(sidebarFolder).toContain('display: block');
     expect(sidebarGit).toContain('display: flex');
     expect(sidebarGit).toContain('min-width: 0');
+  });
+
+  it('uses conversation titles as local tab primary labels while keeping the folder row', () => {
+    const appSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/app.js'), 'utf8');
+
+    expect(appSource).toContain('const primaryName = conversationTitle || name');
+    expect(appSource).toContain('(session.name || conversationTitle)');
+    expect(appSource).toContain('folderName !== primaryName');
+    expect(appSource).toContain('this._tabDisplayNameHtml(primaryName)');
   });
 
   it('routes remote tab close through the stop-or-hide confirmation modal', () => {

@@ -160,9 +160,58 @@ async function scanProjectDir(projPath: string, projDir: string, headBuf: Buffer
   return out;
 }
 
+const MAX_PROMPT_LEN = 120;
+
+function promptTextFromContent(content: unknown): string | undefined {
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+  const textBlock = content.find((b): b is { type: string; text?: string } => {
+    return typeof b === 'object' && b !== null && (b as { type?: unknown }).type === 'text';
+  });
+  return typeof textBlock?.text === 'string' ? textBlock.text : undefined;
+}
+
+function sanitizeUserPromptText(text: string): string | undefined {
+  text = text
+    // Drop Claude-injected XML blocks before removing any remaining XML-like tags.
+    .replace(/<system-reminder\b[^>]*>[\s\S]*?<\/system-reminder>/gi, ' ')
+    .replace(/<command-message\b[^>]*>[\s\S]*?<\/command-message>/gi, ' ')
+    .replace(/<local-command-(?:stdout|stderr)\b[^>]*>[\s\S]*?<\/local-command-(?:stdout|stderr)>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(new RegExp(String.raw`\x1b\[[0-9;]*[a-zA-Z]`, 'g'), '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (!text) return undefined;
+  // Skip system-injected messages, slash command artifacts, and expanded skill prompts
+  if (
+    /^(Caveat:|init\b|clear\b|resume\b|\/[a-z][\w-]*\b|You are a |\[Request |Set model to )/i.test(text) ||
+    /^(Please )?(analyze|review) this codebase/i.test(text) ||
+    /^(Read|Implement the following) .+, then (search|list|check) /i.test(text) ||
+    /^\d+ vulnerabilit/i.test(text) ||
+    /\btoolu_/.test(text) ||
+    /^[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+/.test(text) ||
+    /\b(sk-ant-|ANTHROPIC_API_KEY|API_KEY=|SECRET|TOKEN=)/i.test(text) ||
+    text.length < 8
+  )
+    return undefined;
+  return text.length > MAX_PROMPT_LEN ? text.slice(0, MAX_PROMPT_LEN) + '…' : text;
+}
+
+/** Extract the text of one user message entry from a parsed transcript/live stream object. */
+export function extractUserPromptFromEntry(entry: unknown): string | undefined {
+  if (typeof entry !== 'object' || entry === null) return undefined;
+  const typed = entry as { type?: unknown; message?: { content?: unknown } };
+  if (typed.type !== 'user' || typeof typed.message !== 'object' || typed.message === null) return undefined;
+  const text = promptTextFromContent(typed.message.content);
+  return text ? sanitizeUserPromptText(text) : undefined;
+}
+
 /** Extract the text of the first user message from a JSONL transcript head. */
 export function extractFirstUserPrompt(head: string): string | undefined {
-  const MAX_PROMPT_LEN = 120;
   // Iterate lines without allocating a full split array
   let start = 0;
   while (start < head.length) {
@@ -172,36 +221,8 @@ export function extractFirstUserPrompt(head: string): string | undefined {
     if (!line.includes('"type":"user"')) continue;
     try {
       const entry = JSON.parse(line);
-      if (entry.type !== 'user' || !entry.message) continue;
-      const content = entry.message.content;
-      let text: string | undefined;
-      if (typeof content === 'string') {
-        text = content;
-      } else if (Array.isArray(content)) {
-        const textBlock = content.find((b: { type: string }) => b.type === 'text');
-        if (textBlock) text = textBlock.text;
-      }
-      if (!text) continue;
-      // Strip XML-like system/command tags and ANSI escapes from transcripts
-      text = text
-        .replace(/<[^>]+>/g, '')
-        .replace(new RegExp(String.raw`\x1b\[[0-9;]*[a-zA-Z]`, 'g'), '')
-        .trim()
-        .replace(/\s+/g, ' ');
-      if (!text) continue;
-      // Skip system-injected messages, slash command artifacts, and expanded skill prompts
-      if (
-        /^(Caveat:|init\b|clear\b|resume\b|\/[a-z][\w-]*\b|You are a |\[Request |Set model to )/i.test(text) ||
-        /^(Please )?(analyze|review) this codebase/i.test(text) ||
-        /^(Read|Implement the following) .+, then (search|list|check) /i.test(text) ||
-        /^\d+ vulnerabilit/i.test(text) ||
-        /\btoolu_/.test(text) ||
-        /^[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+/.test(text) ||
-        /\b(sk-ant-|ANTHROPIC_API_KEY|API_KEY=|SECRET|TOKEN=)/i.test(text) ||
-        text.length < 8
-      )
-        continue;
-      return text.length > MAX_PROMPT_LEN ? text.slice(0, MAX_PROMPT_LEN) + '…' : text;
+      const prompt = extractUserPromptFromEntry(entry);
+      if (prompt) return prompt;
     } catch {
       // Malformed line — skip
     }

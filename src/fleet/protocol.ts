@@ -75,6 +75,7 @@ export interface FleetSessionSummary {
   id: string;
   name?: string;
   remark?: string;
+  conversationTitle?: string;
   mode: FleetSessionMode;
   status: FleetSessionStatus;
   workingDir: string;
@@ -99,6 +100,7 @@ export interface FleetSessionTab {
   deviceName: string;
   sessionLabel: string;
   remark?: string;
+  conversationTitle?: string;
   title: string;
   mode: FleetSessionMode;
   status: FleetSessionStatus;
@@ -245,6 +247,7 @@ const FleetSessionSummarySchema: z.ZodType<FleetSessionSummary> = z.object({
   id: z.string(),
   name: z.string().optional(),
   remark: z.string().optional(),
+  conversationTitle: z.string().optional(),
   mode: FleetSessionModeSchema,
   status: FleetSessionStatusSchema,
   workingDir: z.string(),
@@ -420,6 +423,8 @@ export function buildFleetSessionTab(device: FleetDeviceSummary, session: FleetS
   const deviceName = device.name || device.hostname || device.id.slice(0, 8);
   const sessionLabel = session.name || basename(session.workingDir) || session.id.slice(0, 8);
   const remark = session.remark?.trim() || undefined;
+  const conversationTitle = session.conversationTitle?.trim() || undefined;
+  const titleLabel = conversationTitle || remark || sessionLabel;
   return {
     key: `${session.deviceId}:${session.id}`,
     deviceId: session.deviceId,
@@ -427,7 +432,8 @@ export function buildFleetSessionTab(device: FleetDeviceSummary, session: FleetS
     deviceName,
     sessionLabel,
     remark,
-    title: `${deviceName} / ${remark || sessionLabel}`,
+    conversationTitle,
+    title: `${deviceName} / ${titleLabel}`,
     mode: session.mode,
     status: session.status,
     workingDir: session.workingDir,

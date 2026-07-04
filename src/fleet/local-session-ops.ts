@@ -100,6 +100,7 @@ export function createLocalSessionOps(
     id: s.id,
     name: s.name || undefined,
     remark: s.remark || undefined,
+    conversationTitle: s.conversationTitle,
     mode: s.mode as FleetSessionMode,
     status: sessionStatusForFleet(s),
     workingDir: s.workingDir,

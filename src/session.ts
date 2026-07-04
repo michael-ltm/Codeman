@@ -88,6 +88,7 @@ import {
   upsertAttachmentHistory as upsertAttachmentHistoryList,
 } from './session-attachment-history.js';
 import type { SessionAttachmentHistoryItem } from './types/session.js';
+import { deriveSessionConversationTitle, deriveSessionConversationTitleFromText } from './session-title.js';
 
 export type { BackgroundTask } from './task-tracker.js';
 export type { RalphTrackerState, RalphTodoItem, ActiveBashTool } from './types.js';
@@ -309,6 +310,8 @@ export class Session extends EventEmitter {
   private _claudeSessionId: string | null = null;
   private _totalCost: number = 0;
   private _messages: ClaudeMessage[] = [];
+  private _capturedConversationTitle: string | undefined;
+  private _conversationTitleInputBuffer = '';
   private _lineBuffer: string = '';
   private _lineBufferFlushTimer: NodeJS.Timeout | null = null;
   // Alt-screen-strip modes (Codex/Claude): trailing partial CSI held back so
@@ -691,6 +694,10 @@ export class Session extends EventEmitter {
 
   get messages(): ClaudeMessage[] {
     return this._messages;
+  }
+
+  get conversationTitle(): string | undefined {
+    return deriveSessionConversationTitle(this._messages) || this._capturedConversationTitle;
   }
 
   get isWorking(): boolean {
@@ -1128,6 +1135,7 @@ export class Session extends EventEmitter {
       name: this._name,
       mode: this.mode,
       claudeSessionId: this._claudeSessionId,
+      conversationTitle: this.conversationTitle,
       totalCost: this._totalCost,
       messageCount: this._messages.length,
       isWorking: this._isWorking,
@@ -2395,6 +2403,7 @@ export class Session extends EventEmitter {
    * ```
    */
   write(data: string): void {
+    this._captureConversationTitleFromInput(data);
     if (this.ptyProcess) {
       this.ptyProcess.write(data);
     }
@@ -2453,6 +2462,7 @@ export class Session extends EventEmitter {
    * ```
    */
   async writeViaMux(data: string): Promise<boolean> {
+    this._captureConversationTitleFromInput(data);
     if (this._mux && this._muxSession) {
       return this._mux.sendInput(this.id, data);
     }
@@ -2462,6 +2472,33 @@ export class Session extends EventEmitter {
       return true;
     }
     return false;
+  }
+
+  private _captureConversationTitleFromInput(data: string): void {
+    if (this._capturedConversationTitle) return;
+    const cleaned = data.replace(ANSI_ESCAPE_PATTERN_FULL, '');
+    for (const char of Array.from(cleaned)) {
+      if (char === '\r' || char === '\n') {
+        const title = deriveSessionConversationTitleFromText(this._conversationTitleInputBuffer);
+        if (title) {
+          this._capturedConversationTitle = title;
+          this._conversationTitleInputBuffer = '';
+          return;
+        }
+        this._conversationTitleInputBuffer = '';
+        continue;
+      }
+      if (char === '\b' || char === '\x7f') {
+        this._conversationTitleInputBuffer = Array.from(this._conversationTitleInputBuffer).slice(0, -1).join('');
+        continue;
+      }
+      if (char >= ' ' || char === '\t') {
+        this._conversationTitleInputBuffer += char;
+        if (this._conversationTitleInputBuffer.length > 4096) {
+          this._conversationTitleInputBuffer = this._conversationTitleInputBuffer.slice(-4096);
+        }
+      }
+    }
   }
 
   /** Current PTY dimensions — used to skip no-op resizes that trigger Ink redraws */
