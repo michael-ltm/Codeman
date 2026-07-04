@@ -1038,6 +1038,15 @@ body {
   display: none !important;
 }
 
+.btn-session-list-toggle {
+  display: none;
+  flex-shrink: 0;
+}
+
+.btn-session-list-toggle:hover {
+  transform: none;
+}
+
 .btn-icon-header.btn-settings {
   width: 30px;
   height: 30px;
@@ -2276,15 +2285,16 @@ body.solo-mode .btn-lifecycle-log {
   background: transparent !important;
 }
 
-/* ── Left session-list layout (spec §12.4; desktop/tablet, per-device) ──────
+/* ── Left session-list layout (spec §12.4, per-device) ─────────────────────
    Default (top) layout: the sidebar is display:none and #sessionTabs renders in
    the header exactly as before — byte-identical, no layout shift. When the
    per-device `sessionListPosition` setting is 'left', body.session-list-left
-   swaps to a fixed-width vertical sidebar that mirrors the SAME tab DOM. The
-   `:not(.device-mobile)` guard makes phones ignore the setting entirely (they
-   keep the top strip regardless), which also holds live as the viewport crosses
-   the phone breakpoint (MobileDetection.updateBodyClass maintains the class). */
+   swaps to a fixed-width vertical sidebar on desktop/tablet, and to a slide-out
+   session-list drawer on phones. Both mirror the SAME tab DOM. */
 .session-list-sidebar {
+  display: none;
+}
+.session-list-backdrop {
   display: none;
 }
 body.session-list-left:not(.device-mobile) #sessionTabs {
@@ -2319,6 +2329,65 @@ body.session-list-left:not(.device-mobile) .session-list-sidebar .session-tab .t
 /* Grid overlay yields the sidebar width in left mode (was inset:0 of .main). */
 body.session-list-left:not(.device-mobile) .fleet-grid.active {
   left: var(--session-list-width);
+}
+body.session-list-left.device-mobile #sessionTabs {
+  display: none;
+}
+body.session-list-left.device-mobile .btn-session-list-toggle {
+  display: inline-flex;
+}
+body.session-list-left.device-mobile .session-list-sidebar {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: calc(36px + var(--safe-area-top));
+  bottom: calc(40px + var(--safe-area-bottom));
+  left: 0;
+  width: min(86vw, 320px);
+  max-width: calc(100vw - 44px);
+  gap: 4px;
+  padding: 8px 8px 12px calc(8px + var(--safe-area-left));
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  box-shadow: 14px 0 28px rgba(0, 0, 0, 0.38);
+  transform: translateX(calc(-100% - var(--safe-area-left) - 12px));
+  transition: transform 0.16s ease-out;
+  z-index: 1251;
+  contain: layout paint;
+}
+body.session-list-left.device-mobile .session-list-sidebar .session-tab {
+  width: 100%;
+  min-height: 42px;
+  max-height: none;
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  gap: 0.45rem;
+}
+body.session-list-left.device-mobile .session-list-sidebar .session-tab .tab-info {
+  flex: 1 1 auto;
+}
+body.session-list-left.device-mobile .session-list-sidebar .session-tab .tab-name {
+  max-width: none;
+  white-space: nowrap;
+}
+body.session-list-left.device-mobile .session-list-sidebar .session-tab.active .tab-gear,
+body.session-list-left.device-mobile .session-list-sidebar .session-tab.active .tab-close {
+  display: inline-flex;
+}
+body.session-list-left.session-list-drawer-open.device-mobile .session-list-sidebar {
+  transform: translateX(0);
+}
+body.session-list-left.session-list-drawer-open.device-mobile .session-list-backdrop {
+  display: block;
+  position: fixed;
+  top: calc(36px + var(--safe-area-top));
+  bottom: calc(40px + var(--safe-area-bottom));
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1250;
 }
 .session-list-sidebar::-webkit-scrollbar {
   width: 6px;

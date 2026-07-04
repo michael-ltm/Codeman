@@ -310,6 +310,23 @@ describe('fleet and settings UI regressions', () => {
     expect(quickStartDirModal).toContain('id="quickStartDirCandidates"');
   });
 
+  it('keeps the left session-list layout usable on phones with a drawer control', () => {
+    const html = readFileSync(resolve(import.meta.dirname, '../src/web/public/index.html'), 'utf8');
+    const css = readFileSync(resolve(import.meta.dirname, '../src/web/public/styles.css'), 'utf8');
+    const appSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/app.js'), 'utf8');
+    const settingsSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/settings-ui.js'), 'utf8');
+
+    expect(html).toContain('id="sessionListToggleBtn"');
+    expect(html).toContain('onclick="app.toggleSessionListDrawer()"');
+    expect(html).toContain('id="sessionListBackdrop"');
+    expect(html).not.toContain('ignored on phones');
+    expect(css).toContain('body.session-list-left.device-mobile #sessionTabs');
+    expect(css).toContain('body.session-list-left.session-list-drawer-open.device-mobile .session-list-sidebar');
+    expect(appSource).toContain('toggleSessionListDrawer');
+    expect(appSource).toContain('closeSessionListDrawer');
+    expect(settingsSource).not.toContain('phone ignores the setting');
+  });
+
   it('lays out App Settings tabs without horizontal scroll overflow', () => {
     const css = readFileSync(resolve(import.meta.dirname, '../src/web/public/styles.css'), 'utf8');
     const appSettingsTabs = cssRuleBody(css, '#appSettingsModal .modal-tabs');

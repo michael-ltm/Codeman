@@ -823,6 +823,7 @@ class CodemanApp {
       // Escape - close panels and modals (different logic: no preventDefault, no return)
       if (e.key === 'Escape') {
         this.closeAllPanels();
+        this.closeSessionListDrawer();
         this.closeHelp();
         if (this.attachmentHistoryDrawerOpen) this.closeAttachmentHistory();
       }
@@ -3105,6 +3106,53 @@ class CodemanApp {
     const strip = this.$('sessionTabs');
     if (!sidebar || !strip) return;
     sidebar.innerHTML = strip.innerHTML;
+    this.syncSessionListControls();
+  }
+
+  _isMobileSessionListDrawer() {
+    return this._sessionListPosition === 'left' && document.body.classList.contains('device-mobile');
+  }
+
+  syncSessionListControls() {
+    const isLeft = this._sessionListPosition === 'left';
+    const isMobileDrawer = this._isMobileSessionListDrawer();
+    const isOpen = isMobileDrawer && document.body.classList.contains('session-list-drawer-open');
+    const toggle = document.getElementById('sessionListToggleBtn');
+    const sidebar = document.getElementById('sessionListSidebar');
+
+    if (!isMobileDrawer) {
+      document.body.classList.remove('session-list-drawer-open');
+    }
+
+    if (toggle) {
+      toggle.hidden = !isMobileDrawer;
+      toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      toggle.setAttribute('aria-label', isOpen ? 'Close session list' : 'Open session list');
+      toggle.title = isOpen ? 'Close session list' : 'Session list';
+    }
+
+    if (sidebar) {
+      const exposeSidebar = isLeft && (!isMobileDrawer || isOpen);
+      sidebar.setAttribute('aria-hidden', exposeSidebar ? 'false' : 'true');
+      sidebar.querySelector?.('.session-tab.active')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    }
+  }
+
+  toggleSessionListDrawer(forceOpen) {
+    if (!this._isMobileSessionListDrawer()) return;
+    const shouldOpen =
+      typeof forceOpen === 'boolean' ? forceOpen : !document.body.classList.contains('session-list-drawer-open');
+    document.body.classList.toggle('session-list-drawer-open', shouldOpen);
+    this.syncSessionListControls();
+  }
+
+  closeSessionListDrawer() {
+    if (!document.body.classList.contains('session-list-drawer-open')) {
+      this.syncSessionListControls();
+      return;
+    }
+    document.body.classList.remove('session-list-drawer-open');
+    this.syncSessionListControls();
   }
 
   // Resolve the currently-visible .session-tab element for a session id / fleet
@@ -3174,7 +3222,10 @@ class CodemanApp {
     // Split-grid active (layout 2 / 2×2): a tab click PINS the session into a
     // tile instead of the single-view select. Dormant no-op (returns false) at
     // layout 1, so the local single-view path below stays byte-identical.
-    if (this._maybePinToGrid?.(sessionId)) return;
+    if (this._maybePinToGrid?.(sessionId)) {
+      this.closeSessionListDrawer();
+      return;
+    }
     // On touch with the keyboard hidden, blur the tapped tab so switching
     // sessions doesn't pop the on-screen keyboard. Focus policy itself lives
     // in selectSession via _shouldFocusTerminalForTabSwitch().
@@ -3182,7 +3233,9 @@ class CodemanApp {
     if (!keyboardOpen && MobileDetection.isTouchDevice()) {
       document.activeElement?.blur?.();
     }
-    return this.selectSession(sessionId, { forceReload: true });
+    const selection = this.selectSession(sessionId, { forceReload: true });
+    this.closeSessionListDrawer();
+    return selection;
   }
 
 
@@ -4203,6 +4256,7 @@ class CodemanApp {
     this.activeSessionId = null;
     try { localStorage.removeItem('codeman-active-session'); } catch {}
     this.terminal.clear();
+    this.closeSessionListDrawer();
     this.showWelcome();
     this.renderSessionTabs();
     this.renderRalphStatePanel();

@@ -2042,9 +2042,8 @@ Object.assign(CodemanApp.prototype, {
   },
 
   // Session list layout (spec §12.4, per-device): 'top' = native tab strip
-  // (default), 'left' = fixed-width vertical sidebar mirroring the SAME tabs.
-  // The body class is driven purely by the setting; the CSS `:not(.device-mobile)`
-  // guard keeps phones on the top strip regardless (phone ignores the setting).
+  // (default), 'left' = vertical sidebar on desktop/tablet and a session-list drawer
+  // on phones, both mirroring the SAME tabs.
   applySessionListPosition() {
     const settings = this.loadAppSettingsFromStorage();
     const defaults = this.getDefaultSettings();
@@ -2053,13 +2052,10 @@ Object.assign(CodemanApp.prototype, {
     const prev = this._sessionListPosition;
     this._sessionListPosition = pos;
     document.body.classList.toggle('session-list-left', pos === 'left');
-    // The visible list is the canonical tablist; expose exactly one to a11y —
-    // the hidden strip (display:none) drops out on its own, so only un-hide the
-    // sidebar when it is the one actually shown.
-    const sidebar = document.getElementById('sessionListSidebar');
-    if (sidebar) sidebar.setAttribute('aria-hidden', pos === 'left' ? 'false' : 'true');
+    if (pos !== 'left') this.closeSessionListDrawer?.();
     // Mirror the current tabs into the sidebar (strict no-op unless 'left').
     this._mirrorSessionListSidebar();
+    this.syncSessionListControls?.();
     // The terminal area width just changed — refit the active native terminal and
     // push new PTY dims (grid tiles refit via their OWN ResizeObservers). Only on
     // an actual flip, so unrelated setting saves stay byte-identical in top mode.
@@ -2522,6 +2518,7 @@ Object.assign(CodemanApp.prototype, {
   },
 
   closeAllPanels() {
+    this.closeSessionListDrawer?.();
     this.closeSessionOptions();
     this.closeAppSettings();
     this.cancelCloseSession();

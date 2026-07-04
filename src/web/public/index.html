@@ -79,6 +79,10 @@
         <span class="logo" onclick="app.goHome()" title="Go to main page">Codeman</span>
       </div>
 
+      <button class="btn-icon-header btn-session-list-toggle" id="sessionListToggleBtn" onclick="app.toggleSessionListDrawer()" title="Session list" aria-label="Open session list" aria-controls="sessionListSidebar" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+      </button>
+
       <!-- Session Tabs -->
       <div class="session-tabs" id="sessionTabs" role="tablist" aria-label="Session tabs">
       </div>
@@ -289,9 +293,10 @@
     <main class="main">
       <!-- Left session-list sidebar (spec §12.4): mirror of the top tab strip,
            shown only when the per-device sessionListPosition setting is 'left'
-           (desktop/tablet). Empty + display:none by default so the top layout is
+           (fixed on desktop/tablet, drawer on phones). Empty + display:none by default so the top layout is
            byte-identical. Populated by app._mirrorSessionListSidebar(). -->
       <aside class="session-list-sidebar" id="sessionListSidebar" role="tablist" aria-label="Session list" aria-hidden="true"></aside>
+      <div class="session-list-backdrop" id="sessionListBackdrop" onclick="app.closeSessionListDrawer()" aria-hidden="true"></div>
       <div class="terminal-wrap">
         <div class="terminal-container" id="terminalContainer"></div>
         <textarea id="cjkInput" rows="1" placeholder="CJK input (Enter = send, Esc = clear)"
@@ -1304,7 +1309,7 @@
                   <span class="slider"></span>
                 </label>
               </div>
-              <div class="settings-item" title="Where the session list appears on this device (not synced; ignored on phones)">
+              <div class="settings-item" title="Where the session list appears on this device (not synced; phones use a slide-out session-list drawer)">
                 <span class="settings-item-label">Session List</span>
                 <input type="hidden" id="appSettingsSessionListPosition" value="top">
                 <div class="settings-segmented" id="appSettingsSessionListPositionControl" data-segmented-for="appSettingsSessionListPosition" role="group" aria-label="Session list position">
