@@ -1004,6 +1004,7 @@ Object.assign(CodemanApp.prototype, {
       overlay.classList.add('visible');
       this.loadTunnelStatus();
       this.renderWelcomeDeviceRow?.();
+      this.renderWelcomeActiveSessions?.();
       this.loadHistorySessions();
       this.initSearchPanel();
     }
@@ -1203,6 +1204,148 @@ Object.assign(CodemanApp.prototype, {
 
   /** Number of history items shown before "Show More" */
   _HISTORY_INITIAL_COUNT: 4,
+
+  renderWelcomeActiveSessions() {
+    const container = document.getElementById('welcomeActiveSessions');
+    const list = document.getElementById('welcomeActiveSessionList');
+    if (!container || !list) return;
+
+    const rows = this._welcomeActiveSessionRows();
+    if (rows.length === 0) {
+      list.replaceChildren();
+      container.style.display = 'none';
+      return;
+    }
+
+    list.replaceChildren();
+    for (const row of rows.slice(0, 12)) {
+      list.appendChild(this._buildWelcomeActiveSessionItem(row));
+    }
+    container.style.display = '';
+  },
+
+  _welcomeActiveSessionRows() {
+    const rows = [];
+    const localDevice = this._welcomeDevice?.('local');
+    const localName = localDevice ? this._welcomeDeviceName(localDevice) : 'Local';
+    const localIds =
+      Array.isArray(this.sessionOrder) && this.sessionOrder.length > 0
+        ? this.sessionOrder
+        : Array.from(this.sessions?.keys?.() || []);
+
+    for (const id of localIds) {
+      const session = this.sessions?.get?.(id);
+      if (!session || session.status === 'ended' || session.status === 'stopped') continue;
+      const title = this.getSessionName ? this.getSessionName(session) : session.name || id.slice(0, 8);
+      rows.push({
+        kind: 'local',
+        key: id,
+        title,
+        subtitle: this._shortenHomePath(session.workingDir || ''),
+        deviceName: localName,
+        mode: session.mode || 'claude',
+        status: session.status || 'idle',
+      });
+    }
+
+    const state = this._fleetState || {};
+    const devices = Array.isArray(state.devices) ? state.devices : [];
+    const deviceById = new Map(devices.map((d) => [d.id, d]));
+    const summaryByKey = new Map();
+    for (const s of Array.isArray(state.sessions) ? state.sessions : []) {
+      if (s && s.deviceId && s.id) summaryByKey.set(`${s.deviceId}:${s.id}`, s);
+    }
+
+    const remoteTabs =
+      Array.isArray(state.sessionTabs) && state.sessionTabs.length > 0
+        ? state.sessionTabs
+        : Array.from(this.fleetTabs?.entries?.() || []).map(([key, tab]) => ({ ...tab, key }));
+    for (const tab of remoteTabs) {
+      if (!tab || tab.deviceId === 'local' || !tab.key) continue;
+      const device = deviceById.get(tab.deviceId);
+      if (device && device.status !== 'online') continue;
+      const summary = summaryByKey.get(tab.key) || {};
+      const status = summary.status || tab.status || 'idle';
+      if (status === 'ended' || status === 'stopped') continue;
+      const workingDir = summary.workingDir || tab.workingDir || '';
+      rows.push({
+        kind: 'fleet',
+        key: tab.key,
+        title: tab.sessionLabel || summary.name || tab.title || this._basenameFromPath(workingDir) || tab.sessionId || tab.key,
+        subtitle: this._shortenHomePath(workingDir),
+        deviceName: tab.deviceName || device?.name || device?.hostname || String(tab.deviceId).slice(0, 8),
+        mode: summary.mode || tab.mode || 'claude',
+        status,
+        adopted: !!summary.adopted || !!tab.adopted,
+      });
+    }
+
+    return rows;
+  },
+
+  _buildWelcomeActiveSessionItem(row) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `welcome-active-session welcome-active-session-${row.kind}`;
+    item.title = row.subtitle ? `${row.deviceName} · ${row.subtitle}` : row.deviceName;
+    item.addEventListener('click', () => this._attachWelcomeActiveSession(row));
+
+    const dot = document.createElement('span');
+    dot.className = `welcome-active-dot ${row.status || 'idle'}`;
+    dot.setAttribute('aria-hidden', 'true');
+
+    const text = document.createElement('span');
+    text.className = 'welcome-active-text';
+
+    const title = document.createElement('span');
+    title.className = 'welcome-active-title';
+    title.textContent = row.title;
+
+    const subtitle = document.createElement('span');
+    subtitle.className = 'welcome-active-subtitle';
+    subtitle.textContent = row.subtitle || 'Running session';
+
+    text.append(title, subtitle);
+
+    const device = document.createElement('span');
+    device.className = 'history-item-devchip';
+    device.textContent = row.deviceName;
+    device.title = row.deviceName;
+
+    const mode = document.createElement('span');
+    mode.className = 'welcome-active-mode';
+    mode.textContent = this._welcomeModeShort(row.mode);
+
+    item.append(dot, text, device, mode);
+    return item;
+  },
+
+  _attachWelcomeActiveSession(row) {
+    if (!row || !row.key) return;
+    if (row.kind === 'fleet') {
+      this.openFleetSessionTab?.(row.key);
+      return;
+    }
+    this.selectSession(row.key, { forceReload: true });
+  },
+
+  _welcomeModeShort(mode) {
+    return mode === 'shell'
+      ? 'sh'
+      : mode === 'opencode'
+        ? 'oc'
+        : mode === 'codex'
+          ? 'cx'
+          : mode === 'gemini'
+            ? 'gm'
+            : 'cc';
+  },
+
+  _basenameFromPath(path) {
+    if (!path || typeof path !== 'string') return '';
+    const parts = path.split(/[\\/]/).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : '';
+  },
 
   async loadHistorySessions() {
     const container = document.getElementById('historySessions');

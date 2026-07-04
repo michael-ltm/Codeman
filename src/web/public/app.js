@@ -2956,6 +2956,7 @@ class CodemanApp {
 
     this.updateTabOverflowMode();
     this._mirrorSessionListSidebar();
+    this.renderWelcomeActiveSessions?.();
   }
 
   // Auto-wrap desktop session tabs to a second row when they overflow one row,
@@ -4079,9 +4080,38 @@ class CodemanApp {
 
   // Request confirmation before closing a session
   requestCloseSession(sessionId) {
-    // Remote fleet tab: close = hide locally (no confirm, session keeps running).
     if (this.isFleetKey(sessionId)) {
-      this.closeFleetTab(sessionId);
+      const tab = this.fleetTabs?.get(sessionId);
+      this.pendingCloseSessionId = sessionId;
+
+      const name = tab
+        ? `${tab.deviceName || tab.deviceId || 'Remote'} / ${tab.sessionLabel || tab.title || tab.sessionId}`
+        : sessionId;
+      const sessionNameEl = document.getElementById('closeConfirmSessionName');
+      if (sessionNameEl) sessionNameEl.textContent = name;
+
+      const adoptedNote = document.getElementById('closeConfirmAdoptedNote');
+      const remoteNote = document.getElementById('closeConfirmRemoteNote');
+      const killBtn = document.getElementById('closeConfirmKillBtn');
+      const hideTitle = document.getElementById('closeConfirmHideTitle');
+      const hideDesc = document.getElementById('closeConfirmHideDesc');
+      const killTitle = document.getElementById('closeConfirmKillTitle');
+      const killDesc = document.getElementById('closeConfirmKillDesc');
+      const isAdopted = !!tab?.adopted;
+
+      if (adoptedNote) adoptedNote.style.display = isAdopted ? '' : 'none';
+      if (remoteNote) remoteNote.style.display = '';
+      if (killBtn) killBtn.style.display = '';
+      if (hideTitle) hideTitle.textContent = 'Hide Remote Tab';
+      if (hideDesc) hideDesc.textContent = 'Session keeps running on the device';
+      if (killTitle) killTitle.textContent = isAdopted ? 'Remove Adopted Session' : 'Stop Remote Session';
+      if (killDesc) {
+        killDesc.textContent = isAdopted
+          ? 'Detach only — the tmux session keeps running'
+          : 'Terminate the session on its device';
+      }
+
+      document.getElementById('closeConfirmModal').classList.add('active');
       return;
     }
     const session = this.sessions.get(sessionId);
@@ -4103,10 +4133,18 @@ class CodemanApp {
     // instead. "Remove Tab" stays visible/unchanged — its existing copy
     // ("Tmux session keeps running in background") is already accurate here.
     const adoptedNote = document.getElementById('closeConfirmAdoptedNote');
+    const remoteNote = document.getElementById('closeConfirmRemoteNote');
     const killBtn = document.getElementById('closeConfirmKillBtn');
+    const hideTitle = document.getElementById('closeConfirmHideTitle');
+    const hideDesc = document.getElementById('closeConfirmHideDesc');
+    const killDesc = document.getElementById('closeConfirmKillDesc');
     const isAdopted = !!session.adopted;
     if (adoptedNote) adoptedNote.style.display = isAdopted ? '' : 'none';
+    if (remoteNote) remoteNote.style.display = 'none';
     if (killBtn) killBtn.style.display = isAdopted ? 'none' : '';
+    if (hideTitle) hideTitle.textContent = 'Remove Tab';
+    if (hideDesc) hideDesc.textContent = 'Tmux session keeps running in background';
+    if (killDesc) killDesc.textContent = 'Terminate the session completely';
 
     // Update kill button text based on session mode (moot while hidden above).
     const killTitle = document.getElementById('closeConfirmKillTitle');
@@ -4133,6 +4171,11 @@ class CodemanApp {
     this.cancelCloseSession();
 
     if (sessionId) {
+      if (this.isFleetKey(sessionId)) {
+        if (killMux) await this.stopFleetSession(sessionId);
+        else this.closeFleetTab(sessionId);
+        return;
+      }
       await this.closeSession(sessionId, killMux);
     }
   }

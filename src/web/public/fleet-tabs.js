@@ -242,6 +242,7 @@ Object.assign(CodemanApp.prototype, {
     // welcome device row so pills/counts/online-state stay live. Hidden unless a
     // remote device exists, so single-machine users are unaffected.
     this.renderWelcomeDeviceRow?.();
+    this.renderWelcomeActiveSessions?.();
 
     // One-shot re-render: on a fresh page load, the welcome screen's Resume
     // Conversation list can render (loadHistorySessions in terminal-ui.js)
@@ -332,6 +333,72 @@ Object.assign(CodemanApp.prototype, {
   },
 
   /**
+   * Remove a stopped/removed fleet session from every cached UI surface
+   * immediately. The authoritative SSE refresh still arrives later, but the
+   * user already got a successful DELETE response, so keeping the row visible
+   * until a manual refresh makes the UI feel dishonest.
+   */
+  _dropFleetSessionFromUi(key) {
+    if (!key || !this._looksLikeFleetKey(key)) return;
+    const target =
+      this._fleetTarget(key) ||
+      (() => {
+        const idx = String(key).indexOf(':');
+        return idx > 0 ? { deviceId: String(key).slice(0, idx), sessionId: String(key).slice(idx + 1) } : null;
+      })();
+    if (!target) return;
+
+    this.fleetTabs?.delete(key);
+    if (this._fleetHidden?.delete(key)) this._saveFleetHiddenKeys();
+
+    if (this._fleetState) {
+      if (Array.isArray(this._fleetState.sessions)) {
+        this._fleetState.sessions = this._fleetState.sessions.filter(
+          (s) => !(s && s.deviceId === target.deviceId && s.id === target.sessionId)
+        );
+      }
+      if (Array.isArray(this._fleetState.sessionTabs)) {
+        this._fleetState.sessionTabs = this._fleetState.sessionTabs.filter((tab) => tab && tab.key !== key);
+      }
+      if (Array.isArray(this._fleetState.devices)) {
+        for (const d of this._fleetState.devices) {
+          if (!d || d.id !== target.deviceId) continue;
+          const remaining = Array.isArray(this._fleetState.sessions)
+            ? this._fleetState.sessions.filter((s) => s && s.deviceId === target.deviceId).length
+            : Math.max(0, Number(d.activeSessionCount || 0) - 1);
+          d.activeSessionCount = remaining;
+        }
+      }
+    }
+
+    if (this.activeSessionId === key) {
+      this._disconnectWs();
+      this.activeSessionId = null;
+      try {
+        localStorage.removeItem('codeman-active-session');
+      } catch {
+        /* storage may be unavailable */
+      }
+      if (this.sessionOrder && this.sessionOrder.length > 0 && this.sessions.size > 0) {
+        this.selectSession(this.sessionOrder[0]);
+      } else {
+        try {
+          this.terminal?.clear();
+        } catch {
+          /* terminal may not be ready */
+        }
+        this.showWelcome?.();
+      }
+    }
+
+    this._fullRenderSessionTabs?.();
+    this._updateFleetBadge?.();
+    this._renderFleetPanelIfOpen?.();
+    this.renderWelcomeDeviceRow?.();
+    this.renderWelcomeActiveSessions?.();
+  },
+
+  /**
    * Explicitly STOP a remote session on its device (DELETE via fleet-api). The
    * device panel (Task 19) wires this to a button; exposed here so the capability
    * exists in this task. On success the node broadcasts fleet:sessions-updated,
@@ -344,6 +411,7 @@ Object.assign(CodemanApp.prototype, {
     const adopted = tab?.adopted ?? false;
     try {
       await this.fleetStopSession(f.deviceId, f.sessionId);
+      this._dropFleetSessionFromUi(key);
       const msg = adopted ? '已从 Codeman 移除(tmux 会话未受影响)' : 'Remote session stopped';
       this.showToast?.(msg, 'success');
     } catch {

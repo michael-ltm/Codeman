@@ -2691,6 +2691,101 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
 }
 
 /* History sessions panel (welcome overlay) */
+.welcome-active-sessions {
+  margin-top: var(--sp-6, 1.5rem);
+  width: 100%;
+  max-width: 560px;
+}
+
+.welcome-active-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 170px;
+  overflow-y: auto;
+}
+
+.welcome-active-session {
+  width: 100%;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.8rem;
+  text-align: left;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-card, 8px);
+  cursor: pointer;
+  transition: all var(--transition-smooth);
+}
+
+.welcome-active-session:hover,
+.welcome-active-session:focus-visible {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: var(--shadow-card, 0 2px 8px rgba(0, 0, 0, 0.2));
+  outline: none;
+}
+
+.welcome-active-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--green, #3fb950);
+}
+
+.welcome-active-dot.busy,
+.welcome-active-dot.working {
+  background: var(--accent);
+}
+
+.welcome-active-dot.error {
+  background: var(--red);
+}
+
+.welcome-active-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.welcome-active-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.welcome-active-subtitle {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.welcome-active-mode {
+  flex: 0 0 auto;
+  min-width: 1.7rem;
+  padding: 0.16rem 0.35rem;
+  border-radius: 5px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .history-sessions {
   margin-top: var(--sp-6, 1.5rem);
   width: 100%;
@@ -12373,6 +12468,7 @@ html[data-skin="light"] .form-select:focus {
 
 /* Cards (search results, Resume history, timeline, stat) → white lift */
 html[data-skin="light"] .search-result-card,
+html[data-skin="light"] .welcome-active-session,
 html[data-skin="light"] .history-item,
 html[data-skin="light"] .history-item.expanded,
 html[data-skin="light"] .timeline-event,
@@ -12381,6 +12477,8 @@ html[data-skin="light"] .stat-card {
   border-color: var(--border-light);
 }
 html[data-skin="light"] .history-item:hover,
+html[data-skin="light"] .welcome-active-session:hover,
+html[data-skin="light"] .welcome-active-session:focus-visible,
 html[data-skin="light"] .search-result-card:focus-visible,
 html[data-skin="light"] .timeline-event:hover {
   background: #f6f7f9;

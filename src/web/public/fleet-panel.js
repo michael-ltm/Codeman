@@ -743,6 +743,7 @@ Object.assign(CodemanApp.prototype, {
       const [deviceId, sessionId] = String(pending.key).split(':');
       try {
         await this.fleetStopSession(deviceId, sessionId);
+        this._dropFleetSessionFromUi?.(pending.key);
         const msg = pending.adopted ? '已从 Codeman 移除(tmux 会话未受影响)' : 'Remote session stopped';
         this.showToast(msg, 'success');
       } catch {

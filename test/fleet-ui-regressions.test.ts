@@ -165,6 +165,75 @@ describe('fleet and settings UI regressions', () => {
     expect(classNames.some((name) => name.includes('history-item-remote'))).toBe(false);
   });
 
+  it('removes a stopped fleet session from the cached UI state immediately', async () => {
+    const CodemanApp = function CodemanApp(this: unknown) {};
+    const context = vm.createContext({ CodemanApp, console });
+    const source = readFileSync(resolve(import.meta.dirname, '../src/web/public/fleet-tabs.js'), 'utf8');
+    vm.runInContext(source, context, { filename: 'fleet-tabs.js' });
+
+    const app = new (CodemanApp as any)();
+    const key = 'macmini:session-1';
+    app.fleetTabs = new Map([
+      [
+        key,
+        {
+          deviceId: 'macmini',
+          sessionId: 'session-1',
+          deviceName: 'macmini',
+          sessionLabel: 'codeman',
+          online: true,
+        },
+      ],
+    ]);
+    app._fleetState = {
+      devices: [{ id: 'macmini', status: 'online', activeSessionCount: 1 }],
+      sessions: [{ deviceId: 'macmini', id: 'session-1', name: 'codeman' }],
+      sessionTabs: [{ key, deviceId: 'macmini', sessionId: 'session-1' }],
+    };
+    app.fleetStopSession = async () => ({ ok: true });
+    app._fullRenderSessionTabs = () => {
+      app.rendered = true;
+    };
+    app._renderFleetPanelIfOpen = () => {
+      app.panelRendered = true;
+    };
+    app.renderWelcomeActiveSessions = () => {
+      app.activeRendered = true;
+    };
+    app.showToast = () => {};
+
+    await app.stopFleetSession(key);
+
+    expect(app.fleetTabs.has(key)).toBe(false);
+    expect(app._fleetState.sessions).toHaveLength(0);
+    expect(app._fleetState.sessionTabs).toHaveLength(0);
+    expect(app._fleetState.devices[0].activeSessionCount).toBe(0);
+    expect(app.rendered).toBe(true);
+    expect(app.panelRendered).toBe(true);
+    expect(app.activeRendered).toBe(true);
+  });
+
+  it('routes remote tab close through the stop-or-hide confirmation modal', () => {
+    const appSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/app.js'), 'utf8');
+    const html = readFileSync(resolve(import.meta.dirname, '../src/web/public/index.html'), 'utf8');
+
+    expect(appSource).toContain('closeConfirmRemoteNote');
+    expect(appSource).not.toContain('Remote fleet tab: close = hide locally (no confirm, session keeps running).');
+    expect(appSource).not.toContain('this.closeFleetTab(sessionId);\n      return;');
+    expect(html).toContain('id="closeConfirmRemoteNote"');
+  });
+
+  it('adds a welcome active-session section for attaching to online sessions', () => {
+    const html = readFileSync(resolve(import.meta.dirname, '../src/web/public/index.html'), 'utf8');
+    const terminalSource = readFileSync(resolve(import.meta.dirname, '../src/web/public/terminal-ui.js'), 'utf8');
+
+    expect(html).toContain('id="welcomeActiveSessions"');
+    expect(html).toContain('id="welcomeActiveSessionList"');
+    expect(terminalSource).toContain('renderWelcomeActiveSessions');
+    expect(terminalSource).toContain('openFleetSessionTab');
+    expect(terminalSource).toContain('selectSession');
+  });
+
   it('exposes Codex on the welcome run surface', () => {
     const html = readFileSync(resolve(import.meta.dirname, '../src/web/public/index.html'), 'utf8');
 
