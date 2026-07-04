@@ -63,8 +63,10 @@ Object.assign(CodemanApp.prototype, {
     this.fleetTabs = new Map();
     // Keys the user explicitly closed. PERSISTED to localStorage
     // (`codeman:fleet-hidden-tabs`, per-device/client-only) so a close survives
-    // reloads — `refreshFleetState` won't re-add a hidden key, and it prunes any
-    // key whose session has since disappeared so the set can't grow unbounded.
+    // reloads — `refreshFleetState` won't re-add a hidden key, and it prunes a
+    // key only once its OWNING DEVICE is online AND the session is genuinely
+    // gone (see `_pruneFleetHiddenKeys`) so the set can't grow unbounded while
+    // still surviving offline→online device cycles.
     this._fleetHidden = this._loadFleetHiddenKeys();
     this.initFleetGrid();
     this.refreshFleetState();
@@ -95,15 +97,32 @@ Object.assign(CodemanApp.prototype, {
   },
 
   /**
-   * Drop hidden keys whose session is no longer present in the current fleet
-   * snapshot (stopped/removed) — bounds the persisted set. `presentKeys` is the
-   * set of every current remote (`deviceId:sessionId`) key from `sessionTabs`.
+   * Drop hidden keys for sessions that are genuinely gone — bounds the
+   * persisted set. `presentKeys` is every current remote (`deviceId:sessionId`)
+   * key from `sessionTabs`; `onlineByDevice` maps deviceId → online boolean.
+   *
+   * CRITICAL: absence from `sessionTabs` is only a positive "gone" signal when
+   * the OWNING DEVICE is ONLINE. When a device goes offline (laptop sleep, wifi
+   * blip, node restart) the central drops its handle, so ALL its sessions
+   * vanish from `sessionTabs` even though they keep running in tmux; the same
+   * holds for a first page-load snapshot before a device finishes reconnecting.
+   * Pruning then would wipe the hidden markers, and on reconnect the still-
+   * running sessions reappear unmarked → the closed tab silently returns,
+   * defeating the "关闭持久记住,刷新不再出现" guarantee. So we KEEP a hidden
+   * marker whenever its device is offline/unknown, and only prune when the
+   * device is confirmed online AND the session is absent from its live list.
    * Persists only when something actually changed.
    */
-  _pruneFleetHiddenKeys(presentKeys) {
+  _pruneFleetHiddenKeys(presentKeys, onlineByDevice) {
     if (!this._fleetHidden || this._fleetHidden.size === 0) return;
     let changed = false;
     for (const key of Array.from(this._fleetHidden)) {
+      const idx = key.indexOf(':');
+      if (idx < 0) continue; // not a fleet key — never prune (defensive)
+      const deviceId = key.slice(0, idx);
+      // Offline/unknown owning device → absence isn't "gone"; keep the marker.
+      if (!onlineByDevice || onlineByDevice.get(deviceId) !== true) continue;
+      // Device online AND session absent from its live list → genuinely gone.
       if (!presentKeys.has(key)) {
         this._fleetHidden.delete(key);
         changed = true;
@@ -194,8 +213,9 @@ Object.assign(CodemanApp.prototype, {
     }
 
     const next = new Map();
-    // Every current remote key — drives the hidden-set prune below so a closed
-    // tab whose session has since stopped/vanished is forgotten (bounded set).
+    // Every current remote key from ONLINE devices (offline devices drop out of
+    // sessionTabs entirely) — drives the device-online-gated hidden-set prune
+    // below so only genuinely-stopped sessions are forgotten (bounded set).
     const presentFleetKeys = new Set();
     for (const tab of state.sessionTabs || []) {
       // Central self device is already rendered as native local tabs.
@@ -209,7 +229,7 @@ Object.assign(CodemanApp.prototype, {
       });
     }
     this.fleetTabs = next;
-    this._pruneFleetHiddenKeys(presentFleetKeys);
+    this._pruneFleetHiddenKeys(presentFleetKeys, online);
 
     // Cache the full snapshot for the device panel (Task 19) and drive its
     // header badge + open-panel re-render off the SAME refresh flow. All three
