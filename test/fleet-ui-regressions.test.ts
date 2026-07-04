@@ -459,13 +459,22 @@ describe('fleet and settings UI regressions', () => {
     expect(appSource).toContain('setupSidebarSessionDragHandlers');
     expect(appSource).toContain('data-device-key');
     expect(appSource).toContain('data-sidebar-pin');
+    expect(appSource).toContain('data-sidebar-settings');
+    expect(appSource).toContain('data-sidebar-close');
+    expect(appSource).toContain('session-sidebar-actions');
+    expect(appSource).toContain('handleSessionTabContextMenu');
+    expect(appSource).toContain('app.openSessionOptions');
+    expect(appSource).toContain('app.requestCloseSession');
     expect(appSource).toContain('session-device-group');
     expect(appSource).toContain('session-device-header');
     expect(appSource).toContain('session-device-collapse');
 
     expect(css).toContain('.session-device-group');
     expect(css).toContain('.session-device-header');
+    expect(css).toContain('.session-sidebar-actions');
+    expect(css).toContain('.session-sidebar-action');
     expect(css).toContain('.session-sidebar-pin');
+    expect(css).toContain('.session-sidebar-close');
     expect(css).toContain('.session-device-sessions');
   });
 

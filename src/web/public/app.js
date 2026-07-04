@@ -3093,7 +3093,7 @@ class CodemanApp {
       const gitSummary = codemanGitSummaryHtml(session.gitSummary);
       const titleParts = [deviceName, mode, remark, conversationTitle, name, session.workingDir].filter(Boolean);
 
-      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${loadState ? ' tab-loading' : ''}" data-id="${id}" data-color="${color}" data-session-name-raw="${escapeHtml(session.name || '')}" data-session-remark="${escapeHtml(remark)}" data-session-mode="${escapeHtml(mode)}" ${loadState ? `data-load-phase="${escapeHtml(loadState.phase)}"` : ''} onclick="app.handleSessionTabClick(event, ${escapeHtml(JSON.stringify(id))})" oncontextmenu="event.preventDefault(); app.startInlineRename(${escapeHtml(JSON.stringify(id))})" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-busy="${loadState ? 'true' : 'false'}" aria-label="${escapeHtml([deviceName, remark, primaryName].filter(Boolean).join(' / '))} session" title="${escapeHtml(titleParts.join(' · '))}">
+      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${loadState ? ' tab-loading' : ''}" data-id="${id}" data-color="${color}" data-session-name-raw="${escapeHtml(session.name || '')}" data-session-remark="${escapeHtml(remark)}" data-session-mode="${escapeHtml(mode)}" ${loadState ? `data-load-phase="${escapeHtml(loadState.phase)}"` : ''} onclick="app.handleSessionTabClick(event, ${escapeHtml(JSON.stringify(id))})" oncontextmenu="app.handleSessionTabContextMenu(event, ${escapeHtml(JSON.stringify(id))})" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-busy="${loadState ? 'true' : 'false'}" aria-label="${escapeHtml([deviceName, remark, primaryName].filter(Boolean).join(' / '))} session" title="${escapeHtml(titleParts.join(' · '))}">
           ${_tabIdx < 9 ? '<span class="tab-number">' + (_tabIdx + 1) + '</span>' : ''}
           ${loadState ? '<span class="tab-load-spinner" aria-hidden="true"></span>' : ''}
           <span class="tab-status ${status}" aria-hidden="true"></span>
@@ -3175,9 +3175,19 @@ class CodemanApp {
       const itemsHtml = this._orderedSidebarItems(group.deviceKey, group.items).map((item) => {
         const pinned = this.sidebarPinnedSessions.has(item.id);
         const pinLabel = pinned ? 'Unpin session' : 'Pin session';
-        return `<div class="session-sidebar-item ${pinned ? 'pinned' : ''}" data-id="${escapeHtml(item.id)}" data-device-key="${escapeHtml(group.deviceKey)}" draggable="true">
+        const itemJson = escapeHtml(JSON.stringify(item.id));
+        const canEdit = item.kind === 'local';
+        const settingsButton = canEdit
+          ? `<button class="session-sidebar-action session-sidebar-settings" type="button" draggable="false" data-sidebar-settings="${escapeHtml(item.id)}" onclick="event.stopPropagation(); app.openSessionOptions(${itemJson})" title="Session options / remark" aria-label="Session options / remark">&#9881;</button>`
+          : '';
+        const closeLabel = item.kind === 'fleet' ? 'Close remote tab' : 'Close session';
+        return `<div class="session-sidebar-item ${pinned ? 'pinned' : ''}${canEdit ? ' has-settings' : ''}" data-id="${escapeHtml(item.id)}" data-device-key="${escapeHtml(group.deviceKey)}" draggable="true">
           ${item.html}
-          <button class="session-sidebar-pin" type="button" data-sidebar-pin="${escapeHtml(item.id)}" onclick="event.stopPropagation(); app.toggleSidebarSessionPin(${escapeHtml(JSON.stringify(item.id))})" title="${pinLabel}" aria-label="${pinLabel}" aria-pressed="${pinned ? 'true' : 'false'}">${pinned ? '&#9733;' : '&#9734;'}</button>
+          <span class="session-sidebar-actions" aria-label="Session actions">
+            <button class="session-sidebar-action session-sidebar-pin" type="button" draggable="false" data-sidebar-pin="${escapeHtml(item.id)}" onclick="event.stopPropagation(); app.toggleSidebarSessionPin(${itemJson})" title="${pinLabel}" aria-label="${pinLabel}" aria-pressed="${pinned ? 'true' : 'false'}">${pinned ? '&#9733;' : '&#9734;'}</button>
+            ${settingsButton}
+            <button class="session-sidebar-action session-sidebar-close" type="button" draggable="false" data-sidebar-close="${escapeHtml(item.id)}" onclick="event.stopPropagation(); app.requestCloseSession(${itemJson})" title="${closeLabel}" aria-label="${closeLabel}">&times;</button>
+          </span>
         </div>`;
       }).join('');
 
@@ -3402,6 +3412,19 @@ class CodemanApp {
     const selection = this.selectSession(sessionId, { forceReload: true });
     this.closeSessionListDrawer();
     return selection;
+  }
+
+  handleSessionTabContextMenu(event, sessionId) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    const fromSidebar = !!event?.currentTarget?.closest?.('#sessionListSidebar');
+    if (fromSidebar) {
+      if (!this.isFleetKey(sessionId)) {
+        this.openSessionOptions(sessionId);
+      }
+      return;
+    }
+    this.startInlineRename(sessionId);
   }
 
 
