@@ -773,6 +773,21 @@ class CodemanApp {
   }
 
   /**
+   * Retire the main terminal WebGL renderer after the split-grid overlay is
+   * dismissed. xterm's WebGL layer can keep a stale draw origin after the main
+   * terminal is covered by independent grid terminals; canvas/DOM repainting
+   * from the same buffer restores the native single-terminal view.
+   */
+  _disposeMainTerminalWebglAfterGrid() {
+    const addon = this._webglAddon;
+    this._disposeWebGLObserver();
+    if (!addon) return;
+    try { addon.dispose(); } catch {}
+    this._webglAddon = null;
+    this._scheduleTerminalRepaint();
+  }
+
+  /**
    * Repaint the full terminal viewport after a renderer swap (WebGL → canvas/DOM).
    * Scheduled on the next frame so it lands after the addon teardown settles, and
    * debounced so the context-loss and long-task fallback paths can't double-fire.

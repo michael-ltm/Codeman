@@ -552,6 +552,7 @@ Object.assign(CodemanApp.prototype, {
       grid.setAttribute('aria-hidden', 'true');
       grid.innerHTML = '';
       this._fleetGridUpdateControl();
+      this._disposeMainTerminalWebglAfterGrid?.();
       // The native terminal was never resized while covered; a defensive refit
       // keeps it crisp on return (server-side no-op if dims match).
       try {

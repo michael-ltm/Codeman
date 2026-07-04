@@ -112,7 +112,7 @@ describe('fleet and settings UI regressions', () => {
     expect(grid.getAttribute('data-layout')).toBeNull();
   });
 
-  it('forces the native terminal to resize before reloading when leaving split grid', () => {
+  it('resets the native renderer and forces resize before reloading when leaving split grid', () => {
     const CodemanApp = function CodemanApp(this: unknown) {};
     const grid = new FakeElement('fleetGrid');
     grid.classList.add('active');
@@ -143,6 +143,9 @@ describe('fleet and settings UI regressions', () => {
         app.fitCalled = true;
       },
     };
+    app._disposeMainTerminalWebglAfterGrid = () => {
+      app.webglDisposed = true;
+    };
     app.selectSession = (id: string, options: unknown) => {
       app.selected = { id, options };
       return Promise.resolve();
@@ -151,6 +154,7 @@ describe('fleet and settings UI regressions', () => {
     app.setFleetGridLayout(1);
 
     expect(app.closedKey).toBe('session-1');
+    expect(app.webglDisposed).toBe(true);
     expect(app.fitCalled).toBe(true);
     expect(app.selected).toEqual({
       id: 'session-1',
