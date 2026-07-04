@@ -456,7 +456,9 @@ Object.assign(CodemanApp.prototype, {
     }
     const grid = document.getElementById('fleetGrid');
     if (!grid) return;
-    if (n === this._fleetGridLayout) {
+    const gridDomActive =
+      grid.classList.contains('active') || grid.getAttribute('data-layout') !== null || grid.innerHTML.trim() !== '';
+    if (n === this._fleetGridLayout && !(n === 1 && gridDomActive)) {
       this._fleetGridUpdateControl();
       return;
     }

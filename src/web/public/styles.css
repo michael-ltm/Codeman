@@ -2508,14 +2508,13 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   pointer-events: none;
 }
 
-/* Even 2×2 grid: equal cells → equal-width, edge-aligned run buttons (was a
-   flex-wrap that wrapped to ragged, unequal widths). Order is preserved, so
-   Claude/Tunnel sit on row 1 and OpenCode/Gemini on row 2, as before. */
+/* Equal-width, edge-aligned run buttons. Auto-fit keeps the welcome action
+   surface compact as more CLI modes are added. */
 .welcome-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--sp-3, 0.75rem);
-  max-width: 440px;
+  max-width: 640px;
   margin: var(--sp-6, 2rem) auto var(--sp-4, 1.5rem);
 }
 
@@ -2561,6 +2560,21 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3), 0 0 40px rgba(16, 185, 129, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   border-color: rgba(52, 211, 153, 0.5);
   color: #a7f3d0;
+  transform: translateY(-1px);
+}
+
+.welcome-btn-codex {
+  background: linear-gradient(135deg, #2e174f 0%, #4c1d95 50%, #6d28d9 100%);
+  border-color: rgba(139, 92, 246, 0.42);
+  color: #ede9fe;
+  box-shadow: 0 2px 8px rgba(109, 40, 217, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.welcome-btn-codex:hover {
+  background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 50%, #8b5cf6 100%);
+  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.32), 0 0 40px rgba(139, 92, 246, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-color: rgba(167, 139, 250, 0.5);
+  color: #fff;
   transform: translateY(-1px);
 }
 
@@ -4515,6 +4529,39 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   padding-bottom: 0.3rem;
 }
 
+.settings-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--btn-radius);
+  flex: 0 0 auto;
+}
+
+.settings-segmented-btn {
+  min-width: 48px;
+  padding: 0.25rem 0.55rem;
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--btn-radius) - 2px);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.settings-segmented-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.settings-segmented-btn.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
 .settings-item-multiline {
   align-items: center;
 }
@@ -5445,6 +5492,19 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
      affordance. */
   overflow-x: auto;
   scrollbar-width: thin;
+}
+
+#appSettingsModal .modal-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  overflow-x: visible;
+  row-gap: 0.45rem;
+}
+
+#appSettingsModal .modal-tab-btn {
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.15;
 }
 
 .modal-tab-btn {
@@ -11276,6 +11336,16 @@ html[data-skin="daylight-blue"] .welcome-btn-opencode:hover {
   border-color: rgba(52, 211, 153, 0.6);
   box-shadow: 0 0 28px -4px rgba(16, 185, 129, 0.4);
 }
+html[data-skin="daylight-blue"] .welcome-btn-codex {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border-color: rgba(139, 92, 246, 0.5);
+  color: #ffffff;
+}
+html[data-skin="daylight-blue"] .welcome-btn-codex:hover {
+  background: linear-gradient(135deg, #7c3aed, #a78bfa);
+  border-color: rgba(167, 139, 250, 0.6);
+  box-shadow: 0 0 28px -4px rgba(124, 58, 237, 0.42);
+}
 html[data-skin="daylight-blue"] .welcome-btn-tunnel {
   background: linear-gradient(135deg, #7c3aed, #a855f7);
   border-color: rgba(168, 85, 247, 0.5);
@@ -11958,6 +12028,35 @@ html[data-skin="daylight-blue"] .welcome-btn-tunnel.active:hover {
   white-space: nowrap;
 }
 
+.fleet-dir-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.fleet-dir-candidate {
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.25rem 0.45rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-dir-candidate:hover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
 /* Directory browser modal (Task 25, spec §12.5) */
 .fleet-dir-modal .modal-body {
   display: flex;
@@ -12420,6 +12519,15 @@ html[data-skin="light"] .welcome-btn-opencode {
 html[data-skin="light"] .welcome-btn-opencode:hover {
   background: linear-gradient(135deg, #2da44e, #3fb950);
   box-shadow: 0 0 24px -6px rgba(26, 127, 55, 0.4);
+}
+html[data-skin="light"] .welcome-btn-codex {
+  background: linear-gradient(135deg, #6f42c1, #8957e5);
+  border-color: rgba(111, 66, 193, 0.45);
+  color: #ffffff;
+}
+html[data-skin="light"] .welcome-btn-codex:hover {
+  background: linear-gradient(135deg, #8250df, #a475f0);
+  box-shadow: 0 0 24px -6px rgba(111, 66, 193, 0.38);
 }
 html[data-skin="light"] .welcome-btn-tunnel {
   background: linear-gradient(135deg, #8250df, #a475f0);

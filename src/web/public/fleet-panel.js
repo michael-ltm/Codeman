@@ -30,8 +30,8 @@
  *     selection; offline devices disabled), required workingDir, a mode
  *     segmented control (claude/codex/shell/gemini/opencode) → POST via
  *     fleet-api, then refreshFleetState + toast.
- *   - workingDir picker (Task 25, spec §12.5): the input carries a `<datalist>`
- *     of recent candidates — the selected device's live session workingDirs ∪
+ *   - workingDir picker (Task 25, spec §12.5): the input carries custom recent
+ *     candidates — the selected device's live session workingDirs ∪
  *     its resume-candidate workingDirs (fetched lazily, cached per device for
  *     the panel's lifetime), deduped and ranked by most-recent activity, capped
  *     at 15. A "浏览…" button beside it opens `#fleetDirModal`, an app-modal
@@ -45,7 +45,7 @@
  *     everything else uses showToast.
  *   - Every device/session-sourced string flows through escapeHtml (device
  *     names/hostnames come from remote machines → untrusted); every
- *     server-sourced directory name/path (dir browser + datalist candidates)
+ *     server-sourced directory name/path (dir browser + custom candidates)
  *     likewise flows through escapeHtml — a remote node's filesystem is
  *     equally untrusted input.
  *   - Only existing CSS variables (follows data-skin).
@@ -538,26 +538,26 @@ Object.assign(CodemanApp.prototype, {
     this.showToast(ok ? '配对命令已复制' : '复制失败', ok ? 'success' : 'error');
   },
 
-  // ─── workingDir smart dropdown (Task 25) ────────────────────────────────────
+  // ─── workingDir smart candidates (Task 25) ──────────────────────────────────
 
-  /** Create-form device <select> onchange — refresh the workingDir `<datalist>`. */
+  /** Create-form device <select> onchange — refresh the workingDir suggestions. */
   onFleetCreateDeviceChange() {
     const sel = this.$('fleetCreateDevice');
     this._refreshFleetDirCandidates(sel && sel.value);
   },
 
   /**
-   * (Re)build the workingDir `<datalist>` candidates for `deviceId`: that
+   * (Re)build the workingDir candidate list for `deviceId`: that
    * device's live session workingDirs (fresh off `this._fleetState` every
    * call) ∪ its resume-candidate workingDirs (fetched once per device and
    * cached in `this._fleetDirCandCache` for the panel's lifetime — switching
    * devices back and forth doesn't refetch). Silent-fails to an empty resume
    * set on any error (offline/timeout/network); the session-derived half of
-   * the list is unaffected either way. Manual typing into the input always
-   * works regardless of what's in the datalist.
+   * the list is unaffected either way. Manual typing into the input still
+   * works regardless of candidate availability.
    */
   async _refreshFleetDirCandidates(deviceId, listElId = 'fleetDirCandidates') {
-    this._renderFleetDirDatalist(deviceId, listElId);
+    this._renderFleetDirCandidates(deviceId, listElId);
     if (!deviceId) return;
     if (!this._fleetDirCandCache) this._fleetDirCandCache = new Map();
     if (this._fleetDirCandCache.has(deviceId)) return; // cached (or an in-flight fetch already placeheld below)
@@ -572,21 +572,21 @@ Object.assign(CodemanApp.prototype, {
     // Re-paint the target list once the resume fetch resolves — but only if it's
     // still the relevant device (create-form: the <select> hasn't moved on;
     // quick-start chooser: still choosing for this device), so a mid-fetch device
-    // switch can't paint stale options into a datalist the user has moved past.
+    // switch can't paint stale candidates into a chooser the user has moved past.
     if (listElId === 'fleetDirCandidates') {
       const sel = this.$('fleetCreateDevice');
-      if (sel && sel.value === deviceId) this._renderFleetDirDatalist(deviceId, listElId);
+      if (sel && sel.value === deviceId) this._renderFleetDirCandidates(deviceId, listElId);
     } else if (this._quickStartDirDeviceId === deviceId) {
-      this._renderFleetDirDatalist(deviceId, listElId);
+      this._renderFleetDirCandidates(deviceId, listElId);
     }
   },
 
   /**
    * Merge the two candidate sources, dedup by workingDir keeping the most
-   * recent timestamp, sort most-recent-first, cap at 15, and paint the
-   * `<datalist>`. All values escaped (remote workingDirs are untrusted).
+   * recent timestamp, sort most-recent-first, cap at 15, and paint custom
+   * candidate buttons. All values escaped (remote workingDirs are untrusted).
    */
-  _renderFleetDirDatalist(deviceId, listElId = 'fleetDirCandidates') {
+  _renderFleetDirCandidates(deviceId, listElId = 'fleetDirCandidates') {
     const list = this.$(listElId);
     if (!list) return;
     if (!deviceId) {
@@ -612,7 +612,25 @@ Object.assign(CodemanApp.prototype, {
       .slice(0, 15)
       .map(([dir]) => dir);
 
-    list.innerHTML = ranked.map((dir) => `<option value="${escapeHtml(dir)}"></option>`).join('');
+    const inputId = listElId === 'quickStartDirCandidates' ? 'quickStartDirInput' : 'fleetCreateDir';
+    list.innerHTML = ranked
+      .map((dir) => {
+        const dirJson = escapeHtml(JSON.stringify(dir));
+        const short = this._shortenHomePath ? this._shortenHomePath(dir) : dir;
+        return `<button type="button" class="fleet-dir-candidate" title="${escapeHtml(dir)}" onclick="app.selectFleetDirCandidate('${inputId}', ${dirJson})">${escapeHtml(short)}</button>`;
+      })
+      .join('');
+  },
+
+  selectFleetDirCandidate(inputId, dir) {
+    const input = this.$(inputId);
+    if (!input || typeof dir !== 'string') return;
+    input.value = dir;
+    try {
+      input.focus();
+    } catch {
+      /* best-effort */
+    }
   },
 
   // ─── Remote session create ──────────────────────────────────────────────────
@@ -900,7 +918,7 @@ Object.assign(CodemanApp.prototype, {
   //
   // A small app modal (#quickStartDirModal — NO native prompt) popped by the
   // welcome Run buttons before a session is created: a text input with the same
-  // smart candidate datalist as the panel create-form (existing-session dirs ∪
+  // smart candidates as the panel create-form (existing-session dirs ∪
   // resume-candidate dirs for the target device) plus a "浏览…" button that
   // reuses the #fleetDirModal breadcrumb browser. Works for the local device
   // and remotes identically (fleetListDirs/fleetResumeCandidates accept 'local').
@@ -935,7 +953,7 @@ Object.assign(CodemanApp.prototype, {
       const hint = this.$('quickStartDirHint');
       if (hint) hint.textContent = this._quickStartDirHintText(this._quickStartDirDeviceId, opts.mode);
 
-      // Smart candidate datalist for this device (session dirs ∪ resume dirs).
+      // Smart candidates for this device (session dirs ∪ resume dirs).
       this._refreshFleetDirCandidates(this._quickStartDirDeviceId, 'quickStartDirCandidates');
 
       modal.classList.add('active');

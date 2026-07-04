@@ -1,0 +1,196 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import vm from 'node:vm';
+import { describe, expect, it } from 'vitest';
+
+function cssRuleBody(css: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+  return match?.[1] ?? '';
+}
+
+class FakeClassList {
+  private readonly classes = new Set<string>();
+
+  add(...tokens: string[]) {
+    tokens.forEach((token) => this.classes.add(token));
+  }
+
+  remove(...tokens: string[]) {
+    tokens.forEach((token) => this.classes.delete(token));
+  }
+
+  contains(token: string) {
+    return this.classes.has(token);
+  }
+
+  toggle(token: string, force?: boolean) {
+    const shouldAdd = force ?? !this.classes.has(token);
+    if (shouldAdd) this.classes.add(token);
+    else this.classes.delete(token);
+    return shouldAdd;
+  }
+}
+
+class FakeElement {
+  id = '';
+  className = '';
+  textContent = '';
+  innerHTML = '';
+  hidden = false;
+  style: Record<string, string> = {};
+  readonly children: FakeElement[] = [];
+  readonly classList = new FakeClassList();
+  readonly dataset: Record<string, string> = {};
+  private readonly attrs = new Map<string, string>();
+
+  constructor(id = '') {
+    this.id = id;
+  }
+
+  append(...nodes: FakeElement[]) {
+    this.children.push(...nodes);
+  }
+
+  appendChild(node: FakeElement) {
+    this.children.push(node);
+    return node;
+  }
+
+  replaceChildren(...nodes: FakeElement[]) {
+    this.children.length = 0;
+    this.children.push(...nodes);
+  }
+
+  addEventListener() {
+    // Events are not dispatched in these DOM-shape tests.
+  }
+
+  setAttribute(name: string, value: string) {
+    this.attrs.set(name, value);
+  }
+
+  getAttribute(name: string) {
+    return this.attrs.get(name) ?? null;
+  }
+
+  removeAttribute(name: string) {
+    this.attrs.delete(name);
+  }
+
+  querySelectorAll() {
+    return [];
+  }
+}
+
+describe('fleet and settings UI regressions', () => {
+  it('collapses the split grid when Single is clicked even if state says it is already single', () => {
+    const CodemanApp = function CodemanApp(this: unknown) {};
+    const grid = new FakeElement('fleetGrid');
+    grid.classList.add('active');
+    grid.setAttribute('data-layout', '4');
+    const seg = new FakeElement('gridLayoutSeg');
+    const elements: Record<string, FakeElement> = { fleetGrid: grid, gridLayoutSeg: seg };
+    const context = vm.createContext({
+      CodemanApp,
+      document: { getElementById: (id: string) => elements[id] ?? null },
+      MobileDetection: { getDeviceType: () => 'desktop' },
+      console,
+    });
+
+    const source = readFileSync(resolve(import.meta.dirname, '../src/web/public/fleet-tabs.js'), 'utf8');
+    vm.runInContext(source, context, { filename: 'fleet-tabs.js' });
+    const app = new (CodemanApp as any)();
+    app._fleetGridLayout = 1;
+    app._fleetGridPinned = [null];
+    app._fleetGridTerms = new Map();
+    app._fleetGridLru = new Map();
+
+    app.setFleetGridLayout(1);
+
+    expect(grid.classList.contains('active')).toBe(false);
+    expect(grid.getAttribute('data-layout')).toBeNull();
+  });
+
+  it('keeps local welcome history from rendering remote subdrive rows by default', async () => {
+    const CodemanApp = function CodemanApp(this: unknown) {};
+    const elements: Record<string, FakeElement> = {
+      historySessions: new FakeElement('historySessions'),
+      historyList: new FakeElement('historyList'),
+      historyTitle: new FakeElement('historyTitle'),
+    };
+    const context = vm.createContext({
+      CodemanApp,
+      window: {},
+      document: {
+        documentElement: { dataset: { skin: 'daylight-blue' } },
+        getElementById: (id: string) => elements[id] ?? null,
+        createElement: (tag: string) => new FakeElement(tag),
+      },
+      console,
+    });
+
+    const source = readFileSync(resolve(import.meta.dirname, '../src/web/public/terminal-ui.js'), 'utf8');
+    vm.runInContext(source, context, { filename: 'terminal-ui.js' });
+    const app = new (CodemanApp as any)();
+    app.cases = [{ name: 'local', path: '/Users/ming/project/local' }];
+    app._welcomeDeviceId = 'local';
+    app._fetchHistorySessions = async () => [
+      {
+        sessionId: 'local-session-123',
+        workingDir: '/Users/ming/project/local',
+        projectKey: 'local',
+        firstPrompt: 'Local work',
+        lastModified: '2026-07-04T06:00:00.000Z',
+        sizeBytes: 2048,
+      },
+    ];
+    app._fetchRemoteResumeRows = async () => [
+      {
+        deviceId: 'macmini',
+        deviceName: 'macmini',
+        candidate: {
+          sessionId: 'remote-session-456',
+          workingDir: '/Users/ming/subdrive/remote',
+          title: 'Remote subdrive session',
+          updatedAt: Date.parse('2026-07-04T07:00:00.000Z'),
+        },
+      },
+    ];
+
+    await app.loadHistorySessions();
+
+    const classNames = elements.historyList.children.map((child) => child.className);
+    expect(classNames).toContain('history-item');
+    expect(classNames.some((name) => name.includes('history-item-remote'))).toBe(false);
+  });
+
+  it('exposes Codex on the welcome run surface', () => {
+    const html = readFileSync(resolve(import.meta.dirname, '../src/web/public/index.html'), 'utf8');
+
+    expect(html).toContain('welcome-btn-codex');
+    expect(html).toContain("quickStartWithDir('codex')");
+    expect(html).toContain('Run Codex');
+  });
+
+  it('uses custom controls for session-list position and quick-start working-dir candidates', () => {
+    const html = readFileSync(resolve(import.meta.dirname, '../src/web/public/index.html'), 'utf8');
+    const quickStartDirModal =
+      html.match(/<div class="modal" id="quickStartDirModal">([\s\S]*?)<!-- Working-directory browser/)?.[1] ?? '';
+
+    expect(html).not.toContain('<select id="appSettingsSessionListPosition"');
+    expect(html).toContain('id="appSettingsSessionListPositionControl"');
+    expect(html).toContain('type="hidden" id="appSettingsSessionListPosition"');
+    expect(quickStartDirModal).not.toContain('<datalist');
+    expect(quickStartDirModal).not.toContain('list="quickStartDirCandidates"');
+    expect(quickStartDirModal).toContain('id="quickStartDirCandidates"');
+  });
+
+  it('lays out App Settings tabs without horizontal scroll overflow', () => {
+    const css = readFileSync(resolve(import.meta.dirname, '../src/web/public/styles.css'), 'utf8');
+    const appSettingsTabs = cssRuleBody(css, '#appSettingsModal .modal-tabs');
+
+    expect(appSettingsTabs).toContain('grid-template-columns');
+    expect(appSettingsTabs).not.toContain('overflow-x: auto');
+  });
+});

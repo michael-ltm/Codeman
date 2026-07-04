@@ -319,6 +319,10 @@
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               Run Claude Code
             </button>
+            <button class="welcome-btn welcome-btn-codex" onclick="app.setRunMode('codex'); app.quickStartWithDir('codex')">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Run Codex
+            </button>
             <button class="welcome-btn welcome-btn-tunnel" id="welcomeTunnelBtn" onclick="app.toggleTunnelFromWelcome()">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
               Cloudflare Tunnel
@@ -743,10 +747,10 @@
           <select class="fleet-select" id="fleetCreateDevice" aria-label="Target device" onchange="app.onFleetCreateDeviceChange()"></select>
           <label class="fleet-field-label" for="fleetCreateDir">工作目录 <span class="fleet-req" aria-hidden="true">*</span></label>
           <div class="fleet-dir-row">
-            <input type="text" class="fleet-input" id="fleetCreateDir" list="fleetDirCandidates" placeholder="/path/to/project" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
-            <datalist id="fleetDirCandidates"></datalist>
+            <input type="text" class="fleet-input" id="fleetCreateDir" placeholder="/path/to/project" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
             <button type="button" class="btn-toolbar btn-sm fleet-browse-btn" onclick="app.openFleetDirBrowser()">浏览&hellip;</button>
           </div>
+          <div class="fleet-dir-candidates" id="fleetDirCandidates" aria-label="Recent working directories"></div>
           <label class="fleet-field-label">模式</label>
           <div class="fleet-mode-seg" id="fleetCreateMode" role="group" aria-label="Session mode">
             <button type="button" class="fleet-mode-btn active" data-mode="claude" onclick="app.setFleetCreateMode('claude')">claude</button>
@@ -790,7 +794,7 @@
 
     <!-- Quick-start working-directory chooser (Task B, spec §#3) — app modal
          convention (NO native prompt). Popped by the welcome Run buttons before
-         a session is created: text input + smart candidate datalist + "浏览…"
+         a session is created: text input + custom smart candidates + "浏览…"
          (reuses #fleetDirModal). Placed BEFORE #fleetDirModal so the breadcrumb
          browser stacks above it (equal z-index → later DOM wins). -->
     <div class="modal" id="quickStartDirModal">
@@ -804,10 +808,10 @@
           <div class="welcome-device-hint" id="quickStartDirHint" style="display:block;margin-bottom:0.6rem"></div>
           <label class="fleet-field-label" for="quickStartDirInput">工作目录 <span class="fleet-req" aria-hidden="true">*</span></label>
           <div class="fleet-dir-row">
-            <input type="text" class="fleet-input" id="quickStartDirInput" list="quickStartDirCandidates" placeholder="/path/to/project" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
-            <datalist id="quickStartDirCandidates"></datalist>
+            <input type="text" class="fleet-input" id="quickStartDirInput" placeholder="/path/to/project" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
             <button type="button" class="btn-toolbar btn-sm fleet-browse-btn" onclick="app.openQuickStartDirBrowse()">浏览&hellip;</button>
           </div>
+          <div class="fleet-dir-candidates" id="quickStartDirCandidates" aria-label="Recent working directories"></div>
         </div>
         <div class="modal-footer-cancel">
           <button class="btn-toolbar btn-sm" onclick="app._closeQuickStartDir(null)">取消</button>
@@ -1297,10 +1301,11 @@
               </div>
               <div class="settings-item" title="Where the session list appears on this device (not synced; ignored on phones)">
                 <span class="settings-item-label">Session List</span>
-                <select id="appSettingsSessionListPosition" class="form-select">
-                  <option value="top">Top (tab strip)</option>
-                  <option value="left">Left (sidebar)</option>
-                </select>
+                <input type="hidden" id="appSettingsSessionListPosition" value="top">
+                <div class="settings-segmented" id="appSettingsSessionListPositionControl" data-segmented-for="appSettingsSessionListPosition" role="group" aria-label="Session list position">
+                  <button type="button" class="settings-segmented-btn active" data-segment-value="top" onclick="app.setSegmentedSetting('appSettingsSessionListPosition', 'top')" aria-pressed="true">Top</button>
+                  <button type="button" class="settings-segmented-btn" data-segment-value="left" onclick="app.setSegmentedSetting('appSettingsSessionListPosition', 'left')" aria-pressed="false">Left</button>
+                </div>
               </div>
 
               <!-- Panels Section -->

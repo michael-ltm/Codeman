@@ -603,6 +603,8 @@ Object.assign(CodemanApp.prototype, {
   },
 
   async runCodex() {
+    // Homepage device selector (Task 2): remote → fleet create; local unchanged.
+    if ((this._welcomeDeviceId || 'local') !== 'local') return this._quickStartRemote('codex');
     const caseName = document.getElementById('quickStartCase').value || 'testcase';
 
     this.terminal.clear();
@@ -852,7 +854,7 @@ Object.assign(CodemanApp.prototype, {
     const actions = document.querySelector('.welcome-actions');
     if (actions) {
       actions
-        .querySelectorAll('.welcome-btn-claude, .welcome-btn-opencode, .welcome-btn-gemini')
+        .querySelectorAll('.welcome-btn-claude, .welcome-btn-codex, .welcome-btn-opencode, .welcome-btn-gemini')
         .forEach((btn) => {
           btn.disabled = offline;
           btn.classList.toggle('welcome-btn-disabled', offline);

@@ -1215,14 +1215,15 @@ Object.assign(CodemanApp.prototype, {
       const casesPromise = Array.isArray(this.cases) && this.cases.length > 0
         ? Promise.resolve(this.cases)
         : fetch('/api/cases').then((r) => (r.ok ? r.json() : null)).then((d) => d?.data || []).catch(() => []);
-      // Cross-device resume (Task 23, spec §12.3): merge resume candidates from
-      // every ONLINE remote device into the same list. The 'local' device is
-      // skipped — its candidates ARE `allSessions`. Per-device failures are
-      // silently dropped (console.warn); the local list never blocks on them.
+      // Cross-device resume (Task 23, spec §12.3): fetch remote candidates only
+      // when a remote device pill is selected. The default 'local' view stays
+      // local-only so another device's subdrive/worktree sessions don't crowd
+      // the home page list.
+      const selDeviceId = this._welcomeDeviceId || 'local';
       const [allSessions, cases, remoteRows] = await Promise.all([
         this._fetchHistorySessions(30),
         casesPromise,
-        this._fetchRemoteResumeRows(),
+        selDeviceId === 'local' ? Promise.resolve([]) : this._fetchRemoteResumeRows(),
       ]);
 
       // Unified descriptor list, globally sorted by recency (updatedAt desc).
@@ -1235,10 +1236,7 @@ Object.assign(CodemanApp.prototype, {
 
       // Homepage device selector (Task 2): when a REMOTE device is selected,
       // filter to that device's candidates and retitle. 'local' (default) keeps
-      // the full merged view + original title 'Resume Conversation' (red line —
-      // the title assignment below is the pre-existing default, idempotent on a
-      // fresh load; it only clears a prior remote selection's title).
-      const selDeviceId = this._welcomeDeviceId || 'local';
+      // the local list + original title 'Resume Conversation'.
       const titleEl = document.getElementById('historyTitle');
       if (selDeviceId !== 'local') {
         merged = merged.filter((d) => d.kind === 'remote' && d.deviceId === selDeviceId);

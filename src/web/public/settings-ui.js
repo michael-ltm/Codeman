@@ -278,6 +278,18 @@ Object.assign(CodemanApp.prototype, {
     return prefs;
   },
 
+  setSegmentedSetting(inputId, value) {
+    const input = document.getElementById(inputId);
+    if (input) input.value = value;
+    const control = document.querySelector(`[data-segmented-for="${inputId}"]`);
+    if (!control) return;
+    control.querySelectorAll('[data-segment-value]').forEach((btn) => {
+      const active = btn.dataset.segmentValue === value;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  },
+
   _updatePushUI(subscribed) {
     const btn = document.getElementById('pushSubscribeBtn');
     const status = document.getElementById('pushSubscriptionStatus');
@@ -335,8 +347,10 @@ Object.assign(CodemanApp.prototype, {
     document.getElementById('appSettingsCjkInput').checked = settings.cjkInputEnabled ?? defaults.cjkInputEnabled ?? false;
     document.getElementById('appSettingsExtendedKeyboardBar').checked = settings.extendedKeyboardBar ?? false;
     document.getElementById('appSettingsTabTwoRows').checked = settings.tabTwoRows ?? defaults.tabTwoRows ?? false;
-    document.getElementById('appSettingsSessionListPosition').value =
-      settings.sessionListPosition ?? defaults.sessionListPosition ?? 'top';
+    this.setSegmentedSetting(
+      'appSettingsSessionListPosition',
+      settings.sessionListPosition ?? defaults.sessionListPosition ?? 'top'
+    );
     // Claude CLI settings
     const claudeModeSelect = document.getElementById('appSettingsClaudeMode');
     const allowedToolsRow = document.getElementById('allowedToolsRow');
